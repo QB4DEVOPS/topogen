@@ -179,6 +179,32 @@ class Renderer:
             ) from exc
 
     @staticmethod
+    def validate_flat_topology(total_nodes: int, group_size: int) -> int:
+        """Validate flat star L2 topology constraints and return access switch count.
+
+        - Access switch: group_size routers + 1 uplink must be <= 32 ports
+        - Core switch: number of access switches must be <= 32 ports
+        """
+        if group_size < 1:
+            raise TopogenError("--flat-group-size must be >= 1")
+
+        access_ports_required = group_size + 1  # routers + uplink to core
+        if access_ports_required > 32:
+            raise TopogenError(
+                f"group size {group_size} requires {access_ports_required} ports on an access switch, "
+                "which exceeds the typical 32-port limit; reduce --flat-group-size"
+            )
+
+        num_access = math.ceil(total_nodes / group_size)
+        if num_access > 32:
+            raise TopogenError(
+                f"{total_nodes} nodes with group size {group_size} requires {num_access} access switches, "
+                "which exceeds a typical 32-port core unmanaged switch; increase --flat-group-size"
+            )
+
+        return num_access
+
+    @staticmethod
     def new_interface(cmlnode: Node) -> Interface:
         """create a new CML interface for the given node"""
         iface = cmlnode.next_available_interface()
@@ -479,7 +505,15 @@ class Renderer:
 
         total = int(args.nodes)
         group = max(1, int(args.flat_group_size))
-        num_sw = math.ceil(total / group)
+        num_sw = Renderer.validate_flat_topology(total, group)
+
+        # Warn about custom device templates/images which may affect interface behavior
+        dev_def = getattr(args, "dev_template", args.template)
+        if dev_def != "iosv":
+            _LOGGER.warning(
+                "Using custom device template '%s'; guardrails assume ~32-port unmanaged_switch and do not account for custom node definitions/images",
+                dev_def,
+            )
 
         # helper to compute addressing
         def addr_parts(n: int) -> tuple[int, int]:
@@ -547,13 +581,15 @@ class Renderer:
 
         # Routers (with Gi0/0 interface defined at slot 0)
         dev_def = getattr(args, "dev_template", args.template)
+        g_base = "10.0" if getattr(args, "gi0_zero", False) else "10.10"
+        l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
         for idx in range(total):
             n = idx + 1
             label = f"R{n}"
             node_ids[label] = f"n{nid}"; nid += 1
             hi, lo = addr_parts(n)
-            g_ip = f"10.10.{hi}.{lo}"
-            l_ip = f"10.20.{hi}.{lo}"
+            g_ip = f"{g_base}.{hi}.{lo}"
+            l_ip = f"{l_base}.{hi}.{lo}"
 
             # Render configuration using the same template logic as online path
             node = TopogenNode(
@@ -616,7 +652,7 @@ class Renderer:
         """Render a flat L2 management network.
 
         - Create unmanaged switches, each serving up to args.flat_group_size routers.
-        - Connect all unmanaged switches in a linear chain to keep one broadcast domain.
+        - Connect all unmanaged switches to a core to keep one broadcast domain (star).
         - Connect each router's Gig0/0 (slot 0) to its group's switch.
         - Do not assign IPs to interfaces; users will enable EIGRP on Gig0 later.
         """
@@ -625,7 +661,15 @@ class Renderer:
 
         total = self.args.nodes
         group = max(1, int(self.args.flat_group_size))
-        num_sw = math.ceil(total / group)
+        num_sw = Renderer.validate_flat_topology(total, group)
+
+        # Warn about custom device templates/images which may affect interface behavior
+        dev_def = getattr(self.args, "dev_template", self.args.template)
+        if dev_def != "iosv":
+            _LOGGER.warning(
+                "Using custom device template '%s'; guardrails assume ~32-port unmanaged_switch and do not account for custom node definitions/images",
+                dev_def,
+            )
 
         _LOGGER.warning("Creating %d unmanaged switches for %d routers (group size %d)", num_sw, total, group)
 
@@ -666,8 +710,10 @@ class Renderer:
             ridx = idx + 1
             hi = (ridx // 256) & 0xFF
             lo = ridx % 256
-            g_addr = IPv4Interface(f"10.10.{hi}.{lo}/16")
-            l_addr = IPv4Interface(f"10.20.{hi}.{lo}/32")
+            g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
+            l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
+            g_addr = IPv4Interface(f"{g_base}.{hi}.{lo}/16")
+            l_addr = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
 
             # Build config: Loopback0 and Gi0/0 with assigned addresses
             node = TopogenNode(

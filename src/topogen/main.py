@@ -126,6 +126,18 @@ def create_argparser():
         help="Routers per unmanaged switch when using flat mode, default %(default)d",
     )
     parser.add_argument(
+        "--loopback-255",
+        dest="loopback_255",
+        action="store_true",
+        help="Use 10.255.C.D/32 for Loopback0 addressing in flat mode (default is 10.20.C.D/32)",
+    )
+    parser.add_argument(
+        "--gi0-zero",
+        dest="gi0_zero",
+        action="store_true",
+        help="Use 10.0.C.D/16 for Gi0/0 addressing in flat mode (default is 10.10.C.D/16)",
+    )
+    parser.add_argument(
         "--yaml",
         dest="yaml_output",
         metavar="FILE",
@@ -163,6 +175,12 @@ def create_argparser():
         nargs="?",
         type=valid_node_count,
         help="Number of nodes to generate (2-1000)",
+    )
+    parser.add_argument(
+        "--allow-oversubscribe",
+        dest="allow_oversubscribe",
+        action="store_true",
+        help="Bypass the recommended 520-node lab limit (use with caution)",
     )
     return parser
 
@@ -217,6 +235,25 @@ def main():
         return 0
 
     try:
+        # Licensing / capacity guidance: soft cap at 520 unless bypassed
+        if args.nodes and not getattr(args, "allow_oversubscribe", False) and args.nodes > 520:
+            parser.error(
+                f"nodes={args.nodes} exceeds the recommended maximum of 520 for typical enterprise licenses. "
+                "Use --allow-oversubscribe to bypass this check if your environment supports more."
+            )
+        # Early validation for flat mode port assumptions
+        if args.mode == "flat":
+            if args.flat_group_size + 1 > 32:
+                parser.error(
+                    f"Invalid --flat-group-size {args.flat_group_size}: requires {args.flat_group_size + 1} ports per access switch (>32). Reduce --flat-group-size."
+                )
+            if args.nodes:
+                from math import ceil
+
+                if ceil(args.nodes / args.flat_group_size) > 32:
+                    parser.error(
+                        f"Invalid combination: nodes={args.nodes}, group_size={args.flat_group_size} requires more than 32 access switches (core ports). Increase --flat-group-size."
+                    )
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
             return Renderer.offline_flat_yaml(args, cfg)
