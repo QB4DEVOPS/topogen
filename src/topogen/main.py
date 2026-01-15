@@ -133,6 +133,32 @@ def create_argparser():
         help="Export the created lab to a YAML file at FILE",
     )
     parser.add_argument(
+        "--offline-yaml",
+        dest="offline_yaml",
+        metavar="FILE",
+        type=str,
+        help="Generate a CML-compatible YAML locally (no controller required)",
+    )
+    parser.add_argument(
+        "--cml-version",
+        dest="cml_version",
+        type=str,
+        default="0.3.0",
+        choices=[
+            "0.0.1",
+            "0.0.2",
+            "0.0.3",
+            "0.0.4",
+            "0.0.5",
+            "0.1.0",
+            "0.2.0",
+            "0.2.1",
+            "0.2.2",
+            "0.3.0",
+        ],
+        help="CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)",
+    )
+    parser.add_argument(
         "nodes",
         nargs="?",
         type=valid_node_count,
@@ -191,6 +217,10 @@ def main():
         return 0
 
     try:
+        # Offline YAML path requires no controller
+        if getattr(args, "offline_yaml", None):
+            return Renderer.offline_flat_yaml(args, cfg)
+
         renderer = Renderer(args, cfg)
         # argparse ensures correct mode
         if args.mode == "simple":
