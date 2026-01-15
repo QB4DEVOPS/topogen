@@ -17,8 +17,9 @@ controller, creating the lab, nodes and links on the fly.
   template configures DNS)
 - provide a default route via DNS host, distributed via OSPF
 - provide outbound NAT on the DNS host for the entire network
- - flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
- - optional YAML export of generated labs
+- flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
+- YAML export of generated labs via controller API
+- offline YAML generation for CML (no controller needed) with `--offline-yaml`
 
 ## Installation
 
@@ -79,7 +80,7 @@ providing `-h` or `--help`:
 $ topogen --help
 usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [--ca CAFILE] [-i] [-d DISTANCE] [-L LABNAME] [-T TEMPLATE]
                [--device-template DEV_TEMPLATE] [--list-templates] [-m {nx,simple,flat}] [--flat-group-size FLAT_GROUP_SIZE]
-               [--yaml FILE]
+               [--yaml FILE] [--offline-yaml FILE] [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}]
                [nodes]
 
 generate test topology files and configurations for CML2
@@ -104,7 +105,9 @@ optional arguments:
                         mode of operation, default is "simple"
   --flat-group-size FLAT_GROUP_SIZE
                         Routers per unmanaged switch when using flat mode, default 20
-  --yaml FILE           Export the created lab to a YAML file at FILE
+  --yaml FILE           Export the created lab to a YAML file at FILE (via controller API)
+  --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller required)
+  --cml-version ...     CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)
 
 configuration:
   -c CONFIGFILE, --config CONFIGFILE
@@ -152,21 +155,32 @@ In `flat` mode, interface addresses are deterministic and encode the router numb
 in the last 16 bits (1-based). For router `Rn` where `n` is 1..N:
 
 - `Gi0/0` = `10.10.C.D/16`
-- `Loopback0` = `10.20.C.D/16`
+- `Loopback0` = `10.20.C.D/32`
 
 Where `C = floor(n / 256)` and `D = n % 256`.
 
 Examples:
 
-- `R1`   → `Gi0/0 10.10.0.1/16`, `Lo0 10.20.0.1/16`
-- `R256` → `Gi0/0 10.10.1.0/16`, `Lo0 10.20.1.0/16`
-- `R257` → `Gi0/0 10.10.1.1/16`, `Lo0 10.20.1.1/16`
+- `R1`   → `Gi0/0 10.10.0.1/16`, `Lo0 10.20.0.1/32`
+- `R256` → `Gi0/0 10.10.1.0/16`, `Lo0 10.20.1.0/32`
+- `R257` → `Gi0/0 10.10.1.1/16`, `Lo0 10.20.1.1/32`
 
-### YAML export
+### YAML export (controller)
 
 When `--yaml FILE` is provided, the created lab is exported to the given file after
-generation. The connected controller must support lab export via the PCL; otherwise
-the tool will log an error.
+generation via the controller API. The connected controller must support lab export
+via the PCL; otherwise the tool will log an error.
+
+### Offline YAML export (no controller)
+
+Use `--offline-yaml FILE` to emit a CML-compatible YAML locally without contacting
+the controller. This is ideal for very large labs and for environments where API
+export is not available.
+
+- Schema selection: `--cml-version` chooses the lab schema version (CML 2.9 uses `0.3.0`).
+- Topology: star fabric with one core `SWmgt0`, N access `SWmgt1..N`, and routers `R1..R${nodes}`.
+- Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
+- Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
 
 ### Examples
 
@@ -184,6 +198,29 @@ $env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="p
 topogen -L "FlatLab-300-star-eigrp" -T iosv-eigrp --device-template iosv -m flat \
   --flat-group-size 20 --yaml "flatlab-300-star-eigrp.yaml" --insecure 300
 ```
+
+Create a 10-node offline YAML (no controller):
+
+```powershell
+topogen --cml-version 0.3.0 -L "TestOffline-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --offline-yaml test-offline-10.yaml 10
+```
+
+Create a 300-node offline YAML:
+
+```powershell
+topogen --cml-version 0.3.0 -L "FlatLab-300-star-eigrp-l32" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 20 --offline-yaml flatlab-300-star-eigrp-l32.yaml 300
+```
+
+Create a 500-node offline YAML:
+
+```powershell
+topogen --cml-version 0.3.0 -L "FlatLab-500-star-eigrp-l32" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 20 --offline-yaml flatlab-500-star-eigrp-l32.yaml 500
+```
+
+> Note: Generated offline YAML artifacts are ignored by Git (patterns `flatlab-*.yaml` and `test-offline-*.yaml`).
 
 #### Other Configuration
 
