@@ -99,6 +99,13 @@ def create_argparser():
         default="iosv",
     )
     parser.add_argument(
+        "--device-template",
+        dest="dev_template",
+        type=str,
+        default="iosv",
+        help='CML node definition to use for routers (e.g., iosv, iol, lxc). Defaults to "%(default)s"',
+    )
+    parser.add_argument(
         "--list-templates",
         dest="listtemplates",
         action="store_true",
@@ -107,9 +114,49 @@ def create_argparser():
     parser.add_argument(
         "-m",
         "--mode",
-        choices=("nx", "simple"),
+        choices=("nx", "simple", "flat"),
         default="simple",
         help='mode of operation, default is "%(default)s"',
+    )
+    parser.add_argument(
+        "--flat-group-size",
+        dest="flat_group_size",
+        type=int,
+        default=20,
+        help="Routers per unmanaged switch when using flat mode, default %(default)d",
+    )
+    parser.add_argument(
+        "--yaml",
+        dest="yaml_output",
+        metavar="FILE",
+        type=str,
+        help="Export the created lab to a YAML file at FILE",
+    )
+    parser.add_argument(
+        "--offline-yaml",
+        dest="offline_yaml",
+        metavar="FILE",
+        type=str,
+        help="Generate a CML-compatible YAML locally (no controller required)",
+    )
+    parser.add_argument(
+        "--cml-version",
+        dest="cml_version",
+        type=str,
+        default="0.3.0",
+        choices=[
+            "0.0.1",
+            "0.0.2",
+            "0.0.3",
+            "0.0.4",
+            "0.0.5",
+            "0.1.0",
+            "0.2.0",
+            "0.2.1",
+            "0.2.2",
+            "0.3.0",
+        ],
+        help="CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)",
     )
     parser.add_argument(
         "nodes",
@@ -170,12 +217,18 @@ def main():
         return 0
 
     try:
+        # Offline YAML path requires no controller
+        if getattr(args, "offline_yaml", None):
+            return Renderer.offline_flat_yaml(args, cfg)
+
         renderer = Renderer(args, cfg)
         # argparse ensures correct mode
         if args.mode == "simple":
             retval = renderer.render_node_sequence()
-        else:  # args.mode == "nx":
+        elif args.mode == "nx":
             retval = renderer.render_node_network()
+        else:  # args.mode == "flat"
+            retval = renderer.render_flat_network()
     except TopogenError as exc:
         _LOGGER.error(exc)
         retval = 1

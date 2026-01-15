@@ -17,6 +17,8 @@ controller, creating the lab, nodes and links on the fly.
   template configures DNS)
 - provide a default route via DNS host, distributed via OSPF
 - provide outbound NAT on the DNS host for the entire network
+ - flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
+ - optional YAML export of generated labs
 
 ## Installation
 
@@ -76,7 +78,8 @@ providing `-h` or `--help`:
 ```plain
 $ topogen --help
 usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [--ca CAFILE] [-i] [-d DISTANCE] [-L LABNAME] [-T TEMPLATE]
-               [--list-templates] [-m {nx,simple}]
+               [--device-template DEV_TEMPLATE] [--list-templates] [-m {nx,simple,flat}] [--flat-group-size FLAT_GROUP_SIZE]
+               [--yaml FILE]
                [nodes]
 
 generate test topology files and configurations for CML2
@@ -93,10 +96,15 @@ optional arguments:
   -L LABNAME, --labname LABNAME
                         Lab name to create, default "topogen lab"
   -T TEMPLATE, --template TEMPLATE
-                        Template name to use, defaults to "iosv"
+                        Configuration template to use, defaults to "iosv"
+  --device-template DEV_TEMPLATE
+                        CML node definition for routers (e.g. iosv, iol, lxc). Defaults to "iosv"
   --list-templates      List all available templates
-  -m {nx,simple}, --mode {nx,simple}
+  -m {nx,simple,flat}, --mode {nx,simple,flat}
                         mode of operation, default is "simple"
+  --flat-group-size FLAT_GROUP_SIZE
+                        Routers per unmanaged switch when using flat mode, default 20
+  --yaml FILE           Export the created lab to a YAML file at FILE
 
 configuration:
   -c CONFIGFILE, --config CONFIGFILE
@@ -113,21 +121,69 @@ At a minimum, the amount of nodes to be created must be provided.
 
 #### Modes
 
-There are two modes available right now:
+There are three modes available right now:
 
 - `nx`: this creates a partially meshed topology.  It also places nodes in clusters
   which is more pronounced with many nodes (>40).
 - `simple` (which is the default): this creates a single string of nodes, laid out
   in a square / spiral pattern.
+- `flat`: builds a flat L2 fabric for large-scale experiments. One core unmanaged
+  switch (SWmgt0) connects to N access unmanaged switches (SWmgt1..N). Each router
+  connects only to its access switch on `Gi0/0`. Group size per access switch is
+  controlled by `--flat-group-size` (default 20). No router-to-router links are
+  created in this mode.
 
 #### Templates
 
-To list the available templates, use the `--list-templates` switch.  Currently,
-only an IOSv template is provided.
+To list the available templates, use the `--list-templates` switch.  Templates include:
+
+- `iosv`: default IOSv OSPF-based template
+- `iosv-eigrp`: IOSv template that configures EIGRP 100 and advertises both `Gi0/0`
+  and `Loopback0` (with `Loopback0` set to passive)
 
 To choose a specific template, provide the `--template=iosv` switch.
 
-Currently, all router nodes are using the same template.
+Currently, all router nodes are using the same configuration template. The CML node
+definition can be selected independently via `--device-template`.
+
+### Flat mode addressing (deterministic)
+
+In `flat` mode, interface addresses are deterministic and encode the router number
+in the last 16 bits (1-based). For router `Rn` where `n` is 1..N:
+
+- `Gi0/0` = `10.10.C.D/16`
+- `Loopback0` = `10.20.C.D/16`
+
+Where `C = floor(n / 256)` and `D = n % 256`.
+
+Examples:
+
+- `R1`   → `Gi0/0 10.10.0.1/16`, `Lo0 10.20.0.1/16`
+- `R256` → `Gi0/0 10.10.1.0/16`, `Lo0 10.20.1.0/16`
+- `R257` → `Gi0/0 10.10.1.1/16`, `Lo0 10.20.1.1/16`
+
+### YAML export
+
+When `--yaml FILE` is provided, the created lab is exported to the given file after
+generation. The connected controller must support lab export via the PCL; otherwise
+the tool will log an error.
+
+### Examples
+
+Create a 300-node flat star lab directly on a controller (insecure TLS):
+
+```powershell
+$env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="pass"
+topogen -L "FlatLab-300-star" -T iosv -m flat --flat-group-size 20 --insecure --progress 300
+```
+
+Create the same lab with EIGRP config and export YAML:
+
+```powershell
+$env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="pass"
+topogen -L "FlatLab-300-star-eigrp" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 20 --yaml "flatlab-300-star-eigrp.yaml" --insecure 300
+```
 
 #### Other Configuration
 
