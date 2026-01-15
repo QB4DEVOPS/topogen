@@ -23,15 +23,11 @@ ip route 0.0.0.0 0.0.0.0 {{ origin.ip }}
 int Loopback0
     ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
 !
-router ospf 1
+router eigrp 100
     passive-interface Loopback0
-    network {{ node.loopback.ip }} 0.0.0.0 area 0
-    {%- for iface in node.interfaces %}
-    network {{ iface.address.ip }} 0.0.0.0 area 0
-    {%- endfor %}
-    {%- if origin %}
-    default-information originate
-    {%- endif %}
+    network 10.10.0.0 0.0.255.255
+    network 10.20.0.0 0.0.255.255
+    no auto-summary
 !
 {%- for iface in node.interfaces %}
 interface GigabitEthernet0/{{ loop.index0 }}

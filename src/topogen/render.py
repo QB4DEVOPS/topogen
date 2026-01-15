@@ -245,7 +245,8 @@ class Renderer:
 
     def create_router(self, label: str, coords=Point(0, 0)):
         """create a router node (this uses the template given, e.g. iosv)"""
-        return self.create_node(label, self.args.template, coords)
+        node_def = getattr(self.args, "dev_template", self.args.template)
+        return self.create_node(label, node_def, coords)
 
     def next_network(self) -> Set[IPv4Interface]:
         """return the next point-to-point network"""
@@ -456,6 +457,103 @@ class Renderer:
 
         return 0
 
+    def render_flat_network(self) -> int:
+        """Render a flat L2 management network.
+
+        - Create unmanaged switches, each serving up to args.flat_group_size routers.
+        - Connect all unmanaged switches in a linear chain to keep one broadcast domain.
+        - Connect each router's Gig0/0 (slot 0) to its group's switch.
+        - Do not assign IPs to interfaces; users will enable EIGRP on Gig0 later.
+        """
+
+        disable_pcl_loggers()
+
+        total = self.args.nodes
+        group = max(1, int(self.args.flat_group_size))
+        num_sw = math.ceil(total / group)
+
+        _LOGGER.warning("Creating %d unmanaged switches for %d routers (group size %d)", num_sw, total, group)
+
+        # Core switch in the middle
+        core = self.create_node("SWmgt0", "unmanaged_switch", Point(0, 0))
+
+        # Create access switches positioned horizontally
+        switches: list[Node] = []
+        for i in range(num_sw):
+            x = (i + 1) * self.args.distance * 3
+            sw = self.create_node(f"SWmgt{i+1}", "unmanaged_switch", Point(x, 0))
+            switches.append(sw)
+            # Connect each access switch back to core (star)
+            self.lab.create_link(self.new_interface(core), self.new_interface(sw))
+            _LOGGER.info("switch-link: %s <-> %s", core.label, sw.label)
+
+        # Create routers and attach Gig0/0 to the appropriate switch
+        for idx in range(total):
+            router_label = f"R{idx + 1}"
+            # Stagger routers below their switch
+            sw_index = idx // group
+            rx = (sw_index + 1) * self.args.distance * 3
+            ry = (idx % group + 1) * self.args.distance
+            cml_router = self.create_router(router_label, Point(rx, ry))
+
+            # Ensure we have an interface on router and switch, then link them
+            try:
+                r_if = cml_router.get_interface_by_slot(0)
+            except Exception:  # pragma: no cover - defensive
+                r_if = self.new_interface(cml_router)
+
+            sw = switches[sw_index]
+            s_if = self.new_interface(sw)
+            self.lab.create_link(r_if, s_if)
+            _LOGGER.info("link: %s Gi0/0 -> %s", cml_router.label, sw.label)
+
+            # Deterministic addressing (1-based index encoded in last 16 bits)
+            ridx = idx + 1
+            hi = (ridx // 256) & 0xFF
+            lo = ridx % 256
+            g_addr = IPv4Interface(f"10.10.{hi}.{lo}/16")
+            l_addr = IPv4Interface(f"10.20.{hi}.{lo}/32")
+
+            # Build config: Loopback0 and Gi0/0 with assigned addresses
+            node = TopogenNode(
+                hostname=router_label,
+                loopback=l_addr,
+                interfaces=[TopogenInterface(g_addr, description="mgmt flat", slot=0)],
+            )
+            config = self.template.render(
+                config=self.config,
+                node=node,
+                date=datetime.now(timezone.utc),
+                origin="",
+            )
+            cml_router.configuration = config  # type: ignore[method-assign]
+
+        _LOGGER.warning("Flat management network created")
+        # Optional YAML export
+        outfile = getattr(self.args, "yaml_output", None)
+        if outfile:
+            try:
+                content = None
+                if hasattr(self.client, "export_lab"):
+                    content = self.client.export_lab(self.lab.id)  # type: ignore[attr-defined]
+                elif hasattr(self.lab, "export"):
+                    content = self.lab.export()  # type: ignore[attr-defined]
+                elif hasattr(self.lab, "topology"):
+                    # as a last resort, dump topology JSON as YAML-compatible text
+                    content = str(self.lab.topology)  # type: ignore[attr-defined]
+                if content is not None:
+                    if isinstance(content, bytes):
+                        data = content
+                    else:
+                        data = str(content).encode("utf-8")
+                    with open(outfile, "wb") as fh:
+                        fh.write(data)
+                    _LOGGER.warning("Exported lab YAML to %s", outfile)
+                else:
+                    _LOGGER.error("YAML export not supported by client library")
+            except Exception as exc:  # pragma: no cover - best-effort export
+                _LOGGER.error("YAML export failed: %s", exc)
+        return 0
     def render_node_sequence(self):
         """render the square spiral / node sequence network. Note: due to TTL
         limitations, it does not make a lot of sense to have this larger than
