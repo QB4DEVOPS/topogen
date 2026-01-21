@@ -2,6 +2,15 @@
 
 This file lists changes.
 
+- Unreleased
+  - feat(flat): add flat mode for topology generation
+  - deterministic addressing and EIGRP template updates
+  - docs: add CONTRIBUTING.md and update README/examples
+  - config: add config.sample.toml with sane defaults
+  - templates/flags: add addressing flags and custom-template warning
+  - feat: add offline YAML export for CML 2.9 (schema flag)
+  - chore: ignore generated offline YAML and untrack sample YAML
+
 - version 0.2.1 (identical to 0.2.0, but make gh actions happy)
 - version 0.2.0
   - properly configure name server / domain name
