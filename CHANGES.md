@@ -10,6 +10,7 @@ This file lists changes.
   - templates/flags: add addressing flags and custom-template warning
   - feat: add offline YAML export for CML 2.9 (schema flag)
   - chore: ignore generated offline YAML and untrack sample YAML
+  feat(template): add iosv-eigrp-stub template (enable EIGRP stub connected summary)
 
 - version 0.2.1 (identical to 0.2.0, but make gh actions happy)
 - version 0.2.0

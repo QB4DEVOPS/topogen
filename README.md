@@ -187,6 +187,8 @@ To list the available templates, use the `--list-templates` switch.  Templates i
 - `iosv`: default IOSv OSPF-based template
 - `iosv-eigrp`: IOSv template that configures EIGRP 100 and advertises both `Gi0/0`
   and `Loopback0` (with `Loopback0` set to passive)
+- `iosv-eigrp-stub`: IOSv template that configures EIGRP 100 and advertises both `Gi0/0`
+  and `Loopback0` (with `Loopback0` set to passive) and enables eigrp stub connected summary
 
 To choose a specific template, provide the `--template=iosv` switch.
 
