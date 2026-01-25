@@ -483,6 +483,120 @@ class Renderer:
             manager.stop()  # type: ignore
 
         return 0
+    def render_flat_pair_network(self) -> int:
+        """Render a flat L2 management network with odd-even router pairing.
+
+        Rules:
+        - Create unmanaged switches like flat mode (same guardrails and positions).
+        - Odd routers: Gi0/0 -> access switch; additionally link Gi0/1 <-> even router's Gi0/0.
+        - Even routers: no link to access switch; only paired to preceding odd.
+        - If last odd router has no even partner, its Gi0/1 remains unused.
+        - Switch port counts (guardrails) remain based on configured group size.
+        - Interface IP addressing and templates remain identical to flat mode for now
+          (only Gi0/0 configured); pairing link has no IP unless templates are later updated.
+        """
+
+        disable_pcl_loggers()
+
+        total = self.args.nodes
+        group = max(1, int(self.args.flat_group_size))
+        num_sw = Renderer.validate_flat_topology(total, group)
+
+        dev_def = getattr(self.args, "dev_template", self.args.template)
+        if dev_def != "iosv":
+            _LOGGER.warning(
+                "Using custom device template '%s'; guardrails assume ~32-port unmanaged_switch and do not account for custom node definitions/images",
+                dev_def,
+            )
+
+        _LOGGER.warning(
+            "[flat-pair] Creating %d unmanaged switches for %d routers (group size %d)",
+            num_sw,
+            total,
+            group,
+        )
+
+        # Core switch
+        core = self.create_node("SWmgt0", "unmanaged_switch", Point(0, 0))
+
+        # Access switches positioned horizontally and connected to core
+        switches: list[Node] = []
+        for i in range(num_sw):
+            x = (i + 1) * self.args.distance * 3
+            sw = self.create_node(f"SWmgt{i+1}", "unmanaged_switch", Point(x, 0))
+            switches.append(sw)
+            self.lab.create_link(self.new_interface(core), self.new_interface(sw))
+            _LOGGER.info("switch-link: %s <-> %s", core.label, sw.label)
+
+        # Create routers and attach ONLY odd router Gi0/0 to the access switch
+        cml_routers: list[Node] = []
+        for idx in range(total):
+            router_label = f"R{idx + 1}"
+            sw_index = idx // group
+            rx = (sw_index + 1) * self.args.distance * 3
+            ry = (idx % group + 1) * self.args.distance
+            cml_router = self.create_router(router_label, Point(rx, ry))
+            cml_routers.append(cml_router)
+
+            # Configure addresses as in flat mode (Loopback and Gi0/0 only)
+            ridx = idx + 1
+            hi = (ridx // 256) & 0xFF
+            lo = ridx % 256
+            g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
+            l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
+            g_addr = IPv4Interface(f"{g_base}.{hi}.{lo}/16")
+            l_addr = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
+
+            node = TopogenNode(
+                hostname=router_label,
+                loopback=l_addr,
+                interfaces=[TopogenInterface(g_addr, description="mgmt flat-pair", slot=0)],
+            )
+            config = self.template.render(
+                config=self.config,
+                node=node,
+                date=datetime.now(timezone.utc),
+                origin="",
+            )
+            cml_router.configuration = config  # type: ignore[method-assign]
+
+            # Only odd routers connect Gi0/0 to access switch
+            if (idx + 1) % 2 == 1:
+                try:
+                    r_if = cml_router.get_interface_by_slot(0)
+                except Exception:
+                    r_if = self.new_interface(cml_router)
+                sw = switches[sw_index]
+                s_if = self.new_interface(sw)
+                self.lab.create_link(r_if, s_if)
+                _LOGGER.info("link: %s Gi0/0 -> %s", cml_router.label, sw.label)
+
+        # Create odd-even pairing links: R1 Gi0/1 <-> R2 Gi0/0, R3 Gi0/1 <-> R4 Gi0/0, ...
+        for odd in range(1, total + 1, 2):
+            even = odd + 1
+            if even > total:
+                # No partner for last odd router; Gi0/1 remains unused
+                _LOGGER.info("pair: R%d has no even partner; Gi0/1 unused", odd)
+                continue
+
+            odd_router = cml_routers[odd - 1]
+            even_router = cml_routers[even - 1]
+
+            # Ensure Gi0/1 exists on odd, Gi0/0 on even
+            try:
+                odd_if = odd_router.get_interface_by_slot(1)
+            except Exception:
+                odd_if = self.new_interface(odd_router)
+            try:
+                even_if = even_router.get_interface_by_slot(0)
+            except Exception:
+                even_if = self.new_interface(even_router)
+
+            self.lab.create_link(odd_if, even_if)
+            _LOGGER.info("pair-link: R%d Gi0/1 <-> R%d Gi0/0", odd, even)
+
+        _LOGGER.warning("Flat-pair management network created")
+        return 0
 
     @staticmethod
     def offline_flat_yaml(args: Namespace, cfg: Config) -> int:
