@@ -3,6 +3,12 @@
 This file lists changes.
 
 - Unreleased
+  - empty
+
+- version 0.2.4
+  - empty
+
+- version 0.2.3
   - feat(flat): add flat mode for topology generation
   - deterministic addressing and EIGRP template updates
   - docs: add CONTRIBUTING.md and update README/examples
