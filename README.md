@@ -189,6 +189,7 @@ To list the available templates, use the `--list-templates` switch.  Templates i
   and `Loopback0` (with `Loopback0` set to passive)
 - `iosv-eigrp-stub`: IOSv template that configures EIGRP 100 and advertises both `Gi0/0`
   and `Loopback0` (with `Loopback0` set to passive) and enables eigrp stub connected summary
+- `iosv-eigrp-nonflat`: IOSv template for simple/NX modes. EIGRP 100 with passive-interface Loopback0; advertises 10.0.0.0/8 (Lo0) and 172.16.0.0/12 (p2p links).
 
 To choose a specific template, provide the `--template=iosv` switch.
 
@@ -272,6 +273,22 @@ Create a 300-node flat star lab directly on a controller (insecure TLS):
 $env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="pass"
 topogen -L "FlatLab-300-star" -T iosv -m flat --flat-group-size 20 --insecure --progress 300
 ```
+Create a 20-node simple lab with EIGRP (non-flat):
+
+powershell
+topogen -L "Simple-20-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
+  -m simple --distance 250 --insecure --progress 20
+Create a 20-node NX lab with EIGRP (non-flat):
+
+powershell
+topogen -L "NX-20-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
+  -m nx --distance 250 --insecure --progress 20
+Create and export a 500-node NX lab with EIGRP (YAML filename is Git-ignored):
+
+powershell
+topogen -L "NX-500-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
+  -m nx --distance 300 --yaml NX-500-eigrp.yaml --insecure --progress 500
+
 
 Create the same lab with EIGRP config and export YAML:
 
@@ -340,6 +357,12 @@ at the moment (it is actually replaced with the IP address of the DNS host's
 second interface / NIC facing the router network).
 
 ## Operation
+
+> [!NOTE]
+> For large online builds (e.g., simple/NX with hundreds of nodes), the CML UI may not
+> visibly update the topology immediately. It is normal for no changes to appear until
+> roughly 25% of the creation process has completed. Let TopoGen continue; nodes and
+> links will show up progressively as creation advances.
 
 The topology has an external connector and a DNS-host (based on Alpine).  On
 that host, a dnsmasq DNS server is running which can resolve all IP addresses

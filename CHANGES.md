@@ -13,6 +13,9 @@ This file lists changes.
   - chore(gitignore): ignore NX lab YAML exports ([Nn][Xx]-*.yaml)
   - feat(template): add iosv-eigrp-stub template (enable EIGRP stub connected summary)
   - docs(readme): note non-flat EIGRP default-route limitation (user must originate default)
+  - feat(template): add iosv-eigrp-nonflat for simple/NX (EIGRP 100 on 10.0.0.0/8 and 172.16.0.0/12; passive Lo0)
+  - docs(readme): add non-flat EIGRP examples and note that large online builds may not show UI updates until ~25%
+  - docs(readme): add flat mode examples
 
 - version 0.2.1 (identical to 0.2.0, but make gh actions happy)
 - version 0.2.0
