@@ -192,6 +192,8 @@ To list the available templates, use the `--list-templates` switch.  Templates i
 
 To choose a specific template, provide the `--template=iosv` switch.
 
+[!NOTE] In non-flat (simple/NX) EIGRP labs, the DNS/jumphost does not run EIGRP, so a default route (0/0) is not automatically originated into the EIGRP domain. Until this is improved, manually originate a default on the intended exit router, or configure a per-router static default toward the DNS path. This does not affect flat/offline mode.
+
 Currently, all router nodes are using the same configuration template. The CML node
 definition can be selected independently via `--device-template`.
 

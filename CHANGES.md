@@ -11,7 +11,8 @@ This file lists changes.
   - feat: add offline YAML export for CML 2.9 (schema flag)
   - chore: ignore generated offline YAML and untrack sample YAML
   - chore(gitignore): ignore NX lab YAML exports ([Nn][Xx]-*.yaml)
-  feat(template): add iosv-eigrp-stub template (enable EIGRP stub connected summary)
+  - feat(template): add iosv-eigrp-stub template (enable EIGRP stub connected summary)
+  - docs(readme): note non-flat EIGRP default-route limitation (user must originate default)
 
 - version 0.2.1 (identical to 0.2.0, but make gh actions happy)
 - version 0.2.0

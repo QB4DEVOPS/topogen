@@ -17,7 +17,7 @@ Thanks for contributing! This document describes how to propose changes and the 
   - Merge commit for coordinated integration/release branches.
 
 ## Commit messages
-- Use Conventional Commits where practical:
+- Use Conventional Commits where practical
   - feat: add multi-hub DMVPN config generation
   - fix: correct flat mode port guard for access/core
   - refactor: split renderer responsibilities
