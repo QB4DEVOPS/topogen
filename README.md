@@ -315,28 +315,28 @@ Create a 10-node offline YAML (no controller):
 
 ```powershell
 topogen --cml-version 0.3.0 -L "TestOffline-10" -T iosv-eigrp --device-template iosv -m flat \
-  --flat-group-size 5 --offline-yaml test-offline-10.yaml 10
+  --flat-group-size 5 --offline-yaml out/test-offline-10.yaml 10
 ```
 
 Create a 12-node `flat-pair` offline YAML with VRF enabled on odd routers (`Gi0/1`):
 
 ```powershell
 topogen --cml-version 0.3.0 -L "vasailli" -T iosv --device-template iosv -m flat-pair \
-  --flat-group-size 20 --vrf --pair-vrf TENANT --offline-yaml vasailli-12-flat-pair.yaml 12
+  --flat-group-size 20 --vrf --pair-vrf TENANT --offline-yaml out/vasailli-12-flat-pair.yaml 12
 ```
 
 Create a 300-node offline YAML:
 
 ```powershell
 topogen --cml-version 0.3.0 -L "FlatLab-300-star-eigrp-l32" -T iosv-eigrp --device-template iosv -m flat \
-  --flat-group-size 20 --offline-yaml flatlab-300-star-eigrp-l32.yaml 300
+  --flat-group-size 20 --offline-yaml out/flatlab-300-star-eigrp-l32.yaml 300
 ```
 
 Create a 500-node offline YAML:
 
 ```powershell
 topogen --cml-version 0.3.0 -L "FlatLab-500-star-eigrp-l32" -T iosv-eigrp --device-template iosv -m flat \
-  --flat-group-size 20 --offline-yaml flatlab-500-star-eigrp-l32.yaml 500
+  --flat-group-size 20 --offline-yaml out/flatlab-500-star-eigrp-l32.yaml 500
 ```
 
 Addressing variant examples (flat mode):
@@ -345,7 +345,7 @@ Addressing variant examples (flat mode):
 
 ```powershell
 topogen --cml-version 0.3.0 -L "FlatLab-300-addr-variant" -T iosv-eigrp --device-template iosv -m flat \
-  --flat-group-size 20 --loopback-255 --gi0-zero --offline-yaml flatlab-300-addr-variant.yaml 300
+  --flat-group-size 20 --loopback-255 --gi0-zero --offline-yaml out/flatlab-300-addr-variant.yaml 300
 ```
 
 - Same addressing variant on controller (online):
@@ -355,7 +355,7 @@ topogen -L "FlatLab-300-addr-variant" -T iosv-eigrp --device-template iosv -m fl
   --flat-group-size 20 --loopback-255 --gi0-zero --insecure 300
 ```
 
-> Note: Generated offline YAML artifacts are ignored by Git (patterns `flatlab-*.yaml` and `test-offline-*.yaml`).
+> Note: Generated offline YAML artifacts are recommended to be written under `out/` and are ignored by Git.
 
 #### Other Configuration
 

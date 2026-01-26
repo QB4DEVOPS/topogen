@@ -8,6 +8,7 @@ This file lists changes.
     - enable with `--vrf`
     - set VRF name with `--pair-vrf NAME`
     - lab descriptions (online and offline YAML) include VRF flags when enabled
+  - docs: offline YAML output is recommended to be written under the `out/` directory (see README examples)
 
 - version 0.2.4
   - empty
