@@ -48,7 +48,7 @@ class CoordsGenerator:
 class TopogenInterface:
     """interface of a node, slot is the physical slot in the device"""
 
-    address: IPv4Interface
+    address: IPv4Interface | None = None
     description: str = ""
     slot: int = 0
 

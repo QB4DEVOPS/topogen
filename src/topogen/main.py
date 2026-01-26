@@ -114,7 +114,7 @@ def create_argparser():
     parser.add_argument(
         "-m",
         "--mode",
-        choices=("nx", "simple", "flat"),
+        choices=("nx", "simple", "flat", "flat-pair"),
         default="simple",
         help='mode of operation, default is "%(default)s"',
     )
@@ -256,7 +256,10 @@ def main():
                     )
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
-            return Renderer.offline_flat_yaml(args, cfg)
+            if args.mode == "flat-pair":
+                return Renderer.offline_flat_pair_yaml(args, cfg)
+            else:
+                return Renderer.offline_flat_yaml(args, cfg)
 
         renderer = Renderer(args, cfg)
         # argparse ensures correct mode
@@ -264,8 +267,10 @@ def main():
             retval = renderer.render_node_sequence()
         elif args.mode == "nx":
             retval = renderer.render_node_network()
-        else:  # args.mode == "flat"
+        elif args.mode == "flat":
             retval = renderer.render_flat_network()
+        else:  # args.mode == "flat-pair"
+            retval = renderer.render_flat_pair_network()
     except TopogenError as exc:
         _LOGGER.error(exc)
         retval = 1
