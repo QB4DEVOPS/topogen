@@ -264,6 +264,8 @@ Use `--offline-yaml FILE` to emit a CML-compatible YAML locally without contacti
 the controller. This is ideal for very large labs and for environments where API
 export is not available.
 
+TopoGen does not pick an output filename automatically; you must provide one. We recommend `out/` for generated artifacts.
+
 - Schema selection: `--cml-version` chooses the lab schema version (CML 2.9 uses `0.3.0`).
 - Topology: star fabric with one core `SWmgt0`, N access `SWmgt1..N`, and routers `R1..R${nodes}`.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
