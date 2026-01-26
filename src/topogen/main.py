@@ -138,6 +138,20 @@ def create_argparser():
         help="Use 10.0.C.D/16 for Gi0/0 addressing in flat mode (default is 10.10.C.D/16)",
     )
     parser.add_argument(
+        "--vrf",
+        dest="enable_vrf",
+        action="store_true",
+        help="Enable VRF configuration (applies to flat-pair odd-router Gi0/1 when combined with --pair-vrf)",
+        default=False,
+    )
+    parser.add_argument(
+        "--pair-vrf",
+        dest="pair_vrf",
+        type=str,
+        default="tenant",
+        help='VRF name to apply to the flat-pair odd-router Gi0/1 (pair link), default "%(default)s"',
+    )
+    parser.add_argument(
         "--yaml",
         dest="yaml_output",
         metavar="FILE",

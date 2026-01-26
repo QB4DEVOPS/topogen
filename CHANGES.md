@@ -3,8 +3,11 @@
 This file lists changes.
 
 - Unreleased
-  - empty
-  - feat(flat): add new mode "flat-pair" (odd-even pairing). Odd: Gi0/0 -> access switch and Gi0/1 -> even's Gi0/0. Even: no leaf link. Last odd without partner leaves Gi0/1 unused. Pair link currently L2-only (no IPs).
+  - feat(flat): add new mode "flat-pair" (odd-even pairing). Odd: Gi0/0 -> access switch and Gi0/1 -> even's Gi0/0. Even: no leaf link. Last odd without partner leaves Gi0/1 unused.
+  - feat(vrf): add optional VRF support for flat-pair pair links (odd router Gi0/1)
+    - enable with `--vrf`
+    - set VRF name with `--pair-vrf NAME`
+    - lab descriptions (online and offline YAML) include VRF flags when enabled
 
 - version 0.2.4
   - empty

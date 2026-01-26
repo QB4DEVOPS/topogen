@@ -175,6 +175,10 @@ There are three modes available right now:
   connects only to its access switch on `Gi0/0`. Group size per access switch is
   controlled by `--flat-group-size` (default 20). No router-to-router links are
   created in this mode.
+- `flat-pair`: similar to `flat`, but routers are odd/even paired.
+  - Odd routers: `Gi0/0` connects to the access switch and `Gi0/1` connects to the even router's `Gi0/0`.
+  - Even routers: no access-switch link; only paired to the preceding odd router.
+  - If the last router is odd and has no partner, its `Gi0/1` is unused.
 
 > [!NOTE]
 > Flat mode implements a star fabric (not chained). Unmanaged switch interfaces are
@@ -265,6 +269,15 @@ export is not available.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
 - Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
 
+### VRF support (flat-pair)
+
+In `flat-pair` mode, an optional VRF can be applied to the odd router pair-link interface (`Gi0/1`).
+
+- `--vrf`: enable VRF configuration
+- `--pair-vrf NAME`: VRF name to use (default: `tenant`)
+
+When enabled, the generated router configs include a `ip vrf NAME` stanza and apply `ip vrf forwarding NAME` under `Gi0/1` on odd routers.
+
 ### Examples
 
 Create a 300-node flat star lab directly on a controller (insecure TLS):
@@ -303,6 +316,13 @@ Create a 10-node offline YAML (no controller):
 ```powershell
 topogen --cml-version 0.3.0 -L "TestOffline-10" -T iosv-eigrp --device-template iosv -m flat \
   --flat-group-size 5 --offline-yaml test-offline-10.yaml 10
+```
+
+Create a 12-node `flat-pair` offline YAML with VRF enabled on odd routers (`Gi0/1`):
+
+```powershell
+topogen --cml-version 0.3.0 -L "vasailli" -T iosv --device-template iosv -m flat-pair \
+  --flat-group-size 20 --vrf --pair-vrf TENANT --offline-yaml vasailli-12-flat-pair.yaml 12
 ```
 
 Create a 300-node offline YAML:

@@ -49,6 +49,7 @@ class TopogenInterface:
     """interface of a node, slot is the physical slot in the device"""
 
     address: IPv4Interface | None = None
+    vrf: str | None = None
     description: str = ""
     slot: int = 0
 

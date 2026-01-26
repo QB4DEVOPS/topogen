@@ -16,6 +16,14 @@ ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
 !
+{%- set ns = namespace(seen={}) %}
+{%- for iface in node.interfaces %}
+{%- if iface.vrf and not ns.seen.get(iface.vrf) %}
+ip vrf {{ iface.vrf }}
+!
+{%- set _ = ns.seen.update({iface.vrf: true}) %}
+{%- endif %}
+{%- endfor %}
 {%- if origin %}
 ip route 0.0.0.0 0.0.0.0 {{ origin.ip }}
 !
@@ -34,7 +42,12 @@ interface GigabitEthernet0/{{ loop.index0 }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}
+    {%- if iface.vrf %}
+    ip vrf forwarding {{ iface.vrf }}
+    {%- endif %}
+    {%- if iface.address %}
     ip address {{ iface.address.ip }} {{ iface.address.netmask }}
+    {%- endif %}
     cdp enable
     no shutdown
 !

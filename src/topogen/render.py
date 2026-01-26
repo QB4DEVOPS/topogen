@@ -148,6 +148,10 @@ class Renderer:
             dev_def = getattr(args, "dev_template", args.template)
             if dev_def != args.template:
                 args_bits.append(f"--device-template {dev_def}")
+            if getattr(args, "enable_vrf", False):
+                args_bits.append("--vrf")
+                if getattr(args, "pair_vrf", None):
+                    args_bits.append(f"--pair-vrf {args.pair_vrf}")
             if str(args.mode).startswith("flat"):
                 args_bits.append(f"--flat-group-size {args.flat_group_size}")
                 if getattr(args, "loopback_255", False):
@@ -410,7 +414,7 @@ class Renderer:
                 addr = IPv4Interface(f"{next(hosts)}/{prefix.netmask}")
                 label = format_interface_description(order, node_index)
                 interfaces.append(
-                    TopogenInterface(addr, label, slot=order[node_index].slot)
+                    TopogenInterface(address=addr, description=label, slot=order[node_index].slot)
                 )
                 dns_zone.append(DNShost(format_dns_entry(order, node_index), addr.ip))
 
@@ -429,7 +433,7 @@ class Renderer:
                 label = format_interface_description(pair, node_index)
                 assert core_iface.slot is not None
                 interfaces.append(
-                    TopogenInterface(dns_via, label, slot=core_iface.slot)
+                    TopogenInterface(address=dns_via, description=label, slot=core_iface.slot)
                 )
                 dns_zone.append(DNShost(format_dns_entry(pair, node_index), dns_via.ip))
 
@@ -503,8 +507,8 @@ class Renderer:
             hostname=DNS_HOST_NAME,
             loopback=None,
             interfaces=[
-                TopogenInterface(dns_addr),
-                TopogenInterface(dns_via),
+                TopogenInterface(address=dns_addr),
+                TopogenInterface(address=dns_via),
             ],
         )
         dns_zone.append(DNShost(f"{DNS_HOST_NAME}-eth1", dns_addr.ip))
@@ -607,14 +611,24 @@ class Renderer:
             if rnum % 2 == 1:
                 # odd
                 odd_ip = pair_ips.get(rnum, (None, None))[0]
+                pair_vrf = (
+                    getattr(self.args, "pair_vrf", None)
+                    if getattr(self.args, "enable_vrf", False)
+                    else None
+                )
                 ifaces = [
-                    TopogenInterface(g_addr, description="mgmt flat-pair", slot=0),
-                    TopogenInterface(odd_ip, description="pair link", slot=1),
+                    TopogenInterface(address=g_addr, description="mgmt flat-pair", slot=0),
+                    TopogenInterface(
+                        address=odd_ip,
+                        vrf=pair_vrf,
+                        description="pair link",
+                        slot=1,
+                    ),
                 ]
             else:
                 # even
                 even_ip = pair_ips.get(rnum - 1, (None, None))[1]
-                ifaces = [TopogenInterface(even_ip, description="pair link", slot=0)]
+                ifaces = [TopogenInterface(address=even_ip, description="pair link", slot=0)]
 
             node = TopogenNode(
                 hostname=router_label,
@@ -714,6 +728,10 @@ class Renderer:
         dev_def = getattr(args, "dev_template", args.template)
         if dev_def != args.template:
             args_bits.append(f"--device-template {dev_def}")
+        if getattr(args, "enable_vrf", False):
+            args_bits.append("--vrf")
+            if getattr(args, "pair_vrf", None):
+                args_bits.append(f"--pair-vrf {args.pair_vrf}")
         if args.mode.startswith("flat"):
             args_bits.append(f"--flat-group-size {args.flat_group_size}")
             if getattr(args, "loopback_255", False):
@@ -796,7 +814,11 @@ class Renderer:
             node = TopogenNode(
                 hostname=label,
                 loopback=IPv4Interface(f"{l_ip}/32"),
-                interfaces=[TopogenInterface(IPv4Interface(f"{g_ip}/16"), description="mgmt flat", slot=0)],
+                interfaces=[
+                    TopogenInterface(
+                        address=IPv4Interface(f"{g_ip}/16"), description="mgmt flat", slot=0
+                    )
+                ],
             )
             rendered = tpl.render(config=cfg, node=node, date=datetime.now(timezone.utc), origin="")
 
@@ -887,6 +909,10 @@ class Renderer:
         dev_def = getattr(args, "dev_template", args.template)
         if dev_def != args.template:
             args_bits.append(f"--device-template {dev_def}")
+        if getattr(args, "enable_vrf", False):
+            args_bits.append("--vrf")
+            if getattr(args, "pair_vrf", None):
+                args_bits.append(f"--pair-vrf {args.pair_vrf}")
         args_bits.append(f"--flat-group-size {args.flat_group_size}")
         if getattr(args, "loopback_255", False):
             args_bits.append("--loopback-255")
@@ -984,13 +1010,25 @@ class Renderer:
             # Offline config mirrors online behavior with optional p2p IPs
             if n % 2 == 1:
                 odd_ip = pair_ips_off.get(n, (None, None))[0]
+                pair_vrf = (
+                    getattr(args, "pair_vrf", None)
+                    if getattr(args, "enable_vrf", False)
+                    else None
+                )
                 ifaces = [
-                    TopogenInterface(IPv4Interface(f"{g_ip}/16"), description="mgmt flat-pair", slot=0),
-                    TopogenInterface(odd_ip, description="pair link", slot=1),
+                    TopogenInterface(
+                        address=IPv4Interface(f"{g_ip}/16"), description="mgmt flat-pair", slot=0
+                    ),
+                    TopogenInterface(
+                        address=odd_ip,
+                        vrf=pair_vrf,
+                        description="pair link",
+                        slot=1,
+                    ),
                 ]
             else:
                 even_ip = pair_ips_off.get(n - 1, (None, None))[1]
-                ifaces = [TopogenInterface(even_ip, description="pair link", slot=0)]
+                ifaces = [TopogenInterface(address=even_ip, description="pair link", slot=0)]
 
             node = TopogenNode(
                 hostname=label,
@@ -1141,7 +1179,7 @@ class Renderer:
             node = TopogenNode(
                 hostname=router_label,
                 loopback=l_addr,
-                interfaces=[TopogenInterface(g_addr, description="mgmt flat", slot=0)],
+                interfaces=[TopogenInterface(address=g_addr, description="mgmt flat", slot=0)],
             )
             config = self.template.render(
                 config=self.config,
@@ -1224,8 +1262,8 @@ class Renderer:
             loopback = IPv4Interface(next(self.loopbacks))
             src_iface, dst_iface = self.next_network()
             interfaces = [
-                TopogenInterface(src_iface),
-                TopogenInterface(prev_iface),
+                TopogenInterface(address=src_iface),
+                TopogenInterface(address=prev_iface),
             ]
             node = TopogenNode(
                 hostname=f"R{idx + 1}",
@@ -1251,8 +1289,8 @@ class Renderer:
             hostname=DNS_HOST_NAME,
             loopback=None,
             interfaces=[
-                TopogenInterface(dns_iface),
-                TopogenInterface(dns_via),
+                TopogenInterface(address=dns_iface),
+                TopogenInterface(address=dns_via),
             ],
         )
         dns_host.config = dnshostconfig(self.config, node, dns_zone)
