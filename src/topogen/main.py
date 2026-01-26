@@ -256,7 +256,10 @@ def main():
                     )
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
-            return Renderer.offline_flat_yaml(args, cfg)
+            if args.mode == "flat-pair":
+                return Renderer.offline_flat_pair_yaml(args, cfg)
+            else:
+                return Renderer.offline_flat_yaml(args, cfg)
 
         renderer = Renderer(args, cfg)
         # argparse ensures correct mode

@@ -26,7 +26,7 @@ int Loopback0
 router ospf 1
     passive-interface Loopback0
     network {{ node.loopback.ip }} 0.0.0.0 area 0
-    {%- for iface in node.interfaces %}
+    {%- for iface in node.interfaces if iface.address %}
     network {{ iface.address.ip }} 0.0.0.0 area 0
     {%- endfor %}
     {%- if origin %}
@@ -38,17 +38,21 @@ interface GigabitEthernet0/{{ loop.index0 }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}
+    {%- if iface.address %}
     ip address {{ iface.address.ip }} {{ iface.address.netmask }}
+    {%- endif %}
     cdp enable
     no shutdown
 !
 {%- endfor %}
 line vty 0 4
     transport input ssh telnet
-    exec-timeout 720 0
+    exec-timeout 0 0
     login local
+    logging synchronous
 line con 0
     password {{ config.password }}
     exec-timeout 0 0
+    logging synchronous
 !
 end
