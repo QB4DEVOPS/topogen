@@ -137,9 +137,48 @@ def create_argparser(parser_class=argparse.ArgumentParser):
     parser.add_argument(
         "-m",
         "--mode",
-        choices=("nx", "simple", "flat", "flat-pair"),
+        choices=("nx", "simple", "flat", "flat-pair", "dmvpn"),
         default="simple",
         help='mode of operation, default is "%(default)s"',
+    )
+
+    parser.add_argument(
+        "--dmvpn-phase",
+        dest="dmvpn_phase",
+        type=int,
+        choices=(2, 3),
+        default=2,
+        help='DMVPN phase (2 or 3), default %(default)d',
+    )
+    parser.add_argument(
+        "--dmvpn-routing",
+        dest="dmvpn_routing",
+        type=str,
+        choices=("eigrp", "ospf"),
+        default="eigrp",
+        help='Routing protocol over DMVPN tunnel, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-security",
+        dest="dmvpn_security",
+        type=str,
+        choices=("none",),
+        default="none",
+        help='DMVPN security/profile, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-nbma-cidr",
+        dest="dmvpn_nbma_cidr",
+        type=str,
+        default="10.10.0.0/16",
+        help='NBMA underlay CIDR for DMVPN WAN segment, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-tunnel-cidr",
+        dest="dmvpn_tunnel_cidr",
+        type=str,
+        default="172.20.0.0/16",
+        help='Tunnel overlay CIDR for DMVPN Tunnel0 addressing, default "%(default)s"',
     )
     parser.add_argument(
         "--flat-group-size",
@@ -311,6 +350,8 @@ def main():
                     )
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
+            if args.mode == "dmvpn":
+                return Renderer.offline_dmvpn_yaml(args, cfg)
             if args.mode == "flat-pair":
                 return Renderer.offline_flat_pair_yaml(args, cfg)
             else:
@@ -324,6 +365,8 @@ def main():
             retval = renderer.render_node_network()
         elif args.mode == "flat":
             retval = renderer.render_flat_network()
+        elif args.mode == "dmvpn":
+            retval = renderer.render_dmvpn_network()
         else:  # args.mode == "flat-pair"
             retval = renderer.render_flat_pair_network()
     except TopogenError as exc:

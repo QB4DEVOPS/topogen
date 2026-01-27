@@ -11,6 +11,10 @@ This file lists changes.
   - feat(iosxe): add CSR1000v (IOS-XE) EIGRP template `csr-eigrp`
     - uses `vrf definition TENANT` with `rd 1:1` and `vrf forwarding TENANT`
     - offline YAML uses CSR interface labels (GigabitEthernet1/2/...) when `--device-template csr1000v` is used
+  - feat(dmvpn): add DMVPN mode (hub + N spokes) with offline YAML support
+    - nodes argument is the number of spokes (R1 is hub; R2.. are spokes)
+    - supports `--dmvpn-phase`, `--dmvpn-routing`, `--dmvpn-security`, `--dmvpn-nbma-cidr`, `--dmvpn-tunnel-cidr`
+    - templates: `iosv-dmvpn` and `csr-dmvpn`
   - feat(gui): add optional Gooey GUI (`topogen-gui`) and `topogen[gui]` extra
     - GUI-only: template dropdown and common device-template dropdown
     - GUI-only: clearer offline/online YAML file labels and file-save pickers

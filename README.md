@@ -25,10 +25,11 @@ controller, creating the lab, nodes and links on the fly.
 
 - **src/topogen/main.py**
   - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.
-  - Calls `Renderer.offline_flat_yaml()` for offline export, or constructs `Renderer` and calls one of:
+  - Calls `Renderer.offline_flat_yaml()` / `Renderer.offline_flat_pair_yaml()` / `Renderer.offline_dmvpn_yaml()` for offline export, or constructs `Renderer` and calls one of:
     - `render_node_sequence()`
     - `render_node_network()`
     - `render_flat_network()`
+    - `render_dmvpn_network()`
   - Depends on: `topogen.Config`, `topogen.render.Renderer`, and templates by name.
 
 - **src/topogen/render.py**
@@ -217,6 +218,27 @@ There are three modes available right now:
   - Odd routers: `Gi0/0` connects to the access switch and `Gi0/1` connects to the even router's `Gi0/0`.
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
+
+- `dmvpn`: hub-and-spoke DMVPN topology.
+  - `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
+  - Defaults:
+    - NBMA: `10.10.0.0/16` (router WAN on slot 0)
+    - Tunnel: `172.20.0.0/16` (Tunnel0)
+    - Phase 2, EIGRP, no security
+
+Examples:
+
+- Offline YAML (recommended):
+
+```powershell
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv --offline-yaml out\dmvpn-iosv.yaml 2
+```
+
+- Online (controller):
+
+```powershell
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv 2
+```
 
 > [!NOTE]
 > Flat mode implements a star fabric (not chained). Unmanaged switch interfaces are

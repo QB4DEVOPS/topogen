@@ -521,6 +521,134 @@ class Renderer:
             manager.stop()  # type: ignore
 
         return 0
+
+    def render_dmvpn_network(self) -> int:
+        """Render a DMVPN topology (hub + spokes).
+
+        DMVPN rendering is implemented in a later step.
+        """
+
+        disable_pcl_loggers()
+
+        try:
+            nbma_net = IPv4Network(str(getattr(self.args, "dmvpn_nbma_cidr", "10.10.0.0/16")))
+            tunnel_net = IPv4Network(
+                str(getattr(self.args, "dmvpn_tunnel_cidr", "172.20.0.0/16"))
+            )
+        except Exception as exc:
+            raise TopogenError(f"Invalid DMVPN CIDR: {exc}") from None
+
+        spokes = int(self.args.nodes)
+        total_routers = spokes + 1
+
+        if total_routers > (nbma_net.num_addresses - 2):
+            raise TopogenError(
+                f"DMVPN NBMA CIDR {nbma_net} is too small for {total_routers} routers"
+            )
+        if total_routers > (tunnel_net.num_addresses - 2):
+            raise TopogenError(
+                f"DMVPN tunnel CIDR {tunnel_net} is too small for {total_routers} routers"
+            )
+
+        _LOGGER.warning(
+            "[dmvpn] Creating 1 hub + %d spokes (total %d routers)",
+            spokes,
+            total_routers,
+        )
+
+        nbma_sw = self.create_node("SWnbma0", "unmanaged_switch", Point(0, 0))
+
+        routers: list[tuple[TopogenNode, Node]] = []
+        for idx in range(total_routers):
+            hostname = f"R{idx + 1}"
+            x = (idx + 1) * self.args.distance * 2
+            y = self.args.distance * 2 if idx == 0 else -self.args.distance * 2
+
+            cml_router = self.create_router(hostname, Point(x, y))
+
+            try:
+                wan_iface = cml_router.get_interface_by_slot(0)
+            except Exception:  # pragma: no cover - defensive
+                wan_iface = self.new_interface(cml_router)
+            self.lab.create_link(wan_iface, self.new_interface(nbma_sw))
+
+            nbma_ip = IPv4Interface(
+                f"{nbma_net.network_address + (idx + 1)}/{nbma_net.prefixlen}"
+            )
+            tunnel_ip = IPv4Interface(
+                f"{tunnel_net.network_address + (idx + 1)}/{tunnel_net.prefixlen}"
+            )
+            node = TopogenNode(
+                hostname=hostname,
+                loopback=None,
+                interfaces=[
+                    TopogenInterface(
+                        address=nbma_ip,
+                        description="dmvpn nbma",
+                        slot=0,
+                    ),
+                    TopogenInterface(
+                        address=tunnel_ip,
+                        description="dmvpn tunnel",
+                        slot=1000,
+                    ),
+                ],
+            )
+
+            routers.append((node, cml_router))
+
+        hub_nbma_ip = routers[0][0].interfaces[0].address.ip  # type: ignore[union-attr]
+        hub_tunnel_ip = routers[0][0].interfaces[1].address.ip  # type: ignore[union-attr]
+
+        for idx, (node, cml_router) in enumerate(routers):
+            rendered = self.template.render(
+                config=self.config,
+                node=node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                is_hub=(idx == 0),
+                hub_nbma_ip=hub_nbma_ip,
+                hub_tunnel_ip=hub_tunnel_ip,
+            )
+            try:
+                cml_router.configuration = rendered  # type: ignore[method-assign]
+            except Exception:
+                pass
+
+        _LOGGER.warning(
+            "[dmvpn] NBMA: %s | Tunnel: %s | Hub=%s (%s/%s)",
+            nbma_net,
+            tunnel_net,
+            routers[0][0].hostname,
+            routers[0][0].interfaces[0].address.ip,
+            tunnel_net.network_address + 1,
+        )
+
+        outfile = getattr(self.args, "yaml_output", None)
+        if outfile:
+            try:
+                content = None
+                if hasattr(self.client, "export_lab"):
+                    content = self.client.export_lab(self.lab.id)  # type: ignore[attr-defined]
+                elif hasattr(self.lab, "export"):
+                    content = self.lab.export()  # type: ignore[attr-defined]
+                elif hasattr(self.lab, "topology"):
+                    content = str(self.lab.topology)  # type: ignore[attr-defined]
+                if content is not None:
+                    if isinstance(content, bytes):
+                        data = content
+                    else:
+                        data = str(content).encode("utf-8")
+                    with open(outfile, "wb") as fh:
+                        fh.write(data)
+                    _LOGGER.warning("Exported lab YAML to %s", outfile)
+                else:
+                    _LOGGER.error("YAML export not supported by client library")
+            except Exception as exc:  # pragma: no cover - best-effort export
+                _LOGGER.error("YAML export failed: %s", exc)
+
+        return 0
+
     def render_flat_pair_network(self) -> int:
         """Render a flat L2 management network with odd-even router pairing.
 
@@ -679,6 +807,168 @@ class Renderer:
             _LOGGER.info("pair-link: R%d Gi0/1 <-> R%d Gi0/0", odd, even)
 
         _LOGGER.warning("Flat-pair management network created")
+        return 0
+
+    @staticmethod
+    def offline_dmvpn_yaml(args: Namespace, cfg: Config) -> int:
+        """Generate a CML-compatible YAML file locally for DMVPN mode.
+
+        This does not contact a controller. It writes a minimal topology with:
+        - SWnbma0 unmanaged switch (shared NBMA underlay)
+        - Routers R1..R<n+1> (R1 hub, remaining routers are spokes)
+        - Links: each router's WAN interface (slot 0) connected to SWnbma0
+        - Per-router configuration rendered from the selected Jinja2 template
+        """
+
+        # set up Jinja to render configs from packaged templates
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        try:
+            tpl = env.get_template(f"{args.template}{Renderer.J2SUFFIX}")
+        except TemplateNotFound as exc:  # pragma: no cover - defensive
+            raise TopogenError(f"template does not exist: {args.template}") from exc
+
+        try:
+            nbma_net = IPv4Network(str(getattr(args, "dmvpn_nbma_cidr", "10.10.0.0/16")))
+            tunnel_net = IPv4Network(
+                str(getattr(args, "dmvpn_tunnel_cidr", "172.20.0.0/16"))
+            )
+        except Exception as exc:
+            raise TopogenError(f"Invalid DMVPN CIDR: {exc}") from None
+
+        spokes = int(args.nodes)
+        total_routers = spokes + 1
+
+        if total_routers > (nbma_net.num_addresses - 2):
+            raise TopogenError(
+                f"DMVPN NBMA CIDR {nbma_net} is too small for {total_routers} routers"
+            )
+        if total_routers > (tunnel_net.num_addresses - 2):
+            raise TopogenError(
+                f"DMVPN tunnel CIDR {tunnel_net} is too small for {total_routers} routers"
+            )
+
+        dev_def = getattr(args, "dev_template", args.template)
+
+        def iface_label_for_slot(slot: int) -> str:
+            # CML node definitions can have different interface naming.
+            # csr1000v typically uses GigabitEthernet1, GigabitEthernet2, ...
+            if str(dev_def).lower() == "csr1000v":
+                return f"GigabitEthernet{slot + 1}"
+            return f"GigabitEthernet0/{slot}"
+
+        lines: list[str] = []
+        lines.append("lab:")
+        lines.append(f"  title: {args.labname}")
+
+        args_bits: list[str] = [f"nodes={spokes}", f"-m {args.mode}", f"-T {args.template}"]
+        if dev_def != args.template:
+            args_bits.append(f"--device-template {dev_def}")
+        args_bits.append(f"--dmvpn-phase {getattr(args, 'dmvpn_phase', 2)}")
+        args_bits.append(f"--dmvpn-routing {getattr(args, 'dmvpn_routing', 'eigrp')}")
+        args_bits.append(f"--dmvpn-security {getattr(args, 'dmvpn_security', 'none')}")
+        args_bits.append(f"--dmvpn-nbma-cidr {nbma_net}")
+        args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
+        version = getattr(args, "cml_version", "0.3.0")
+        if version:
+            args_bits.append(f"--cml-version {version}")
+
+        desc = (
+            f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn) | args: "
+            + " ".join(args_bits)
+        )
+        lines.append(f'  description: "{desc}"')
+        lines.append(f"  version: '{version}'")
+        lines.append("nodes:")
+
+        node_ids: dict[str, str] = {}
+        nid = 0
+
+        # NBMA switch
+        node_ids["SWnbma0"] = f"n{nid}"; nid += 1
+        lines.append(f"  - id: {node_ids['SWnbma0']}")
+        lines.append("    label: SWnbma0")
+        lines.append("    node_definition: unmanaged_switch")
+        lines.append("    x: 0")
+        lines.append("    y: 0")
+        lines.append("    interfaces:")
+        # Switch needs one port per router
+        for p in range(total_routers):
+            lines.append(f"      - id: i{p}")
+            lines.append(f"        slot: {p}")
+            lines.append(f"        label: port{p}")
+            lines.append("        type: physical")
+
+        # Precompute hub info for spoke templates
+        hub_nbma_ip = IPv4Interface(
+            f"{nbma_net.network_address + 1}/{nbma_net.prefixlen}"
+        ).ip
+        hub_tunnel_ip = IPv4Interface(
+            f"{tunnel_net.network_address + 1}/{tunnel_net.prefixlen}"
+        ).ip
+
+        # Routers
+        for idx in range(total_routers):
+            n = idx + 1
+            label = f"R{n}"
+            node_ids[label] = f"n{nid}"; nid += 1
+
+            nbma_ip = IPv4Interface(
+                f"{nbma_net.network_address + n}/{nbma_net.prefixlen}"
+            )
+            tunnel_ip = IPv4Interface(
+                f"{tunnel_net.network_address + n}/{tunnel_net.prefixlen}"
+            )
+            node = TopogenNode(
+                hostname=label,
+                loopback=None,
+                interfaces=[
+                    TopogenInterface(address=nbma_ip, description="dmvpn nbma", slot=0),
+                    TopogenInterface(address=tunnel_ip, description="dmvpn tunnel", slot=1000),
+                ],
+            )
+
+            rendered = tpl.render(
+                config=cfg,
+                node=node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                is_hub=(idx == 0),
+                hub_nbma_ip=hub_nbma_ip,
+                hub_tunnel_ip=hub_tunnel_ip,
+            )
+
+            x = (idx + 1) * args.distance * 2
+            y = args.distance * 2 if idx == 0 else -args.distance * 2
+            lines.append(f"  - id: {node_ids[label]}")
+            lines.append(f"    label: {label}")
+            lines.append(f"    node_definition: {dev_def}")
+            lines.append(f"    x: {x}")
+            lines.append(f"    y: {y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append(f"        label: {iface_label_for_slot(0)}")
+            lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in rendered.splitlines():
+                lines.append(f"      {ln}")
+
+        # Links
+        lines.append("links:")
+        lid = 0
+        for idx in range(total_routers):
+            rlabel = f"R{idx + 1}"
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[rlabel]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{idx}")
+
+        outfile = Path(getattr(args, "offline_yaml"))
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        outfile.write_text("\n".join(lines), encoding="utf-8")
+        _LOGGER.warning("Offline YAML (dmvpn) written to %s", outfile)
         return 0
 
     @staticmethod
