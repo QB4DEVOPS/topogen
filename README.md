@@ -86,6 +86,38 @@ If `topogen -v` (or the generated lab description) shows an older version than t
 python -m pip install -e .
 ```
 
+### Optional GUI (Gooey)
+
+TopoGen includes an optional Gooey-based GUI entry point.
+
+- Install: `pip install -e ".[gui]"`
+- Run: `topogen-gui` (or `python -m topogen.gui`)
+
+Quick usage:
+
+- Offline YAML (no controller):
+  - Set `offline-yaml` to a filename under `out/`, e.g. `out\my-lab.yaml`
+  - Leave the export `yaml` field empty
+  - Choose `mode`, `template`, `device-template`, and `nodes`
+  - Click Start and then import the YAML into CML (Tools → Import/Export → Import Lab)
+- Online (create lab on a live controller):
+  - Leave `offline-yaml` empty
+  - Set environment variables before launching the GUI (PowerShell):
+    - `$env:VIRL2_URL="https://controller/"`
+    - `$env:VIRL2_USER="user"`
+    - `$env:VIRL2_PASS="pass"`
+  - Optionally set `yaml` to export the created lab after generation
+  - Use `insecure` for a quick test, or provide a working `ca` file
+
+Field mapping:
+
+- `offline-yaml` (FILE): writes a CML-compatible YAML locally (`--offline-yaml`)
+- `yaml` (FILE): exports the created online lab to a YAML file via the controller API (`--yaml`)
+
+Note: `--device-template` maps to the CML node definition name (e.g., `iosv`, `csr1000v`). Available node definitions vary by CML server and version (and by installed images). The GUI shows a small convenience dropdown; if you use custom node definitions, prefer running the CLI where `--device-template` is free-form.
+
+Note: In the GUI, `--template` is shown as a dropdown. The dropdown choices come from the packaged templates (`get_templates()`), and the default template is `iosv`. If you remove/rename `iosv.jinja2`, the GUI may error because the default is not in the available template choices.
+
 If the Networkx mode (`--mode nx`) should be used, then the following
 command is required instead to install SciPy and NumPy dependencies: `uv sync
 --all-extras --dev --frozen`

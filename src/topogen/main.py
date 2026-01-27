@@ -25,11 +25,12 @@ def valid_node_count(value):
     return ivalue
 
 
-def create_argparser():
+def create_argparser(parser_class=argparse.ArgumentParser):
     """create the argparser for topogen"""
-    parser = argparse.ArgumentParser(
+    parser = parser_class(
         prog=topogen.__name__, description=topogen.__description__
     )
+    is_gooey = getattr(parser_class, "__name__", "") == "GooeyParser"
     config_settings = parser.add_argument_group("configuration")
 
     config_settings.add_argument(
@@ -91,20 +92,42 @@ def create_argparser():
         default="topogen lab",
         help='Lab name to create, default "%(default)s"',
     )
-    parser.add_argument(
-        "-T",
-        "--template",
-        type=str,
-        help='Template name to use, defaults to "%(default)s"',
-        default="iosv",
-    )
-    parser.add_argument(
-        "--device-template",
-        dest="dev_template",
-        type=str,
-        default="iosv",
-        help='CML node definition to use for routers (e.g., iosv, iol, lxc). Defaults to "%(default)s"',
-    )
+    if is_gooey:
+        parser.add_argument(
+            "-T",
+            "--template",
+            type=str,
+            choices=get_templates(),
+            help='Template name to use, defaults to "%(default)s"',
+            default="iosv",
+            gooey_options={"widget": "Dropdown"},
+        )
+    else:
+        parser.add_argument(
+            "-T",
+            "--template",
+            type=str,
+            help='Template name to use, defaults to "%(default)s"',
+            default="iosv",
+        )
+    if is_gooey:
+        parser.add_argument(
+            "--device-template",
+            dest="dev_template",
+            type=str,
+            choices=("iosv", "csr1000v", "iol", "lxc"),
+            default="iosv",
+            help='CML node definition to use for routers (e.g., iosv, iol, lxc). Defaults to "%(default)s"',
+            gooey_options={"widget": "Dropdown"},
+        )
+    else:
+        parser.add_argument(
+            "--device-template",
+            dest="dev_template",
+            type=str,
+            default="iosv",
+            help='CML node definition to use for routers (e.g., iosv, iol, lxc). Defaults to "%(default)s"',
+        )
     parser.add_argument(
         "--list-templates",
         dest="listtemplates",
@@ -151,20 +174,38 @@ def create_argparser():
         default="tenant",
         help='VRF name to apply to the flat-pair odd-router Gi0/1 (pair link), default "%(default)s"',
     )
-    parser.add_argument(
-        "--yaml",
-        dest="yaml_output",
-        metavar="FILE",
-        type=str,
-        help="Export the created lab to a YAML file at FILE",
-    )
-    parser.add_argument(
-        "--offline-yaml",
-        dest="offline_yaml",
-        metavar="FILE",
-        type=str,
-        help="Generate a CML-compatible YAML locally (no controller required)",
-    )
+    if is_gooey:
+        parser.add_argument(
+            "--yaml",
+            dest="yaml_output",
+            metavar="ONLINE_EXPORT_YAML_FILE",
+            type=str,
+            help="Export the created lab to a YAML file at ONLINE_EXPORT_YAML_FILE",
+            gooey_options={"widget": "FileSaver"},
+        )
+        parser.add_argument(
+            "--offline-yaml",
+            dest="offline_yaml",
+            metavar="OFFLINE_YAML_FILE",
+            type=str,
+            help="Generate a CML-compatible YAML locally (no controller required)",
+            gooey_options={"widget": "FileSaver"},
+        )
+    else:
+        parser.add_argument(
+            "--yaml",
+            dest="yaml_output",
+            metavar="FILE",
+            type=str,
+            help="Export the created lab to a YAML file at FILE",
+        )
+        parser.add_argument(
+            "--offline-yaml",
+            dest="offline_yaml",
+            metavar="FILE",
+            type=str,
+            help="Generate a CML-compatible YAML locally (no controller required)",
+        )
     parser.add_argument(
         "--cml-version",
         dest="cml_version",

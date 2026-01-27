@@ -11,6 +11,9 @@ This file lists changes.
   - feat(iosxe): add CSR1000v (IOS-XE) EIGRP template `csr-eigrp`
     - uses `vrf definition TENANT` with `rd 1:1` and `vrf forwarding TENANT`
     - offline YAML uses CSR interface labels (GigabitEthernet1/2/...) when `--device-template csr1000v` is used
+  - feat(gui): add optional Gooey GUI (`topogen-gui`) and `topogen[gui]` extra
+    - GUI-only: template dropdown and common device-template dropdown
+    - GUI-only: clearer offline/online YAML file labels and file-save pickers
   - docs: offline YAML output is recommended to be written under the `out/` directory (see README examples)
 
 - version 0.2.4
