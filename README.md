@@ -194,6 +194,7 @@ To list the available templates, use the `--list-templates` switch.  Templates i
 - `iosv-eigrp-stub`: IOSv template that configures EIGRP 100 and advertises both `Gi0/0`
   and `Loopback0` (with `Loopback0` set to passive) and enables eigrp stub connected summary
 - `iosv-eigrp-nonflat`: IOSv template for simple/NX modes. EIGRP 100 with passive-interface Loopback0; advertises 10.0.0.0/8 (Lo0) and 172.16.0.0/12 (p2p links).
+- `csr-eigrp`: CSR1000v (IOS-XE) template for flat/flat-pair modes. Uses `vrf definition TENANT` and CSR interface labels (`GigabitEthernet1/2/...`).
 
 To choose a specific template, provide the `--template=iosv` switch.
 
@@ -325,6 +326,13 @@ Create a 12-node `flat-pair` offline YAML with VRF enabled on odd routers (`Gi0/
 ```powershell
 topogen --cml-version 0.3.0 -L "vasailli" -T iosv --device-template iosv -m flat-pair \
   --flat-group-size 20 --vrf --pair-vrf TENANT --offline-yaml out/vasailli-12-flat-pair.yaml 12
+```
+
+Create a 40-node `flat-pair` offline YAML using CSR1000v (IOS-XE) and VRF EIGRP:
+
+```powershell
+topogen --cml-version 0.3.0 -L "IOSXE-VRF-EIGRP-40" -T csr-eigrp --device-template csr1000v -m flat-pair \
+  --flat-group-size 20 --vrf --pair-vrf TENANT --offline-yaml out/iosxe-vrf-eigrp-40.yaml 40
 ```
 
 Create a 300-node offline YAML:

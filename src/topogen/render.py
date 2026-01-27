@@ -1045,16 +1045,23 @@ class Renderer:
             lines.append(f"    x: {rx}")
             lines.append(f"    y: {ry}")
             lines.append("    interfaces:")
-            # Always Gi0/0
+            def iface_label_for_slot(slot: int) -> str:
+                # CML node definitions can have different interface naming.
+                # csr1000v typically uses GigabitEthernet1, GigabitEthernet2, ...
+                if str(dev_def).lower() == "csr1000v":
+                    return f"GigabitEthernet{slot + 1}"
+                return f"GigabitEthernet0/{slot}"
+
+            # Always slot 0
             lines.append("      - id: i0")
             lines.append("        slot: 0")
-            lines.append("        label: GigabitEthernet0/0")
+            lines.append(f"        label: {iface_label_for_slot(0)}")
             lines.append("        type: physical")
-            # Odd routers have Gi0/1 for the pair link
+            # Odd routers have slot 1 for the pair link
             if n % 2 == 1:
                 lines.append("      - id: i1")
                 lines.append("        slot: 1")
-                lines.append("        label: GigabitEthernet0/1")
+                lines.append(f"        label: {iface_label_for_slot(1)}")
                 lines.append("        type: physical")
             lines.append("    configuration: |-")
             for ln in rendered.splitlines():

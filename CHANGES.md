@@ -8,6 +8,9 @@ This file lists changes.
     - enable with `--vrf`
     - set VRF name with `--pair-vrf NAME`
     - lab descriptions (online and offline YAML) include VRF flags when enabled
+  - feat(iosxe): add CSR1000v (IOS-XE) EIGRP template `csr-eigrp`
+    - uses `vrf definition TENANT` with `rd 1:1` and `vrf forwarding TENANT`
+    - offline YAML uses CSR interface labels (GigabitEthernet1/2/...) when `--device-template csr1000v` is used
   - docs: offline YAML output is recommended to be written under the `out/` directory (see README examples)
 
 - version 0.2.4
