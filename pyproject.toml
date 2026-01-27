@@ -58,9 +58,11 @@ Changelog = "https://github.com/rschmied/topogen/blob/master/CHANGES.md"
 
 [project.scripts]
 topogen = "topogen:main"
+topogen-gui = "topogen.gui:main"
 
 [project.optional-dependencies]
 all = ["numpy>=2.2.0", "scipy>=1.14.1"]
+gui = ["gooey>=1.0.8"]
 
 [build-system]
 requires = ["hatchling"]
