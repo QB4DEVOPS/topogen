@@ -80,6 +80,12 @@ Alternatively, use Astral/uv:
    run with `uv run`)
 4. install using `uv sync --frozen`
 
+If `topogen -v` (or the generated lab description) shows an older version than this repo, reinstall the package in editable mode to refresh the installed package metadata:
+
+```powershell
+python -m pip install -e .
+```
+
 If the Networkx mode (`--mode nx`) should be used, then the following
 command is required instead to install SciPy and NumPy dependencies: `uv sync
 --all-extras --dev --frozen`
