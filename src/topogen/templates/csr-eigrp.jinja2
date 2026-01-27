@@ -19,7 +19,10 @@ cdp run
 {%- set ns = namespace(seen={}) %}
 {%- for iface in node.interfaces %}
 {%- if iface.vrf and not ns.seen.get(iface.vrf) %}
-ip vrf {{ iface.vrf }}
+vrf definition {{ iface.vrf }}
+ rd 1:1
+ address-family ipv4
+ exit-address-family
 !
 {%- set _ = ns.seen.update({iface.vrf: true}) %}
 {%- endif %}
@@ -75,12 +78,12 @@ router eigrp 100
 !
 {%- endif %}
 {%- for iface in node.interfaces %}
-interface GigabitEthernet0/{{ loop.index0 }}
+interface GigabitEthernet{{ loop.index0 + 1 }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}
     {%- if iface.vrf %}
-    ip vrf forwarding {{ iface.vrf }}
+    vrf forwarding {{ iface.vrf }}
     {%- endif %}
     {%- if iface.address %}
     ip address {{ iface.address.ip }} {{ iface.address.netmask }}

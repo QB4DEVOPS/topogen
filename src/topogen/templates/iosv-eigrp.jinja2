@@ -31,12 +31,49 @@ ip route 0.0.0.0 0.0.0.0 {{ origin.ip }}
 int Loopback0
     ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
 !
-router eigrp 100
-    passive-interface Loopback0
-    network 10.10.0.0 0.0.255.255
-    network 10.20.0.0 0.0.255.255
-    no auto-summary
+{%- set ns_vrf = namespace(has=false) %}
+{%- for iface in node.interfaces %}
+{%- if iface.vrf %}
+{%- set ns_vrf.has = true %}
+{%- endif %}
+{%- endfor %}
+{%- if ns_vrf.has %}
+router eigrp TOPGEN
+ !
+ {%- set ns_eigrp = namespace(seen={}) %}
+ {%- for iface in node.interfaces if iface.address and iface.vrf %}
+ {%- if not ns_eigrp.seen.get(iface.vrf) %}
+ address-family ipv4 unicast vrf {{ iface.vrf }} autonomous-system 100
+  !
+  topology base
+  exit-af-topology
+  {%- set _ = ns_eigrp.seen.update({iface.vrf: true}) %}
+  {%- for v in node.interfaces if v.address and v.vrf == iface.vrf %}
+  network {{ v.address.ip }} 0.0.0.0
+  {%- endfor %}
+ exit-address-family
+ !
+ {%- endif %}
+ {%- endfor %}
+ address-family ipv4 unicast autonomous-system 100
+  !
+  topology base
+  exit-af-topology
+  {%- for iface in node.interfaces if iface.address and not iface.vrf %}
+  network {{ iface.address.ip }} 0.0.0.0
+  {%- endfor %}
+  network {{ node.loopback.ip }} 0.0.0.0
+ exit-address-family
 !
+{%- else %}
+router eigrp 100
+ network {{ node.loopback.ip }} 0.0.0.0
+ {%- for iface in node.interfaces if iface.address %}
+ network {{ iface.address.ip }} 0.0.0.0
+ {%- endfor %}
+ passive-interface Loopback0
+!
+{%- endif %}
 {%- for iface in node.interfaces %}
 interface GigabitEthernet0/{{ loop.index0 }}
     {%- if iface.description %}
