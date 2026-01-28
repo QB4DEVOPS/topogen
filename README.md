@@ -229,6 +229,12 @@ There are three modes available right now:
   - Default behavior: `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
   - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
     - When `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (`R1..R<nodes>`).
+  - Underlay selection: use `--dmvpn-underlay` to choose the underlay model.
+    - `flat` (default): DMVPN routers attach to a flat L2 fabric.
+    - `flat-pair`: `nodes` is the total router count in the lab (`R1..R<nodes>`).
+      - Odd routers (`R1,R3,R5,...`): DMVPN overlay routers (hubs + spokes) (Tunnel0 + NHRP + routing).
+      - Even routers (`R2,R4,R6,...`): non-DMVPN pair partners (no Tunnel0/NHRP).
+      - Spokes are the odd routers not selected as hubs; this is always derived from `nodes`.
   - Optional: set `--dmvpn-tunnel-key` to configure a GRE tunnel key (default: 10).
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
@@ -274,6 +280,18 @@ topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v `
   -L "IOSXE-DMVPN-3H-P2-EIGRP-N63" `
   --offline-yaml out\IOSXE-DMVPN-3H-P2-EIGRP-N63.yaml `
   --dmvpn-hubs 1,21,41 63
+```
+
+- Offline YAML (DMVPN flat-pair, IOSv): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
+
+```powershell
+topogen -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv -L IOSV-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
+```
+
+- Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
+
+```powershell
+topogen -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --device-template csr1000v -L IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
 ```
 
 - Online (controller):
