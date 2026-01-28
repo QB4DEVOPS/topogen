@@ -137,10 +137,81 @@ def create_argparser(parser_class=argparse.ArgumentParser):
     parser.add_argument(
         "-m",
         "--mode",
-        choices=("nx", "simple", "flat", "flat-pair"),
+        choices=("nx", "simple", "flat", "flat-pair", "dmvpn"),
         default="simple",
         help='mode of operation, default is "%(default)s"',
     )
+
+    parser.add_argument(
+        "--dmvpn-phase",
+        dest="dmvpn_phase",
+        type=int,
+        choices=(2, 3),
+        default=2,
+        help='DMVPN phase (2 or 3), default %(default)d',
+    )
+    parser.add_argument(
+        "--dmvpn-routing",
+        dest="dmvpn_routing",
+        type=str,
+        choices=("eigrp", "ospf"),
+        default="eigrp",
+        help='Routing protocol over DMVPN tunnel, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-security",
+        dest="dmvpn_security",
+        type=str,
+        choices=("none",),
+        default="none",
+        help='DMVPN security/profile, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-nbma-cidr",
+        dest="dmvpn_nbma_cidr",
+        type=str,
+        default="10.10.0.0/16",
+        help='NBMA underlay CIDR for DMVPN WAN segment, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-tunnel-cidr",
+        dest="dmvpn_tunnel_cidr",
+        type=str,
+        default="172.20.0.0/16",
+        help='Tunnel overlay CIDR for DMVPN Tunnel0 addressing, default "%(default)s"',
+    )
+    if is_gooey:
+        parser.add_argument(
+            "--dmvpn-tunnel-key",
+            dest="dmvpn_tunnel_key",
+            type=int,
+            default=10,
+            help='DMVPN Tunnel0 key (GRE tunnel key), default %(default)d',
+            gooey_options={"widget": "IntegerField"},
+        )
+        parser.add_argument(
+            "--dmvpn-hubs",
+            dest="dmvpn_hubs",
+            type=str,
+            default=None,
+            help="Comma-separated router numbers to act as DMVPN hubs (e.g., 1,21,41). When set, the nodes argument is interpreted as total routers.",
+            gooey_options={"widget": "TextField"},
+        )
+    else:
+        parser.add_argument(
+            "--dmvpn-tunnel-key",
+            dest="dmvpn_tunnel_key",
+            type=int,
+            default=10,
+            help='DMVPN Tunnel0 key (GRE tunnel key), default %(default)d',
+        )
+        parser.add_argument(
+            "--dmvpn-hubs",
+            dest="dmvpn_hubs",
+            type=str,
+            default=None,
+            help="Comma-separated router numbers to act as DMVPN hubs (e.g., 1,21,41). When set, the nodes argument is interpreted as total routers.",
+        )
     parser.add_argument(
         "--flat-group-size",
         dest="flat_group_size",
@@ -206,6 +277,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
             type=str,
             help="Generate a CML-compatible YAML locally (no controller required)",
         )
+    parser.add_argument(
+        "--overwrite",
+        dest="overwrite",
+        action="store_true",
+        default=False,
+        help="Allow overwriting an existing output file when using --offline-yaml",
+    )
     parser.add_argument(
         "--cml-version",
         dest="cml_version",
@@ -277,6 +355,22 @@ def main():
     args = parser.parse_args()
     setup_logging(args.loglevel)
 
+    def parse_dmvpn_hubs(value: str | None) -> list[int] | None:
+        if value is None:
+            return None
+        raw = [p.strip() for p in str(value).split(",") if p.strip()]
+        if not raw:
+            parser.error("Invalid --dmvpn-hubs: must provide at least one hub router number")
+        hubs: list[int] = []
+        for p in raw:
+            try:
+                hubs.append(int(p))
+            except ValueError:
+                parser.error(f"Invalid --dmvpn-hubs entry '{p}': must be an integer")
+        if len(set(hubs)) != len(hubs):
+            parser.error("Invalid --dmvpn-hubs: duplicate hub numbers are not allowed")
+        return hubs
+
     cfg = topogen.Config.load(args.configfile)
     if args.writeconfig:
         cfg.save(args.configfile)
@@ -290,12 +384,26 @@ def main():
         return 0
 
     try:
+        args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
+
         # Licensing / capacity guidance: soft cap at 520 unless bypassed
         if args.nodes and not getattr(args, "allow_oversubscribe", False) and args.nodes > 520:
             parser.error(
                 f"nodes={args.nodes} exceeds the recommended maximum of 520 for typical enterprise licenses. "
                 "Use --allow-oversubscribe to bypass this check if your environment supports more."
             )
+
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_hubs_list", None):
+            if not args.nodes:
+                parser.error("DMVPN requires nodes argument")
+            total_routers = int(args.nodes)
+            hubs = args.dmvpn_hubs_list
+            out_of_range = [h for h in hubs if h < 1 or h > total_routers]
+            if out_of_range:
+                bad = ",".join(str(h) for h in out_of_range)
+                parser.error(
+                    f"Invalid --dmvpn-hubs: hub router(s) {bad} do not exist (lab has R1..R{total_routers})"
+                )
         # Early validation for flat mode port assumptions
         if args.mode == "flat":
             if args.flat_group_size + 1 > 32:
@@ -311,6 +419,8 @@ def main():
                     )
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
+            if args.mode == "dmvpn":
+                return Renderer.offline_dmvpn_yaml(args, cfg)
             if args.mode == "flat-pair":
                 return Renderer.offline_flat_pair_yaml(args, cfg)
             else:
@@ -324,6 +434,8 @@ def main():
             retval = renderer.render_node_network()
         elif args.mode == "flat":
             retval = renderer.render_flat_network()
+        elif args.mode == "dmvpn":
+            retval = renderer.render_dmvpn_network()
         else:  # args.mode == "flat-pair"
             retval = renderer.render_flat_pair_network()
     except TopogenError as exc:

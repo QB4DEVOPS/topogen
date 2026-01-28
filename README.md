@@ -25,10 +25,11 @@ controller, creating the lab, nodes and links on the fly.
 
 - **src/topogen/main.py**
   - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.
-  - Calls `Renderer.offline_flat_yaml()` for offline export, or constructs `Renderer` and calls one of:
+  - Calls `Renderer.offline_flat_yaml()` / `Renderer.offline_flat_pair_yaml()` / `Renderer.offline_dmvpn_yaml()` for offline export, or constructs `Renderer` and calls one of:
     - `render_node_sequence()`
     - `render_node_network()`
     - `render_flat_network()`
+    - `render_dmvpn_network()`
   - Depends on: `topogen.Config`, `topogen.render.Renderer`, and templates by name.
 
 - **src/topogen/render.py**
@@ -92,6 +93,12 @@ TopoGen includes an optional Gooey-based GUI entry point.
 
 - Install: `pip install -e ".[gui]"`
 - Run: `topogen-gui` (or `python -m topogen.gui`)
+
+If you add or change CLI flags or GUI behavior in the repo (for example `--overwrite`), reinstall in editable mode to ensure the GUI reflects the latest code:
+
+```powershell
+python -m pip install -e ".[gui]"
+```
 
 Quick usage:
 
@@ -218,6 +225,63 @@ There are three modes available right now:
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
 
+- `dmvpn`: hub-and-spoke DMVPN topology.
+  - Default behavior: `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
+  - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
+    - When `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (`R1..R<nodes>`).
+  - Optional: set `--dmvpn-tunnel-key` to configure a GRE tunnel key (default: 10).
+  - Defaults:
+    - NBMA: `10.10.0.0/16` (router WAN on slot 0)
+    - Tunnel: `172.20.0.0/16` (Tunnel0)
+    - Phase 2, EIGRP, no security
+
+Notes:
+
+- For offline YAML, the NBMA underlay is built as a flat-style L2 fabric (core + access unmanaged switches) to avoid unmanaged switch port limits. `--flat-group-size` controls routers per access switch.
+- Offline DMVPN YAML layout follows the same placement style as `flat` / `flat-pair` (switches in a row, routers stacked under each switch).
+
+Lab naming (recommended):
+
+- Use the lab name to track the feature, platform, and size.
+- Convention example: `IOSXE-DMVPN-P2-EIGRP-N3`
+  - `IOSXE`: CSR1000v (IOS-XE)
+  - `DMVPN`: feature
+  - `P2`: DMVPN Phase 2
+  - `EIGRP`: routing protocol over the tunnel
+  - `N3`: total router count (hub + spokes)
+
+Examples:
+
+- Offline YAML (recommended):
+
+```powershell
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv --offline-yaml out\dmvpn-iosv.yaml 2
+```
+
+- Offline YAML (multi-hub): 60 spokes + 3 hubs (`R1,R21,R41`) = 63 routers total.
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn -T iosv-dmvpn --device-template iosv `
+  -L "IOS-DMVPN-3H-P2-EIGRP-N63" `
+  --offline-yaml out\IOS-DMVPN-3H-P2-EIGRP-N63.yaml `
+  --dmvpn-hubs 1,21,41 63
+```
+
+- Offline YAML (multi-hub, IOS-XE): 60 spokes + 3 hubs (`R1,R21,R41`) = 63 routers total.
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v `
+  -L "IOSXE-DMVPN-3H-P2-EIGRP-N63" `
+  --offline-yaml out\IOSXE-DMVPN-3H-P2-EIGRP-N63.yaml `
+  --dmvpn-hubs 1,21,41 63
+```
+
+- Online (controller):
+
+```powershell
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv 2
+```
+
 > [!NOTE]
 > Flat mode implements a star fabric (not chained). Unmanaged switch interfaces are
 > labeled `portN` in generated offline YAML (CML UI may present differently).
@@ -303,6 +367,11 @@ Use `--offline-yaml FILE` to emit a CML-compatible YAML locally without contacti
 the controller. This is ideal for very large labs and for environments where API
 export is not available.
 
+By default, TopoGen will refuse to overwrite an existing offline YAML file.
+
+- If `FILE` already exists, the run fails with a clear error.
+- Use `--overwrite` to overwrite the existing file.
+
 TopoGen does not pick an output filename automatically; you must provide one. We recommend `out/` for generated artifacts.
 
 - Schema selection: `--cml-version` chooses the lab schema version (CML 2.9 uses `0.3.0`).
@@ -357,6 +426,20 @@ Create a 10-node offline YAML (no controller):
 ```powershell
 topogen --cml-version 0.3.0 -L "TestOffline-10" -T iosv-eigrp --device-template iosv -m flat \
   --flat-group-size 5 --offline-yaml out/test-offline-10.yaml 10
+```
+
+Re-generate the same file (requires `--overwrite`):
+
+```powershell
+topogen --cml-version 0.3.0 -L "TestOffline-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --offline-yaml out/test-offline-10.yaml --overwrite 10
+```
+
+Or write to a new filename (no overwrite required):
+
+```powershell
+topogen --cml-version 0.3.0 -L "TestOffline-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --offline-yaml out/test-offline-10-v2.yaml 10
 ```
 
 Create a 12-node `flat-pair` offline YAML with VRF enabled on odd routers (`Gi0/1`):
