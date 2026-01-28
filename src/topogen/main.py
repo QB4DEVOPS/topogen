@@ -166,6 +166,25 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         default="none",
         help='DMVPN security/profile, default "%(default)s"',
     )
+    if is_gooey:
+        parser.add_argument(
+            "--dmvpn-underlay",
+            dest="dmvpn_underlay",
+            type=str,
+            choices=("flat", "flat-pair"),
+            default="flat",
+            help='DMVPN underlay topology, default "%(default)s"',
+            gooey_options={"widget": "Dropdown"},
+        )
+    else:
+        parser.add_argument(
+            "--dmvpn-underlay",
+            dest="dmvpn_underlay",
+            type=str,
+            choices=("flat", "flat-pair"),
+            default="flat",
+            help='DMVPN underlay topology, default "%(default)s"',
+        )
     parser.add_argument(
         "--dmvpn-nbma-cidr",
         dest="dmvpn_nbma_cidr",
@@ -396,14 +415,27 @@ def main():
         if args.mode == "dmvpn" and getattr(args, "dmvpn_hubs_list", None):
             if not args.nodes:
                 parser.error("DMVPN requires nodes argument")
-            total_routers = int(args.nodes)
             hubs = args.dmvpn_hubs_list
-            out_of_range = [h for h in hubs if h < 1 or h > total_routers]
+            underlay = getattr(args, "dmvpn_underlay", "flat")
+            if underlay == "flat-pair":
+                max_router = int(args.nodes)
+            else:
+                max_router = int(args.nodes)
+            out_of_range = [h for h in hubs if h < 1 or h > max_router]
             if out_of_range:
                 bad = ",".join(str(h) for h in out_of_range)
                 parser.error(
-                    f"Invalid --dmvpn-hubs: hub router(s) {bad} do not exist (lab has R1..R{total_routers})"
+                    f"Invalid --dmvpn-hubs: hub router(s) {bad} do not exist (lab has R1..R{max_router})"
                 )
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_underlay", "flat") == "flat-pair":
+            hubs = getattr(args, "dmvpn_hubs_list", None)
+            if hubs:
+                even_hubs = [h for h in hubs if (h % 2) == 0]
+                if even_hubs:
+                    bad = ",".join(str(h) for h in even_hubs)
+                    parser.error(
+                        f"Invalid --dmvpn-hubs: hub router(s) {bad} are even-numbered, but DMVPN underlay 'flat-pair' uses odd routers as DMVPN endpoints"
+                    )
         # Early validation for flat mode port assumptions
         if args.mode == "flat":
             if args.flat_group_size + 1 > 32:
@@ -420,6 +452,8 @@ def main():
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
             if args.mode == "dmvpn":
+                if getattr(args, "dmvpn_underlay", "flat") == "flat-pair":
+                    return Renderer.offline_dmvpn_flat_pair_yaml(args, cfg)
                 return Renderer.offline_dmvpn_yaml(args, cfg)
             if args.mode == "flat-pair":
                 return Renderer.offline_flat_pair_yaml(args, cfg)

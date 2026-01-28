@@ -16,7 +16,7 @@ ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
 !
-{%- set ns = namespace(nbma=None, tun=None) %}
+{%- set ns = namespace(nbma=None, tun=None, pair=None) %}
 {%- for iface in node.interfaces %}
 {%- if iface.description == "dmvpn nbma" %}
 {%- set ns.nbma = iface.address %}
@@ -24,12 +24,21 @@ cdp run
 {%- if iface.description == "dmvpn tunnel" %}
 {%- set ns.tun = iface.address %}
 {%- endif %}
+{%- if iface.description == "pair link" %}
+{%- set ns.pair = iface.address %}
+{%- endif %}
 {%- endfor %}
 !
 interface GigabitEthernet1
  ip address {{ ns.nbma.ip }} {{ ns.nbma.netmask }}
  no shutdown
 !
+{%- if ns.pair %}
+interface GigabitEthernet2
+ ip address {{ ns.pair.ip }} {{ ns.pair.netmask }}
+ no shutdown
+!
+{%- endif %}
 interface Loopback0
  ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
 !
@@ -54,9 +63,15 @@ interface Tunnel0
 router eigrp 100
  network {{ ns.tun.ip }} 0.0.0.0
  network {{ node.loopback.ip }} 0.0.0.0
+{%- if ns.pair %}
+ network {{ ns.pair.ip }} 0.0.0.0
+{%- endif %}
  passive-interface default
  passive-interface GigabitEthernet1
  no passive-interface Tunnel0
+{%- if ns.pair %}
+ no passive-interface GigabitEthernet2
+{%- endif %}
 !
 line vty 0 4
  transport input ssh telnet
