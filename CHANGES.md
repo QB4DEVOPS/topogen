@@ -15,6 +15,16 @@ This file lists changes.
     - nodes argument is the number of spokes (R1 is hub; R2.. are spokes)
     - supports `--dmvpn-phase`, `--dmvpn-routing`, `--dmvpn-security`, `--dmvpn-nbma-cidr`, `--dmvpn-tunnel-cidr`
     - templates: `iosv-dmvpn` and `csr-dmvpn`
+  - feat(dmvpn): support multi-hub DMVPN
+    - select hub router numbers with `--dmvpn-hubs` (e.g., `1,21,41`)
+    - when `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (R1..R<nodes>)
+    - spokes configure NHRP mappings and NHS entries for all hubs
+  - feat(dmvpn): add DMVPN tunnel key option `--dmvpn-tunnel-key` (default: 10)
+  - feat(offline): fail if `--offline-yaml FILE` already exists (no-clobber by default)
+    - overwrite explicitly with `--overwrite`
+  - feat(dmvpn): scale offline DMVPN NBMA segment using a flat-style unmanaged switch fabric (core + access switches)
+    - uses `--flat-group-size` to control routers per access switch
+    - offline YAML layout matches `flat` / `flat-pair` placement style
   - feat(gui): add optional Gooey GUI (`topogen-gui`) and `topogen[gui]` extra
     - GUI-only: template dropdown and common device-template dropdown
     - GUI-only: clearer offline/online YAML file labels and file-save pickers

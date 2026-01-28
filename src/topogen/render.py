@@ -538,8 +538,13 @@ class Renderer:
         except Exception as exc:
             raise TopogenError(f"Invalid DMVPN CIDR: {exc}") from None
 
-        spokes = int(self.args.nodes)
-        total_routers = spokes + 1
+        hubs_list = getattr(self.args, "dmvpn_hubs_list", None)
+        if hubs_list:
+            total_routers = int(self.args.nodes)
+            spokes = total_routers - len(hubs_list)
+        else:
+            spokes = int(self.args.nodes)
+            total_routers = spokes + 1
 
         if total_routers > (nbma_net.num_addresses - 2):
             raise TopogenError(
@@ -550,13 +555,24 @@ class Renderer:
                 f"DMVPN tunnel CIDR {tunnel_net} is too small for {total_routers} routers"
             )
 
-        _LOGGER.warning(
-            "[dmvpn] Creating 1 hub + %d spokes (total %d routers)",
-            spokes,
-            total_routers,
-        )
+        if hubs_list:
+            _LOGGER.warning(
+                "[dmvpn] Creating %d hubs + %d spokes (total %d routers)",
+                len(hubs_list),
+                spokes,
+                total_routers,
+            )
+        else:
+            _LOGGER.warning(
+                "[dmvpn] Creating 1 hub + %d spokes (total %d routers)",
+                spokes,
+                total_routers,
+            )
 
         nbma_sw = self.create_node("SWnbma0", "unmanaged_switch", Point(0, 0))
+
+        # Deterministic Loopback0 addressing (match flat/offline behavior)
+        l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
 
         routers: list[tuple[TopogenNode, Node]] = []
         for idx in range(total_routers):
@@ -578,9 +594,14 @@ class Renderer:
             tunnel_ip = IPv4Interface(
                 f"{tunnel_net.network_address + (idx + 1)}/{tunnel_net.prefixlen}"
             )
+
+            rnum = idx + 1
+            hi = (rnum // 256) & 0xFF
+            lo = rnum % 256
+            loopback_ip = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
             node = TopogenNode(
                 hostname=hostname,
-                loopback=None,
+                loopback=loopback_ip,
                 interfaces=[
                     TopogenInterface(
                         address=nbma_ip,
@@ -597,31 +618,50 @@ class Renderer:
 
             routers.append((node, cml_router))
 
-        hub_nbma_ip = routers[0][0].interfaces[0].address.ip  # type: ignore[union-attr]
-        hub_tunnel_ip = routers[0][0].interfaces[1].address.ip  # type: ignore[union-attr]
+        # hub_info is a list of {hub_nbma_ip, hub_tunnel_ip} entries used by spoke templates
+        if hubs_list:
+            hub_set = set(int(h) for h in hubs_list)
+        else:
+            hub_set = {1}
+
+        hub_info: list[dict[str, IPv4Address]] = []
+        for idx, (node, _cml_router) in enumerate(routers):
+            rnum = idx + 1
+            if rnum in hub_set:
+                hub_info.append(
+                    {
+                        "hub_nbma_ip": node.interfaces[0].address.ip,  # type: ignore[union-attr]
+                        "hub_tunnel_ip": node.interfaces[1].address.ip,  # type: ignore[union-attr]
+                    }
+                )
 
         for idx, (node, cml_router) in enumerate(routers):
+            rnum = idx + 1
             rendered = self.template.render(
                 config=self.config,
                 node=node,
                 date=datetime.now(timezone.utc),
                 origin="",
-                is_hub=(idx == 0),
-                hub_nbma_ip=hub_nbma_ip,
-                hub_tunnel_ip=hub_tunnel_ip,
+                is_hub=(rnum in hub_set),
+                hub_info=hub_info,
+                dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
             )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
             except Exception:
                 pass
 
+        if hub_info:
+            hubs_str = ",".join(
+                str(i["hub_tunnel_ip"]) for i in hub_info
+            )
+        else:
+            hubs_str = ""
         _LOGGER.warning(
-            "[dmvpn] NBMA: %s | Tunnel: %s | Hub=%s (%s/%s)",
+            "[dmvpn] NBMA: %s | Tunnel: %s | Hubs(tunnel): %s",
             nbma_net,
             tunnel_net,
-            routers[0][0].hostname,
-            routers[0][0].interfaces[0].address.ip,
-            tunnel_net.network_address + 1,
+            hubs_str,
         )
 
         outfile = getattr(self.args, "yaml_output", None)
@@ -835,8 +875,18 @@ class Renderer:
         except Exception as exc:
             raise TopogenError(f"Invalid DMVPN CIDR: {exc}") from None
 
-        spokes = int(args.nodes)
-        total_routers = spokes + 1
+        hubs_list = getattr(args, "dmvpn_hubs_list", None)
+        if hubs_list:
+            total_routers = int(args.nodes)
+            spokes = total_routers - len(hubs_list)
+        else:
+            spokes = int(args.nodes)
+            total_routers = spokes + 1
+
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # The CML API currently enforces x <= 15000 (and similarly for y). Keep all
+        # nodes within this range.
+        max_coord = 15000
 
         if total_routers > (nbma_net.num_addresses - 2):
             raise TopogenError(
@@ -860,7 +910,7 @@ class Renderer:
         lines.append("lab:")
         lines.append(f"  title: {args.labname}")
 
-        args_bits: list[str] = [f"nodes={spokes}", f"-m {args.mode}", f"-T {args.template}"]
+        args_bits: list[str] = [f"nodes={args.nodes}", f"-m {args.mode}", f"-T {args.template}"]
         if dev_def != args.template:
             args_bits.append(f"--device-template {dev_def}")
         args_bits.append(f"--dmvpn-phase {getattr(args, 'dmvpn_phase', 2)}")
@@ -868,6 +918,8 @@ class Renderer:
         args_bits.append(f"--dmvpn-security {getattr(args, 'dmvpn_security', 'none')}")
         args_bits.append(f"--dmvpn-nbma-cidr {nbma_net}")
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
+        if hubs_list:
+            args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -876,14 +928,42 @@ class Renderer:
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn) | args: "
             + " ".join(args_bits)
         )
-        lines.append(f'  description: "{desc}"')
+        lines.append(f"  description: \"{desc}\"")
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
         node_ids: dict[str, str] = {}
         nid = 0
 
-        # NBMA switch
+        # NBMA underlay: flat-style star fabric (like flat mode)
+        # One core unmanaged switch (SWnbma0) plus N access switches (SWnbma1..N).
+        # Each router's WAN interface connects to exactly one access switch; each access
+        # switch has one uplink to the core. This avoids the unmanaged_switch 32-port cap.
+        MAX_SW_PORTS = 32
+        group = max(1, int(getattr(args, "flat_group_size", 20)))
+        if group + 1 > MAX_SW_PORTS:
+            raise TopogenError(
+                f"Invalid --flat-group-size {group}: requires {group + 1} ports per access switch (>32). Reduce --flat-group-size."
+            )
+
+        from math import ceil
+
+        num_access = ceil(total_routers / group)
+        if num_access > MAX_SW_PORTS:
+            raise TopogenError(
+                f"DMVPN NBMA requires {num_access} access switches with group_size={group}, but core unmanaged_switch supports only 32 uplinks. Increase --flat-group-size."
+            )
+
+        # Match flat/flat-pair layout: core at (0,0), access switches along +X,
+        # routers stacked under their access switch.
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        # Scale X spacing so the right-most access switch stays within max_coord.
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_access + 1))))
+        # Scale router Y spacing so the bottom-most router stays within max_coord.
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
+
+        # Core NBMA switch
         node_ids["SWnbma0"] = f"n{nid}"; nid += 1
         lines.append(f"  - id: {node_ids['SWnbma0']}")
         lines.append("    label: SWnbma0")
@@ -891,20 +971,62 @@ class Renderer:
         lines.append("    x: 0")
         lines.append("    y: 0")
         lines.append("    interfaces:")
-        # Switch needs one port per router
-        for p in range(total_routers):
+        for p in range(num_access):
             lines.append(f"      - id: i{p}")
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
             lines.append("        type: physical")
 
-        # Precompute hub info for spoke templates
-        hub_nbma_ip = IPv4Interface(
-            f"{nbma_net.network_address + 1}/{nbma_net.prefixlen}"
-        ).ip
-        hub_tunnel_ip = IPv4Interface(
-            f"{tunnel_net.network_address + 1}/{tunnel_net.prefixlen}"
-        ).ip
+        # Access NBMA switches (each has 1 uplink + router-facing ports)
+        # router_port_map[idx] -> (access_switch_label, access_port)
+        router_port_map: list[tuple[str, int]] = []
+        for sidx in range(num_access):
+            sw_label = f"SWnbma{sidx + 1}"
+            node_ids[sw_label] = f"n{nid}"; nid += 1
+            sx = min(max_coord, (sidx + 1) * sw_step_x)
+            lines.append(f"  - id: {node_ids[sw_label]}")
+            lines.append(f"    label: {sw_label}")
+            lines.append("    node_definition: unmanaged_switch")
+            lines.append(f"    x: {sx}")
+            lines.append("    y: 0")
+            lines.append("    interfaces:")
+
+            start = sidx * group
+            end = min((sidx + 1) * group, total_routers)
+            router_count = max(0, end - start)
+            if_count = 1 + router_count
+            for p in range(if_count):
+                lines.append(f"      - id: i{p}")
+                lines.append(f"        slot: {p}")
+                lines.append(f"        label: port{p}")
+                lines.append("        type: physical")
+
+            for p in range(1, if_count):
+                router_port_map.append((sw_label, p))
+
+        # Determine hub set and precompute hub_info for spoke templates
+        if hubs_list:
+            hub_set = set(int(h) for h in hubs_list)
+        else:
+            hub_set = {1}
+
+        hub_info: list[dict[str, IPv4Address]] = []
+        for rnum in range(1, total_routers + 1):
+            if rnum not in hub_set:
+                continue
+            hub_info.append(
+                {
+                    "hub_nbma_ip": IPv4Interface(
+                        f"{nbma_net.network_address + rnum}/{nbma_net.prefixlen}"
+                    ).ip,
+                    "hub_tunnel_ip": IPv4Interface(
+                        f"{tunnel_net.network_address + rnum}/{tunnel_net.prefixlen}"
+                    ).ip,
+                }
+            )
+
+        # Deterministic Loopback0 addressing (match flat mode)
+        l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
 
         # Routers
         for idx in range(total_routers):
@@ -918,9 +1040,13 @@ class Renderer:
             tunnel_ip = IPv4Interface(
                 f"{tunnel_net.network_address + n}/{tunnel_net.prefixlen}"
             )
+
+            hi = (n // 256) & 0xFF
+            lo = n % 256
+            loopback_ip = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
             node = TopogenNode(
                 hostname=label,
-                loopback=None,
+                loopback=loopback_ip,
                 interfaces=[
                     TopogenInterface(address=nbma_ip, description="dmvpn nbma", slot=0),
                     TopogenInterface(address=tunnel_ip, description="dmvpn tunnel", slot=1000),
@@ -932,13 +1058,15 @@ class Renderer:
                 node=node,
                 date=datetime.now(timezone.utc),
                 origin="",
-                is_hub=(idx == 0),
-                hub_nbma_ip=hub_nbma_ip,
-                hub_tunnel_ip=hub_tunnel_ip,
+                is_hub=(n in hub_set),
+                hub_info=hub_info,
+                dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
             )
 
-            x = (idx + 1) * args.distance * 2
-            y = args.distance * 2 if idx == 0 else -args.distance * 2
+            # Flat-like placement
+            sw_index = idx // group
+            x = min(max_coord, (sw_index + 1) * sw_step_x)
+            y = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
@@ -956,19 +1084,38 @@ class Renderer:
         # Links
         lines.append("links:")
         lid = 0
+
+        # Access-to-core links (NBMA fabric uplinks)
+        for sidx in range(num_access):
+            sw_label = f"SWnbma{sidx + 1}"
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[sw_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{sidx}")
+
+        # Router-to-NBMA links (each router uses its slot-0 interface)
         for idx in range(total_routers):
             rlabel = f"R{idx + 1}"
+            sw_label, sw_port = router_port_map[idx]
             lines.append(f"  - id: l{lid}")
             lid += 1
             lines.append(f"    n1: {node_ids[rlabel]}")
             lines.append("    i1: i0")
-            lines.append(f"    n2: {node_ids['SWnbma0']}")
-            lines.append(f"    i2: i{idx}")
+            lines.append(f"    n2: {node_ids[sw_label]}")
+            lines.append(f"    i2: i{sw_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if outfile.exists() and not getattr(args, "overwrite", False):
+            raise TopogenError(
+                f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
+            )
+        if outfile.exists() and getattr(args, "overwrite", False):
+            _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML (dmvpn) written to %s", outfile)
+        _LOGGER.info("Offline YAML (dmvpn) written to %s", outfile)
         return 0
 
     @staticmethod
@@ -1158,8 +1305,14 @@ class Renderer:
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if outfile.exists() and not getattr(args, "overwrite", False):
+            raise TopogenError(
+                f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
+            )
+        if outfile.exists() and getattr(args, "overwrite", False):
+            _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML written to %s", outfile)
+        _LOGGER.info("Offline YAML written to %s", outfile)
         return 0
     @staticmethod
     def offline_flat_pair_yaml(args: Namespace, cfg: Config) -> int:
@@ -1370,10 +1523,11 @@ class Renderer:
             lines.append(f"    n2: {node_ids['SWmgt0']}")
             lines.append(f"    i2: i{i}")
 
-        # Router -> access switch (odd routers only)
+        # Router -> access switch
+        router_sw_port: dict[str, tuple[str, int]] = {}
         per_sw_next_port = [1 for _ in range(num_sw)]  # reserve 0 for uplink
         for idx in range(total):
-            n = idx + 1
+            rlabel = f"R{idx + 1}"
             if n % 2 == 0:
                 continue  # even routers do not connect to access switch
             rlabel = f"R{n}"
@@ -1402,8 +1556,14 @@ class Renderer:
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if outfile.exists() and not getattr(args, "overwrite", False):
+            raise TopogenError(
+                f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
+            )
+        if outfile.exists() and getattr(args, "overwrite", False):
+            _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML (flat-pair) written to %s", outfile)
+        _LOGGER.info("Offline YAML (flat-pair) written to %s", outfile)
         return 0
     def render_flat_network(self) -> int:
         """Render a flat L2 management network.

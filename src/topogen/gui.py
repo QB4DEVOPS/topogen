@@ -34,6 +34,36 @@ def main() -> int:
         parser = create_argparser(parser_class=GooeyParser)
         args = parser.parse_args()
 
+        def _replace_flag(argv: list[str], flags: tuple[str, ...], value: str) -> list[str]:
+            argv = list(argv)
+            for flag in flags:
+                if flag in argv:
+                    idx = argv.index(flag)
+                    if idx + 1 < len(argv):
+                        argv[idx + 1] = value
+                    else:
+                        argv.append(value)
+                    return argv
+            argv.extend([flags[0], value])
+            return argv
+
+        if getattr(args, "labname", None) == "topogen lab":
+            mode = getattr(args, "mode", "")
+            nodes = getattr(args, "nodes", None)
+            if mode == "dmvpn" and nodes:
+                dev_template = str(getattr(args, "dev_template", "")).strip().lower()
+                platform = "IOSXE" if dev_template == "csr1000v" else dev_template.upper() if dev_template else "CML"
+                phase = int(getattr(args, "dmvpn_phase", 2))
+                routing = str(getattr(args, "dmvpn_routing", "eigrp")).upper()
+                hubs_raw = getattr(args, "dmvpn_hubs", None)
+                if hubs_raw:
+                    hubs = [p.strip() for p in str(hubs_raw).split(",") if p.strip()]
+                    hcount = len(hubs)
+                    suggested = f"{platform}-DMVPN-{hcount}H-P{phase}-{routing}-N{int(nodes)}"
+                else:
+                    suggested = f"{platform}-DMVPN-P{phase}-{routing}-N{int(nodes)}"
+                sys.argv = _replace_flag(sys.argv, ("-L", "--labname"), suggested)
+
         # Reuse the existing CLI logic by invoking topogen.main.main().
         # Easiest approach: temporarily replace sys.argv with the parsed args.
         # But argparse doesn't expose a clean round-trip; instead we call

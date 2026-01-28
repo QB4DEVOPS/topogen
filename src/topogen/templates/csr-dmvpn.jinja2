@@ -30,24 +30,32 @@ interface GigabitEthernet1
  ip address {{ ns.nbma.ip }} {{ ns.nbma.netmask }}
  no shutdown
 !
+interface Loopback0
+ ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
+!
 interface Tunnel0
  ip address {{ ns.tun.ip }} {{ ns.tun.netmask }}
  no ip redirects
  tunnel source GigabitEthernet1
+ tunnel key {{ dmvpn_tunnel_key }}
  tunnel mode gre multipoint
  ip nhrp network-id 10
 {%- if is_hub %}
  ip nhrp redirect
  no ip split-horizon eigrp 100
 {%- else %}
- ip nhrp map {{ hub_tunnel_ip }} {{ hub_nbma_ip }}
- ip nhrp map multicast {{ hub_nbma_ip }}
- ip nhrp nhs {{ hub_tunnel_ip }}
+{%- for hub in hub_info %}
+ ip nhrp map {{ hub.hub_tunnel_ip }} {{ hub.hub_nbma_ip }}
+ ip nhrp map multicast {{ hub.hub_nbma_ip }}
+ ip nhrp nhs {{ hub.hub_tunnel_ip }}
+{%- endfor %}
 {%- endif %}
 !
 router eigrp 100
  network {{ ns.tun.ip }} 0.0.0.0
+ network {{ node.loopback.ip }} 0.0.0.0
  passive-interface default
+ passive-interface GigabitEthernet1
  no passive-interface Tunnel0
 !
 line vty 0 4
