@@ -15,6 +15,10 @@ ip ssh version 2
 ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
+{%- if dmvpn_vrf %}
+ip vrf {{ dmvpn_vrf }}
+!
+{%- endif %}
 !
 {%- set ns = namespace(nbma=None, tun=None, pair=None) %}
 {%- for iface in node.interfaces %}
@@ -35,23 +39,34 @@ interface GigabitEthernet0/0
 !
 {%- if ns.pair %}
 interface GigabitEthernet0/1
- ip address {{ ns.pair.ip }} {{ ns.pair.netmask }}
- no shutdown
+{%- if dmvpn_vrf %}
+  ip vrf forwarding {{ dmvpn_vrf }}
+{%- endif %}
+  ip address {{ ns.pair.ip }} {{ ns.pair.netmask }}
+  no shutdown
 !
 {%- endif %}
 int Loopback0
- ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
+{%- if dmvpn_vrf %}
+  ip vrf forwarding {{ dmvpn_vrf }}
+{%- endif %}
+  ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
 !
 interface Tunnel0
- ip address {{ ns.tun.ip }} {{ ns.tun.netmask }}
- no ip redirects
- tunnel source GigabitEthernet0/0
- tunnel key {{ dmvpn_tunnel_key }}
- tunnel mode gre multipoint
+{%- if dmvpn_vrf %}
+  ip vrf forwarding {{ dmvpn_vrf }}
+{%- endif %}
+  ip address {{ ns.tun.ip }} {{ ns.tun.netmask }}
+  no ip redirects
+  tunnel source GigabitEthernet0/0
+  tunnel key {{ dmvpn_tunnel_key }}
+  tunnel mode gre multipoint
  ip nhrp network-id 10
 {%- if is_hub %}
  ip nhrp redirect
+ {%- if not dmvpn_vrf %}
  no ip split-horizon eigrp 100
+ {%- endif %}
 {%- else %}
 {%- for hub in hub_info %}
  ip nhrp map {{ hub.hub_tunnel_ip }} {{ hub.hub_nbma_ip }}
@@ -60,6 +75,35 @@ interface Tunnel0
 {%- endfor %}
 {%- endif %}
 !
+{%- if dmvpn_vrf %}
+router eigrp TOPGEN
+ !
+ address-family ipv4 unicast vrf {{ dmvpn_vrf }} autonomous-system 100
+  !
+  af-interface default
+   passive-interface
+  exit-af-interface
+  af-interface Tunnel0
+   no passive-interface
+ {%- if is_hub %}
+    no split-horizon
+ {%- endif %}
+  exit-af-interface
+{%- if ns.pair %}
+  af-interface GigabitEthernet0/1
+   no passive-interface
+  exit-af-interface
+{%- endif %}
+  topology base
+  exit-af-topology
+  network {{ ns.tun.ip }} 0.0.0.0
+  network {{ node.loopback.ip }} 0.0.0.0
+{%- if ns.pair %}
+  network {{ ns.pair.ip }} 0.0.0.0
+{%- endif %}
+ exit-address-family
+!
+{%- else %}
 router eigrp 100
  network {{ ns.tun.ip }} 0.0.0.0
  network {{ node.loopback.ip }} 0.0.0.0
@@ -70,9 +114,10 @@ router eigrp 100
  passive-interface GigabitEthernet0/0
  no passive-interface Tunnel0
 {%- if ns.pair %}
- no passive-interface GigabitEthernet0/1
+  no passive-interface GigabitEthernet0/1
 {%- endif %}
 !
+{%- endif %}
 line vty 0 4
  transport input ssh telnet
  exec-timeout 720 0

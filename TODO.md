@@ -25,6 +25,11 @@ This file tracks in-progress work and future ideas for TopoGen.
   - even routers are EIGRP-only
   - odd router NBMA interface is passive for EIGRP (no neighbors on Gi0/0)
 
+- [ ] DMVPN VRF support (flat-pair): odd (DMVPN) routers only
+  - VRF on pair-link + Loopback0 + Tunnel0
+  - even routers remain global (no VRF)
+  - ensure EIGRP split-horizon is correct in VRF mode
+
 - [ ] Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts:
   - whether `N` should mean total routers vs DMVPN endpoints
   - or document the doubling behavior clearly
@@ -35,9 +40,36 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 - [ ] (add issue-worthy items here)
 
+- [ ] Usability fix: allow `python -m topogen ...` (no `.main`) by adding `src/topogen/__main__.py`
+
+## Done
+
+- [ ] (move completed items here if you want a cleaner active list)
+
 ## Future ideas
 
 - [ ] (add ideas here)
+- [ ] Named EIGRP support (feature)
+  - Standardize templates to support a named EIGRP config model intentionally (not incidentally)
+  - Decide how this interacts with VRF (GRT + VRF address-families) and split-horizon controls
+
+- [ ] Named OSPF support (feature)
+  - Add an intentional named OSPF config model (VRF + GRT where applicable)
+
+- [ ] Add CLI to select routing protocol configuration model (named EIGRP / named OSPF vs classic/numeric)
+  - Why: avoid mixed-mode confusion; make the chosen model explicit
+
+- [ ] DMVPN Phase 3 support
+  - NHRP redirect on hubs
+  - NHRP shortcut on spokes
+  - EIGRP next-hop / split-horizon handling for Phase 3
+
+- [ ] DMVPN security roadmap
+  - IKEv2 with PSK
+  - PKI support
+
+- [ ] Front Door VRF (FVRF) for DMVPN
+
 - [ ] Explore shareable, self-describing lab intents (example lab collection / “marketplace” concept)
 - [ ] Formalize serialized intent model (versioned `topogen:` schema embedded in lab YAML)
 - [ ] Support regenerating a lab from its embedded intent (`topogen regenerate lab.yaml`)
@@ -49,6 +81,8 @@ This file tracks in-progress work and future ideas for TopoGen.
 - [ ] Serialized Intent & Round-Trip Capability:
   - Embed all generation parameters (topology mode, node count, addressing model) directly into the lab YAML under a `topogen:` metadata block.
   - Implement a `topogen regenerate <file.yaml>` command that reads this metadata to deterministically recreate or update the lab.
+- [ ] Intent-based lab generation (medium effort)
+  - Why: Unlock full round-trip editing and GitOps workflows by making intent the source of truth.
 
 - [ ] Management Plane as First-Class Citizen:
   - Automate a dedicated `management-vrf` configuration for `GigabitEthernet0/0` across all routers.
