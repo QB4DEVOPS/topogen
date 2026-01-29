@@ -543,6 +543,8 @@ class Renderer:
         total_routers = int(self.args.nodes)
         total_endpoints = (total_routers + 1) // 2
 
+        dmvpn_vrf = self.args.pair_vrf if getattr(self.args, "enable_vrf", False) else None
+
         hubs_list = getattr(self.args, "dmvpn_hubs_list", None)
         if hubs_list:
             hub_set = set(int(h) for h in hubs_list)
@@ -683,6 +685,7 @@ class Renderer:
                     is_hub=(rnum in hub_set),
                     hub_info=hub_info,
                     dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
+                    dmvpn_vrf=dmvpn_vrf,
                 )
             else:
                 rendered = eigrp_template.render(
@@ -1334,6 +1337,8 @@ class Renderer:
         except TemplateNotFound as exc:  # pragma: no cover
             raise TopogenError(f"template does not exist: {args.template}") from exc
 
+        dmvpn_vrf = args.pair_vrf if getattr(args, "enable_vrf", False) else None
+
         base = str(getattr(args, "template", ""))
         if not base.endswith("-dmvpn"):
             raise TopogenError(
@@ -1518,6 +1523,7 @@ class Renderer:
                     is_hub=(rnum in hub_set),
                     hub_info=hub_info,
                     dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
+                    dmvpn_vrf=dmvpn_vrf,
                 )
             else:
                 pair_ip = pair_ips.get(rnum - 1, (None, None))[1]
