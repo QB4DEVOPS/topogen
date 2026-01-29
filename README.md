@@ -605,3 +605,18 @@ VRF info: (vrf in name/id, vrf out name/id)
   5 192.168.122.1 13 msec 12 msec 11 msec
 R1#
 ```
+
+## Operations / Ping Sweep
+
+This repo includes a simple IOS/IOS-XE TCL ping sweep script at `DMVPN-ping.tcl`.
+
+To run it on a router:
+
+```text
+copy scp://<user>@<host>/DMVPN-ping.tcl flash:
+
+tclsh
+source flash:DMVPN-ping.tcl
+```
+
+Or, if you just want to paste it into the CLI, open `DMVPN-ping.tcl` and paste the whole script into the router.
