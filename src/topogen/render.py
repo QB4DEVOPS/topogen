@@ -685,6 +685,7 @@ class Renderer:
                     is_hub=(rnum in hub_set),
                     hub_info=hub_info,
                     dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
+                    dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
                 )
             else:
@@ -856,6 +857,7 @@ class Renderer:
                 is_hub=(rnum in hub_set),
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
+                dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
             )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
@@ -1272,6 +1274,7 @@ class Renderer:
                 is_hub=(n in hub_set),
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
+                dmvpn_phase=getattr(args, "dmvpn_phase", 2),
             )
 
             # Flat-like placement
@@ -1523,6 +1526,7 @@ class Renderer:
                     is_hub=(rnum in hub_set),
                     hub_info=hub_info,
                     dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
+                    dmvpn_phase=getattr(args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
                 )
             else:
