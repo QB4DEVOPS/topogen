@@ -11,6 +11,11 @@ TopoGen is a Python CLI tool that generates CML labs:
 
 It also renders per-node startup-configs using **Jinja2 templates**.
 
+Terminology:
+
+- `-T` / `--template`: which config template to render (`src/topogen/templates/*.jinja2`)
+- `--device-template`: which CML node definition to use (e.g., `iosv`, `csr1000v`)
+
 ## Authoritative sources of truth
 
 - `src/topogen/render.py`: topology semantics + rendering behavior (authoritative engine)
@@ -256,6 +261,7 @@ The intent of this section is to reduce guesswork.
 - **Offline** (`--offline-yaml out\lab.yaml`):
   - No controller needed.
   - Produces a YAML you import into CML.
+  - `out\` is gitignored by default; in some environments tools/assistants may not be able to read generated artifacts, so validate via terminal search (e.g., PowerShell `Select-String`) rather than asking a tool to open the file.
 
 - **Online** (no `--offline-yaml`):
   - Requires controller env vars (typical):
@@ -297,3 +303,43 @@ Rule of thumb:
 - **Config lines emitted**: `src/topogen/templates/*.jinja2`
 - **New per-node data fields**: `src/topogen/models.py`
 - **Config.toml default / parsing**: `src/topogen/config.py`
+
+## How to validate changes
+
+Offline (recommended first pass):
+
+- Generate an offline YAML under `out\` (gitignored).
+- Validate by searching the generated YAML/config text (PowerShell examples):
+  - `Select-String -Path out\*.yaml -Pattern "eigrp stub connected summary"`
+  - `Select-String -Path out\*.yaml -Pattern "router eigrp"`
+  - `Select-String -Path out\*.yaml -Pattern "tunnel mode gre multipoint"`
+
+Online (basic smoke checks once routers boot):
+
+- Routing:
+  - `show ip route`
+  - `show ip eigrp neighbors` (if using EIGRP)
+- DMVPN (if applicable):
+  - `show dmvpn`
+  - `show ip nhrp`
+- Config presence:
+  - `show run | include eigrp stub`
+
+## Git workflow for this repo
+
+- Branch naming:
+  - `feat/<short-name>` for features
+  - `fix/<short-name>` for bugfixes
+  - `docs/<short-name>` for documentation-only changes
+- Workflow:
+  - Keep changes incremental (one feature per branch/PR).
+  - Prefer squash-merge to keep history clean.
+  - After merge: sync `main` locally and delete the feature branch.
+- Interaction preference:
+  - AIs/assistants can propose exact commands; you run them and share output.
+
+## Feature closeout checklist
+
+See the README checklist and follow it for any change that affects behavior:
+
+- [Feature closeout checklist](README.md#feature-closeout-checklist-required)

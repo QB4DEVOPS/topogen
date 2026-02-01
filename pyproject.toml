@@ -52,9 +52,9 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://developer.cisco.com/modeling-labs"
-Repository = "https://github.com/rschmied/topogen"
-Issues = "https://github.com/rschmied/topogen/issues"
-Changelog = "https://github.com/rschmied/topogen/blob/master/CHANGES.md"
+Repository = "https://github.com/QB4DEVOPS/topogen"
+Issues = "https://github.com/QB4DEVOPS/topogen/issues"
+Changelog = "https://github.com/QB4DEVOPS/topogen/blob/master/CHANGES.md"
 
 [project.scripts]
 topogen = "topogen:main"
