@@ -55,6 +55,13 @@ This file tracks in-progress work and future ideas for TopoGen.
 ## Future ideas
 
 - [ ] (add ideas here)
+- [ ] Flat management network generation
+  - Like `flat`, but add an external connector using a bridge for a management network
+  - IOS/IOS-XE routers connect management network on `Gi0/5` (IOSv) / `Gi5` (IOS-XE)
+  - `Gi0/5` / `Gi5` in `Mgmt-vrf`
+  - Addressing options:
+    - DHCP enabled, or
+    - deterministic management IPs generated from an input base CIDR (e.g. `10.10.0.0/16`)
 - [ ] Named EIGRP support (feature)
   - Standardize templates to support a named EIGRP config model intentionally (not incidentally)
   - Decide how this interacts with VRF (GRT + VRF address-families) and split-horizon controls

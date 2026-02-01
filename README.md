@@ -23,6 +23,8 @@ controller, creating the lab, nodes and links on the fly.
 
 ## Code structure and dependencies
 
+For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [developer.md](developer.md).
+
 - **src/topogen/main.py**
   - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.
   - Calls `Renderer.offline_flat_yaml()` / `Renderer.offline_flat_pair_yaml()` / `Renderer.offline_dmvpn_yaml()` for offline export, or constructs `Renderer` and calls one of:
