@@ -1,5 +1,5 @@
 tclsh
-set max 314
+set max 250
 set base "10.20"
 
 for {set n 1} {$n <= $max} {incr n} {
