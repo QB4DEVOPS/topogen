@@ -29,6 +29,10 @@ Terminology:
 - `-T` / `--template`: which config template to render (`src/topogen/templates/*.jinja2`)
 - `--device-template`: which CML node definition to use (e.g., `iosv`, `csr1000v`)
 
+Pitfall:
+
+- In general, keep the config template (`-T`) aligned with the device template (`--device-template`). For example, using an IOSv config template on a CSR1000v node definition can result in wrong interface names or unsupported config at boot.
+
 ## Authoritative sources of truth
 
 - `src/topogen/render.py`: topology semantics + rendering behavior (authoritative engine)
@@ -177,6 +181,8 @@ Unless a task explicitly requires otherwise:
 ## File pointers (called-by / reads-from / writes-to / calls-into)
 
 The intent of this section is to reduce guesswork.
+
+If this file and the code disagree, treat the code as authoritative and update `developer.md` in the same PR.
 
 - For an **AI**, these pointers help answer: “Where do I edit, and what else must I touch?”
 - For a **human**, these pointers help answer: “What are the side effects and blast radius of a change?”
