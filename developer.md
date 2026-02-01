@@ -178,6 +178,37 @@ Unless a task explicitly requires otherwise:
   - `src/topogen/config.py`
   - `src/topogen/main.py` (wire flags like `--config`, `--write`)
 
+## Worked example: `--eigrp-stub` flag
+
+Reference implementation:
+
+- Commit: `bfe0498` (feat(dmvpn): add --eigrp-stub for flat-pair evens)
+
+Goal:
+
+- Add a CLI flag `--eigrp-stub` that enables `eigrp stub connected summary` in the generated router configs (scoped by topology rules).
+
+Typical change pattern (what got edited):
+
+- `src/topogen/main.py`
+  - Add the CLI flag and plumb it into the rendering call.
+- `src/topogen/render.py`
+  - Decide which nodes should be treated as “stub” based on the selected mode/underlay.
+  - Pass the stub decision into the Jinja rendering context.
+- `src/topogen/templates/*.jinja2`
+  - Emit `eigrp stub connected summary` when the context indicates stub should be enabled.
+- Docs
+  - Update `README.md` and `CHANGES.md` to reflect the new flag and its semantics.
+
+Validation pattern:
+
+- Generate an offline YAML lab and search for the emitted config line:
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --eigrp-stub --offline-yaml out\test.yaml --overwrite 20
+Select-String -Path out\test.yaml -Pattern "eigrp stub connected summary"
+```
+
 ## File pointers (called-by / reads-from / writes-to / calls-into)
 
 The intent of this section is to reduce guesswork.
