@@ -129,7 +129,7 @@ router eigrp 100
 {%- endif %}
 line vty 0 4
  transport input ssh telnet
- exec-timeout 720 0
+ exec-timeout 0 0
  login local
 line con 0
  password {{ config.password }}

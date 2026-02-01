@@ -298,14 +298,18 @@ topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v `
 - Offline YAML (DMVPN flat-pair, IOSv): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
 
 ```powershell
-topogen -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv -L IOSV-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
+topogen -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --eigrp-stub -L IOSV-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
 ```
 
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
 
 ```powershell
-topogen -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --device-template csr1000v -L IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
+topogen -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --device-template csr1000v --eigrp-stub -L IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
 ```
+
+Notes:
+
+- `--eigrp-stub`: enables `eigrp stub connected summary` on DMVPN `flat-pair` even routers (pair partners).
 
 - Online (controller):
 

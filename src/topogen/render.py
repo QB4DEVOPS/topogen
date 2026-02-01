@@ -543,6 +543,10 @@ class Renderer:
         total_routers = int(self.args.nodes)
         total_endpoints = (total_routers + 1) // 2
 
+        stub_evens = bool(getattr(self.args, "eigrp_stub", False)) and str(
+            getattr(self.args, "dmvpn_routing", "eigrp")
+        ).lower() == "eigrp"
+
         dmvpn_vrf = self.args.pair_vrf if getattr(self.args, "enable_vrf", False) else None
 
         hubs_list = getattr(self.args, "dmvpn_hubs_list", None)
@@ -694,6 +698,7 @@ class Renderer:
                     node=node,
                     date=datetime.now(timezone.utc),
                     origin="",
+                    eigrp_stub=stub_evens,
                 )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
@@ -1340,6 +1345,10 @@ class Renderer:
         except TemplateNotFound as exc:  # pragma: no cover
             raise TopogenError(f"template does not exist: {args.template}") from exc
 
+        stub_evens = bool(getattr(args, "eigrp_stub", False)) and str(
+            getattr(args, "dmvpn_routing", "eigrp")
+        ).lower() == "eigrp"
+
         dmvpn_vrf = args.pair_vrf if getattr(args, "enable_vrf", False) else None
 
         base = str(getattr(args, "template", ""))
@@ -1400,6 +1409,8 @@ class Renderer:
         args_bits.append(f"--dmvpn-underlay {getattr(args, 'dmvpn_underlay', 'flat')}")
         args_bits.append(f"--dmvpn-phase {getattr(args, 'dmvpn_phase', 2)}")
         args_bits.append(f"--dmvpn-routing {getattr(args, 'dmvpn_routing', 'eigrp')}")
+        if stub_evens:
+            args_bits.append("--eigrp-stub")
         args_bits.append(f"--dmvpn-security {getattr(args, 'dmvpn_security', 'none')}")
         args_bits.append(f"--dmvpn-nbma-cidr {nbma_net}")
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
@@ -1541,6 +1552,7 @@ class Renderer:
                     node=node,
                     date=datetime.now(timezone.utc),
                     origin="",
+                    eigrp_stub=stub_evens,
                 )
 
             sw_index = ((rnum - 1) // 2) // group

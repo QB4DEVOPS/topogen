@@ -28,11 +28,11 @@ This file tracks in-progress work and future ideas for TopoGen.
 ## Current work
 
 - [ ] Implement EIGRP stub flag support
-  - add CLI flag (e.g., `--stub-evens` / `--stub`)
-  - render EIGRP stub in templates (IOSv + CSR)
-    - DMVPN underlay `flat-pair`: apply stub on even routers (companion `*-eigrp` templates)
-    - not `flat-pair`: apply stub on odd DMVPN routers (`*-dmvpn` templates)
-  - decide exact stub form (e.g., `eigrp stub connected summary`)
+  - add CLI flag: `--eigrp-stub`
+  - stub form: `eigrp stub connected summary`
+  - render EIGRP stub in templates (IOSv + CSR) (incremental)
+    - first: DMVPN underlay `flat-pair`: apply stub on even routers (companion `*-eigrp` templates)
+    - then: apply stub on odd DMVPN routers (`*-dmvpn` templates)
   - add README + CHANGES updates when complete
 
 ## Promote to Issues
