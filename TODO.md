@@ -55,6 +55,10 @@ This file tracks in-progress work and future ideas for TopoGen.
 ## Future ideas
 
 - [ ] (add ideas here)
+- [ ] Optional: interactive dependency graph / call graph visualization
+  - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
+  - Possible outputs: Mermaid graph in Markdown, Graphviz DOT/SVG, or JSON for a web viewer
+  - Scope: at least `main.py` -> `render.py` -> `templates/*` plus other core modules
 - [ ] Flat management network generation
   - Like `flat`, but add an external connector using a bridge for a management network
   - IOS/IOS-XE routers connect management network on `Gi0/5` (IOSv) / `Gi5` (IOS-XE)
