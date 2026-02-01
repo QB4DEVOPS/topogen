@@ -18,23 +18,22 @@ This file tracks in-progress work and future ideas for TopoGen.
 - When asking an LLM to add something, prefer:
   - "Add to Current work: ..." or "Add to Future ideas: ..." or "Promote to Issues: ..."
 
+## Feature roadmap (ordered)
+
+1. EIGRP stub flag support (this is the current work)
+2. DMVPN IPsec protection (IKEv2 + PSK)
+3. DMVPN security roadmap (PKI)
+4. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
+
 ## Current work
 
-- [ ] Validate runtime behavior in CML for DMVPN underlay `flat-pair`:
-  - odd routers are DMVPN endpoints (Tunnel0/NHRP)
-  - even routers are EIGRP-only
-  - odd router NBMA interface is passive for EIGRP (no neighbors on Gi0/0)
-
-- [ ] DMVPN VRF support (flat-pair): odd (DMVPN) routers only
-  - VRF on pair-link + Loopback0 + Tunnel0
-  - even routers remain global (no VRF)
-  - ensure EIGRP split-horizon is correct in VRF mode
-
-- [ ] Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts:
-  - whether `N` should mean total routers vs DMVPN endpoints
-  - or document the doubling behavior clearly
-
-- [ ] Commit/push PR for `feat/dmvpn-underlay` when ready.
+- [ ] Implement EIGRP stub flag support
+  - add CLI flag: `--eigrp-stub`
+  - stub form: `eigrp stub connected summary`
+  - render EIGRP stub in templates (IOSv + CSR) (incremental)
+    - first: DMVPN underlay `flat-pair`: apply stub on even routers (companion `*-eigrp` templates)
+    - then: apply stub on odd DMVPN routers (`*-dmvpn` templates)
+  - add README + CHANGES updates when complete
 
 ## Promote to Issues
 
@@ -45,6 +44,13 @@ This file tracks in-progress work and future ideas for TopoGen.
 ## Done
 
 - [ ] (move completed items here if you want a cleaner active list)
+
+- [x] DMVPN VRF support (flat-pair): odd (DMVPN) routers only
+  - VRF on pair-link + Loopback0 + Tunnel0
+  - even routers remain global (no VRF)
+  - ensure EIGRP split-horizon is correct in VRF mode
+
+- [x] Commit/push PR for `feat/dmvpn-underlay`
 
 ## Future ideas
 
@@ -63,6 +69,15 @@ This file tracks in-progress work and future ideas for TopoGen.
   - NHRP redirect on hubs
   - NHRP shortcut on spokes
   - EIGRP next-hop / split-horizon handling for Phase 3
+
+- [ ] Validate runtime behavior in CML for DMVPN underlay `flat-pair`
+  - odd routers are DMVPN endpoints (Tunnel0/NHRP)
+  - even routers are EIGRP-only
+  - odd router NBMA interface is passive for EIGRP (no neighbors on Gi0/0)
+
+- [ ] Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
+  - whether `N` should mean total routers vs DMVPN endpoints
+  - or document the doubling behavior clearly
 
 - [ ] DMVPN security roadmap
   - IKEv2 with PSK

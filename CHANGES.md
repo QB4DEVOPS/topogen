@@ -8,6 +8,7 @@ This file lists changes.
     - enable with `--vrf`
     - set VRF name with `--pair-vrf NAME`
     - lab descriptions (online and offline YAML) include VRF flags when enabled
+  - feat(dmvpn): add `--eigrp-stub` to enable `eigrp stub connected summary` on DMVPN flat-pair even routers (pair partners)
   - feat(iosxe): add CSR1000v (IOS-XE) EIGRP template `csr-eigrp`
     - uses `vrf definition TENANT` with `rd 1:1` and `vrf forwarding TENANT`
     - offline YAML uses CSR interface labels (GigabitEthernet1/2/...) when `--device-template csr1000v` is used
@@ -29,6 +30,7 @@ This file lists changes.
     - GUI-only: template dropdown and common device-template dropdown
     - GUI-only: clearer offline/online YAML file labels and file-save pickers
   - docs: offline YAML output is recommended to be written under the `out/` directory (see README examples)
+  - fix(templates): set `line vty 0 4` `exec-timeout` to `0 0` (was `720 0`)
 
 - version 0.2.4
   - empty

@@ -159,6 +159,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help='Routing protocol over DMVPN tunnel, default "%(default)s"',
     )
     parser.add_argument(
+        "--eigrp-stub",
+        dest="eigrp_stub",
+        action="store_true",
+        default=False,
+        help="Enable EIGRP stub (connected summary) on selected routers (DMVPN flat-pair: even routers)",
+    )
+    parser.add_argument(
         "--dmvpn-security",
         dest="dmvpn_security",
         type=str,
