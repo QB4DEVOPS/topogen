@@ -66,11 +66,20 @@ interface Tunnel0
  tunnel mode gre multipoint
  ip nhrp network-id 10
 {%- if is_hub %}
+{%- if (dmvpn_phase|default(2)) == 3 %}
  ip nhrp redirect
+{%- endif %}
  {%- if not dmvpn_vrf %}
  no ip split-horizon eigrp 100
  {%- endif %}
+{%- for hub in hub_info if hub.hub_tunnel_ip != ns.tun.ip %}
+ ip nhrp map {{ hub.hub_tunnel_ip }} {{ hub.hub_nbma_ip }}
+ ip nhrp map multicast {{ hub.hub_nbma_ip }}
+{%- endfor %}
 {%- else %}
+{%- if (dmvpn_phase|default(2)) == 3 %}
+ ip nhrp shortcut
+{%- endif %}
 {%- for hub in hub_info %}
  ip nhrp map {{ hub.hub_tunnel_ip }} {{ hub.hub_nbma_ip }}
  ip nhrp map multicast {{ hub.hub_nbma_ip }}
