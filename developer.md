@@ -2,6 +2,19 @@
 
 This file is a developer-oriented starting point for TopoGen.
 
+## Quick start (skim)
+
+- If you are new here, read:
+  - `README.md` (user-facing behavior and examples)
+  - `developer.md` (this file)
+- Core flow (where to look first):
+  - CLI flags: `src/topogen/main.py`
+  - Topology + rendering behavior: `src/topogen/render.py`
+  - Device configs: `src/topogen/templates/*.jinja2`
+- Validate changes:
+  - Prefer offline first: generate `--offline-yaml out\<lab>.yaml` and search output with PowerShell `Select-String`.
+  - Then (if needed) boot in CML and run basic show commands (see “How to validate changes”).
+
 ## What TopoGen is
 
 TopoGen is a Python CLI tool that generates CML labs:
@@ -116,6 +129,25 @@ When adding a feature:
 
 Use the “File pointers” section in developer.md to understand what each file reads/writes/calls.
 ```
+
+## AI guardrails (default boundaries)
+
+Unless a task explicitly requires otherwise:
+
+- Prefer editing:
+  - `src/topogen/main.py` (CLI flags + wiring)
+  - `src/topogen/render.py` (behavior + Jinja context)
+  - `src/topogen/templates/*.jinja2` (emitted device config)
+  - Docs: `README.md`, `CHANGES.md`, `developer.md`
+
+- Avoid editing (high blast radius) unless asked:
+  - `pyproject.toml` (dependencies, entrypoints, packaging metadata)
+  - `src/topogen/__init__.py` (entrypoint exposure)
+  - `.github/workflows/*` (CI behavior)
+  - `.gitignore` (what artifacts get committed)
+
+- Never commit generated artifacts:
+  - `out\` (gitignored offline YAML outputs)
 
 ## Common tasks -> file chain (LLM-friendly)
 
