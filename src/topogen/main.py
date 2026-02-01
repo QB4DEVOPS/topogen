@@ -405,6 +405,18 @@ def main():
     try:
         args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
 
+        # DMVPN flat-pair uses odd routers as DMVPN endpoints. If hubs are not
+        # provided, default to the first 3 endpoint routers (R1,R3,R5), or fewer
+        # if the lab is smaller.
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_underlay", "flat") == "flat-pair":
+            if getattr(args, "dmvpn_hubs_list", None) is None:
+                if not args.nodes:
+                    parser.error("DMVPN requires nodes argument")
+                max_odd_rnum = int(args.nodes) if (int(args.nodes) % 2) == 1 else (int(args.nodes) - 1)
+                default_hubs = [h for h in (1, 3, 5) if h <= max_odd_rnum]
+                args.dmvpn_hubs_list = default_hubs
+                args.dmvpn_hubs = ",".join(str(h) for h in default_hubs)
+
         # Licensing / capacity guidance: soft cap at 520 unless bypassed
         if args.nodes and not getattr(args, "allow_oversubscribe", False) and args.nodes > 520:
             parser.error(
@@ -418,15 +430,23 @@ def main():
             hubs = args.dmvpn_hubs_list
             underlay = getattr(args, "dmvpn_underlay", "flat")
             if underlay == "flat-pair":
-                max_router = int(args.nodes)
+                total_routers = int(args.nodes)
+                max_odd_rnum = total_routers if (total_routers % 2) == 1 else (total_routers - 1)
+                out_of_range = [h for h in hubs if h < 1 or h > max_odd_rnum]
+                if out_of_range:
+                    bad = ",".join(str(h) for h in out_of_range)
+                    parser.error(
+                        "Invalid --dmvpn-hubs: hub router(s) "
+                        f"{bad} do not exist as DMVPN endpoints in flat-pair (endpoints are odd routers R1..R{max_odd_rnum}; total routers R1..R{total_routers})"
+                    )
             else:
                 max_router = int(args.nodes)
-            out_of_range = [h for h in hubs if h < 1 or h > max_router]
-            if out_of_range:
-                bad = ",".join(str(h) for h in out_of_range)
-                parser.error(
-                    f"Invalid --dmvpn-hubs: hub router(s) {bad} do not exist (lab has R1..R{max_router})"
-                )
+                out_of_range = [h for h in hubs if h < 1 or h > max_router]
+                if out_of_range:
+                    bad = ",".join(str(h) for h in out_of_range)
+                    parser.error(
+                        f"Invalid --dmvpn-hubs: hub router(s) {bad} do not exist (lab has R1..R{max_router})"
+                    )
         if args.mode == "dmvpn" and getattr(args, "dmvpn_underlay", "flat") == "flat-pair":
             hubs = getattr(args, "dmvpn_hubs_list", None)
             if hubs:
