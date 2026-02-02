@@ -92,6 +92,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         default="topogen lab",
         help='Lab name to create, default "%(default)s"',
     )
+    parser.add_argument(
+        "-R",
+        "--remark",
+        type=str,
+        default=None,
+        help="Add a custom remark/note to the lab description (optional)",
+    )
     if is_gooey:
         parser.add_argument(
             "-T",

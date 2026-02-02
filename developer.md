@@ -14,7 +14,68 @@ This file is a developer-oriented starting point for TopoGen.
 - Validate changes:
   - Prefer offline first: generate `--offline-yaml out\<lab>.yaml` and search output with PowerShell `Select-String`.
   - Then (if needed) boot in CML and run basic show commands (see “How to validate changes”).
+## 5-minute environment validation
 
+Before making any changes, verify your environment is working:
+
+### 1. Check package version matches repo
+
+```powershell
+topogen -v
+```
+
+Expected: version should match `pyproject.toml` or show "Unreleased" if installed editable with `-e .`
+
+If the version is stale, reinstall editable:
+
+```powershell
+python -m pip install -e .
+```
+
+### 2. Generate a small offline lab
+
+```powershell
+topogen -T iosv-eigrp --device-template iosv -m flat --offline-yaml out\env-test.yaml --overwrite 4
+```
+
+Expected output includes:
+- Progress through "creating" nodes and links
+- "Offline YAML written to out\env-test.yaml"
+
+### 3. Validate the generated YAML
+
+```powershell
+Select-String -Path out\env-test.yaml -Pattern "node_definition: iosv"
+```
+
+Expected: 4+ matches (1 per router + DNS host)
+
+```powershell
+Select-String -Path out\env-test.yaml -Pattern "router eigrp 100"
+```
+
+Expected: 4 matches (1 per router config)
+
+### 4. Verify templates are loadable
+
+```powershell
+topogen --list-templates
+```
+
+Expected: list of available templates including `iosv`, `iosv-eigrp`, `csr-eigrp`, `iosv-dmvpn`, etc.
+
+### What this proves
+
+- Python environment is working
+- TopoGen package is installed and current
+- Templates are accessible
+- Offline YAML generation works
+- Output directory (`out\`) is writable
+
+If any step fails, troubleshoot before proceeding:
+- Virtual environment activated?
+- Package installed editable (`pip install -e .`)?
+- Working directory is repo root?
 ## What TopoGen is
 
 TopoGen is a Python CLI tool that generates CML labs:

@@ -438,7 +438,7 @@ When enabled, the generated router configs include a `ip vrf NAME` stanza and ap
 
 ### Management Network (OOB)
 
-In `flat` mode, an optional out-of-band management network can be created. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
+In `flat`, `flat-pair`, and `dmvpn` modes, an optional out-of-band management network can be created. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
 
 - `--mgmt`: enable management network
 - `--mgmt-cidr CIDR`: management network CIDR (default: `10.254.0.0/16`)
@@ -460,6 +460,20 @@ Example (flat mode with mgmt network + VRF + gateway):
 ```powershell
 topogen --cml-version 0.3.0 -L "Flat-Mgmt-VRF-10" -T iosv-eigrp --device-template iosv -m flat \
   --flat-group-size 5 --mgmt --mgmt-vrf MGMT --mgmt-gw 10.254.0.1 --offline-yaml out/flat-mgmt-vrf-10.yaml 10
+```
+
+Example (DMVPN flat mode with mgmt network):
+
+```powershell
+topogen --cml-version 0.3.0 -L "DMVPN-Mgmt-5" -T iosv-dmvpn --device-template iosv -m dmvpn \
+  --mgmt --offline-yaml out/dmvpn-mgmt-5.yaml 5
+```
+
+Example (DMVPN flat-pair mode with mgmt network):
+
+```powershell
+topogen --cml-version 0.3.0 -L "DMVPN-FlatPair-Mgmt-10" -T iosv-dmvpn --device-template iosv -m dmvpn \
+  --dmvpn-underlay flat-pair --mgmt --offline-yaml out/dmvpn-flat-pair-mgmt-10.yaml 10
 ```
 
 ### NTP Configuration

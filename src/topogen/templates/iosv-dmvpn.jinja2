@@ -117,6 +117,35 @@ interface Tunnel0
 {%- endfor %}
 {%- endif %}
 !
+{%- if mgmt and mgmt.enabled %}
+{%- if mgmt.vrf %}
+ip vrf {{ mgmt.vrf }}
+!
+{%- endif %}
+interface GigabitEthernet0/{{ mgmt.slot }}
+    description OOB Management
+    {%- if mgmt.vrf %}
+    ip vrf forwarding {{ mgmt.vrf }}
+    {%- endif %}
+    ip address dhcp
+    no shutdown
+!
+{%- if mgmt.gw %}
+{%- if mgmt.vrf %}
+ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- else %}
+ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- endif %}
+{%- endif %}
+{%- endif %}
+{%- if ntp and ntp.server %}
+{%- if ntp.vrf %}
+ntp server vrf {{ ntp.vrf }} {{ ntp.server }}
+{%- else %}
+ntp server {{ ntp.server }}
+{%- endif %}
+!
+{%- endif %}
 {%- if dmvpn_vrf %}
 router eigrp TOPGEN
  !
