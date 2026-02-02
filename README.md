@@ -147,6 +147,37 @@ command is required instead to install SciPy and NumPy dependencies: `uv sync
 At this point, the `topogen` command should be available. Alternatively,
 if you did not activate the venv, use `uv run topogen`.
 
+## AI-Assisted Usage and Validation
+
+When using AI assistants (Claude, ChatGPT, etc.) to generate TopoGen labs, **always validate** that the generated YAML contains all expected configurations based on the flags used:
+
+**Required validations after generation:**
+- ✅ Lab title matches expectation (check `-L` flag was applied)
+- ✅ VRFs are configured if `--vrf` or `--mgmt-vrf` flags were used
+- ✅ External connector exists if `--mgmt-bridge` was used
+- ✅ Hub configuration is correct if `--dmvpn-hubs` was used:
+  - Verify hub routers have `ip nhrp redirect` (Phase 3) or no `ip nhrp nhs` (Phase 2)
+  - Verify spoke routers have `ip nhrp shortcut` (Phase 3) and `ip nhrp nhs` commands
+- ✅ NTP configuration exists if `--ntp` was used
+- ✅ Management network configuration if `--mgmt` was used
+
+**Example validation commands:**
+```bash
+# Check lab title and description
+head -3 out/your-lab.yaml
+
+# Verify VRFs are configured
+grep "ip vrf" out/your-lab.yaml
+
+# Verify external connector exists
+grep "ext-conn-mgmt" out/your-lab.yaml
+
+# Check hub configuration (should have "ip nhrp redirect" for Phase 3)
+grep -A 15 "interface Tunnel0" out/your-lab.yaml | grep "ip nhrp"
+```
+
+This validation step prevents importing incomplete or misconfigured labs into CML.
+
 ## Configuration
 
 ### CML2
