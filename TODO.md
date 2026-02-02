@@ -27,6 +27,13 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
+- [x] Add external-connector to bridge SWoob0 for external network access (completed - see CHANGES.md)
+  - Added `--mgmt-bridge` flag (requires `--mgmt`)
+  - Creates `ext-conn-mgmt` external_connector node with "System Bridge" mode
+  - Bridges SWoob0 port 0 to external network for bidirectional connectivity
+  - Supported in all offline modes: flat, flat-pair, dmvpn, dmvpn-flat-pair
+  - Tested on CML server successfully
+
 - [x] OOB management network for flat, flat-pair, and DMVPN modes (completed - see CHANGES.md)
   - Added `--mgmt`, `--mgmt-cidr`, `--mgmt-gw`, `--mgmt-slot`, `--mgmt-vrf` flags
   - Added `--ntp` and `--ntp-vrf` flags for NTP configuration
@@ -46,6 +53,13 @@ See `CHANGES.md` and `README.md` for completed features.
 
 ## Future ideas
 
+- [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
+  - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
+  - Current implementation uses "System Bridge" mode (bidirectional connectivity)
+  - NAT mode would be useful for security-focused deployments where management plane should only initiate outbound connections
+- [ ] Refactor: deduplicate offline YAML emission for `--mgmt-bridge` (external_connector + SWoob0 port offset + links)
+  - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
+  - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
 - [ ] (add ideas here)
 - [ ] Optional: interactive dependency graph / call graph visualization
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)

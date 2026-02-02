@@ -1,4 +1,77 @@
-"""topology renderer"""
+"""
+TopoGen Topology Renderer - Core Topology Generation and Rendering Logic
+
+PURPOSE:
+    Core rendering engine for all topology modes. Handles both online (CML API) and
+    offline (YAML file) generation. Implements the topology creation logic for:
+    - Simple/NX mode: Star topology with central switch
+    - Flat mode: Hierarchical unmanaged switch fabric (core + access switches)
+    - Flat-pair mode: Odd-even router pairing with switch fabric
+    - DMVPN mode: Hub-spoke DMVPN with NBMA underlay (flat or flat-pair)
+
+WHO READS ME:
+    - main.py: Creates Renderer instances and calls render methods
+
+WHO I READ:
+    - config.py: Config class for configuration defaults
+    - models.py: TopogenNode, TopogenInterface, TopogenError, CoordsGenerator, DNShost, Point
+    - dnshost.py: dnshostconfig() for DNS host configuration
+    - lxcfrr.py: lxcfrr_bootconfig() for FRR LXC container configuration
+    - templates/: Jinja2 templates (*.jinja2) for router configurations
+
+DEPENDENCIES:
+    External packages:
+    - virl2_client: CML2 API client (ClientLibrary, Lab, Node, Interface)
+    - httpx: HTTP client (ConnectTimeout, HTTPError)
+    - jinja2: Template engine (Environment, PackageLoader, Template, select_autoescape)
+    - networkx: Graph algorithms (for topology generation)
+    - enlighten: Progress bar display
+
+    Standard library:
+    - ipaddress: IPv4 address/network calculations
+    - pathlib, os: File operations
+    - math: Ceiling calculations for switch counts
+    - datetime: Timestamps
+    - argparse: Namespace for CLI args
+
+KEY EXPORTS:
+    - Renderer: Main class containing all rendering methods
+    - get_templates(): Returns list of available Jinja2 templates
+
+KEY METHODS (Renderer class):
+    Online (CML API) methods:
+    - render_simple_network(): Simple/NX star topology (online)
+    - render_flat_network(): Flat hierarchical topology (online)
+    - render_flat_pair_network(): Flat-pair topology (online)
+    - render_dmvpn(): DMVPN hub-spoke (online)
+
+    Offline (YAML) static methods:
+    - offline_simple_yaml(): Simple/NX star topology (offline YAML)
+    - offline_flat_yaml(): Flat hierarchical topology (offline YAML)
+    - offline_flat_pair_yaml(): Flat-pair topology (offline YAML)
+    - offline_dmvpn_yaml(): DMVPN with flat underlay (offline YAML)
+    - offline_dmvpn_flat_pair_yaml(): DMVPN with flat-pair underlay (offline YAML)
+
+ARCHITECTURE:
+    - Online mode: Renderer.render_*() → CML API via virl2_client
+    - Offline mode: Renderer.offline_*_yaml() → YAML file generation
+    - Templates: Jinja2 templates in templates/ directory render router configs
+    - Addressing: Deterministic IPv4 address allocation for all interfaces
+    - Layout: Deterministic X/Y coordinates for visual topology in CML
+
+TOPOLOGY MODES:
+    1. Simple/NX: Central switch + N routers (star topology)
+    2. Flat: Core switch + access switches + N routers (hierarchical)
+    3. Flat-pair: Odd routers paired with even routers + switch fabric
+    4. DMVPN flat: Hub-spoke DMVPN with flat underlay switches
+    5. DMVPN flat-pair: Hub-spoke DMVPN with flat-pair underlay
+
+OOB MANAGEMENT:
+    All modes support optional OOB management network (--mgmt):
+    - SWoob0: Core OOB switch
+    - SWoobN: Access OOB switches (one per group of routers)
+    - ext-conn-mgmt: Optional external-connector for bridge mode (--mgmt-bridge)
+"""
 
 import importlib.resources as pkg_resources
 import logging
@@ -1207,6 +1280,8 @@ class Renderer:
             args_bits.append(f"--mgmt-slot {args.mgmt_slot}")
             if getattr(args, "mgmt_vrf", None):
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+            if getattr(args, "mgmt_bridge", False):
+                args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
@@ -1327,6 +1402,24 @@ class Renderer:
 
         # OOB management switches (if --mgmt enabled)
         if enable_mgmt:
+            # External connector (optional)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                node_ids["ext-conn-mgmt"] = f"n{nid}"; nid += 1
+                lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
+                lines.append("    label: ext-conn-mgmt")
+                lines.append("    node_definition: external_connector")
+                lines.append("    x: -440")
+                lines.append("    y: 0")
+                lines.append("    configuration:")
+                lines.append("      - name: default")
+                lines.append("        content: System Bridge")
+                lines.append("    interfaces:")
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port")
+                lines.append("        type: physical")
+
             # OOB core switch
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
@@ -1336,10 +1429,18 @@ class Renderer:
             lines.append("    x: -200")
             lines.append("    y: 0")
             lines.append("    interfaces:")
+            # If bridge enabled, add port 0 for external connector
+            port_offset = 1 if mgmt_bridge else 0
+            if mgmt_bridge:
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port0")
+                lines.append("        type: physical")
             for p in range(num_oob_sw):
-                lines.append(f"      - id: i{p}")
-                lines.append(f"        slot: {p}")
-                lines.append(f"        label: port{p}")
+                port_num = p + port_offset
+                lines.append(f"      - id: i{port_num}")
+                lines.append(f"        slot: {port_num}")
+                lines.append(f"        label: port{port_num}")
                 lines.append("        type: physical")
 
             if ticks:
@@ -1514,6 +1615,18 @@ class Renderer:
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
+            # External connector -> SWoob0 link (if --mgmt-bridge enabled)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['ext-conn-mgmt']}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append("    i2: i0")
+
+            # OOB access switches -> SWoob0 links
+            port_offset = 1 if mgmt_bridge else 0
             for i in range(num_oob_sw):
                 oob_acc = f"SWoob{i+1}"
                 lines.append(f"  - id: l{lid}")
@@ -1521,7 +1634,7 @@ class Renderer:
                 lines.append(f"    n1: {node_ids[oob_acc]}")
                 lines.append("    i1: i0")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
-                lines.append(f"    i2: i{i}")
+                lines.append(f"    i2: i{i + port_offset}")
 
                 if ticks:
                     ticks.update()  # type: ignore
@@ -1686,6 +1799,8 @@ class Renderer:
             args_bits.append(f"--mgmt-slot {args.mgmt_slot}")
             if getattr(args, "mgmt_vrf", None):
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+            if getattr(args, "mgmt_bridge", False):
+                args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
@@ -1745,6 +1860,24 @@ class Renderer:
 
         # OOB management switches (if --mgmt enabled)
         if enable_mgmt:
+            # External connector (optional)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                node_ids["ext-conn-mgmt"] = f"n{nid}"; nid += 1
+                lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
+                lines.append("    label: ext-conn-mgmt")
+                lines.append("    node_definition: external_connector")
+                lines.append("    x: -440")
+                lines.append("    y: 0")
+                lines.append("    configuration:")
+                lines.append("      - name: default")
+                lines.append("        content: System Bridge")
+                lines.append("    interfaces:")
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port")
+                lines.append("        type: physical")
+
             # OOB core switch
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
@@ -1754,10 +1887,18 @@ class Renderer:
             lines.append("    x: -200")
             lines.append("    y: 0")
             lines.append("    interfaces:")
+            # If bridge enabled, add port 0 for external connector
+            port_offset = 1 if mgmt_bridge else 0
+            if mgmt_bridge:
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port0")
+                lines.append("        type: physical")
             for p in range(num_oob_sw):
-                lines.append(f"      - id: i{p}")
-                lines.append(f"        slot: {p}")
-                lines.append(f"        label: port{p}")
+                port_num = p + port_offset
+                lines.append(f"      - id: i{port_num}")
+                lines.append(f"        slot: {port_num}")
+                lines.append(f"        label: port{port_num}")
                 lines.append("        type: physical")
 
             if ticks:
@@ -1973,6 +2114,18 @@ class Renderer:
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
+            # External connector -> SWoob0 link (if --mgmt-bridge enabled)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['ext-conn-mgmt']}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append("    i2: i0")
+
+            # OOB access switches -> SWoob0 links
+            port_offset = 1 if mgmt_bridge else 0
             for i in range(num_oob_sw):
                 oob_acc = f"SWoob{i+1}"
                 lines.append(f"  - id: l{lid}")
@@ -1980,7 +2133,7 @@ class Renderer:
                 lines.append(f"    n1: {node_ids[oob_acc]}")
                 lines.append("    i1: i0")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
-                lines.append(f"    i2: i{i}")
+                lines.append(f"    i2: i{i + port_offset}")
 
                 if ticks:
                     ticks.update()  # type: ignore
@@ -2092,6 +2245,8 @@ class Renderer:
             args_bits.append(f"--mgmt-slot {args.mgmt_slot}")
             if getattr(args, "mgmt_vrf", None):
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+            if getattr(args, "mgmt_bridge", False):
+                args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
@@ -2170,6 +2325,24 @@ class Renderer:
                 end = min((i + 1) * oob_group, total)
                 oob_per_sw_counts.append(max(0, end - start + 1))
 
+            # External connector (optional)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                node_ids["ext-conn-mgmt"] = f"n{nid}"; nid += 1
+                lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
+                lines.append("    label: ext-conn-mgmt")
+                lines.append("    node_definition: external_connector")
+                lines.append("    x: -440")
+                lines.append("    y: 0")
+                lines.append("    configuration:")
+                lines.append("      - name: default")
+                lines.append("        content: System Bridge")
+                lines.append("    interfaces:")
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port")
+                lines.append("        type: physical")
+
             # OOB core switch
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
@@ -2179,10 +2352,18 @@ class Renderer:
             lines.append("    x: -200")
             lines.append("    y: 0")
             lines.append("    interfaces:")
+            # If bridge enabled, add port 0 for external connector
+            port_offset = 1 if mgmt_bridge else 0
+            if mgmt_bridge:
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port0")
+                lines.append("        type: physical")
             for p in range(num_oob_sw):
-                lines.append(f"      - id: i{p}")
-                lines.append(f"        slot: {p}")
-                lines.append(f"        label: port{p}")
+                port_num = p + port_offset
+                lines.append(f"      - id: i{port_num}")
+                lines.append(f"        slot: {port_num}")
+                lines.append(f"        label: port{port_num}")
                 lines.append(f"        type: physical")
 
             # OOB access switches
@@ -2311,6 +2492,18 @@ class Renderer:
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
+            # External connector -> SWoob0 link (if --mgmt-bridge enabled)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['ext-conn-mgmt']}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append("    i2: i0")
+
+            # OOB access switches -> SWoob0 links
+            port_offset = 1 if mgmt_bridge else 0
             for i in range(num_oob_sw):
                 oob_acc = f"SWoob{i+1}"
                 lines.append(f"  - id: l{lid}")
@@ -2318,7 +2511,7 @@ class Renderer:
                 lines.append(f"    n1: {node_ids[oob_acc]}")
                 lines.append("    i1: i0")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
-                lines.append(f"    i2: i{i}")
+                lines.append(f"    i2: i{i + port_offset}")
 
             # Routers -> OOB access switch
             router_mgmt_iface_id = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
@@ -2399,6 +2592,8 @@ class Renderer:
             args_bits.append("--mgmt")
             if getattr(args, "mgmt_vrf", None):
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+            if getattr(args, "mgmt_bridge", False):
+                args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
         version = getattr(args, "cml_version", "0.3.0")
@@ -2476,6 +2671,24 @@ class Renderer:
                 end = min((i + 1) * oob_group, total)
                 oob_per_sw_counts.append(max(0, end - start + 1))
 
+            # External connector (optional)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                node_ids["ext-conn-mgmt"] = f"n{nid}"; nid += 1
+                lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
+                lines.append("    label: ext-conn-mgmt")
+                lines.append("    node_definition: external_connector")
+                lines.append("    x: -440")
+                lines.append("    y: 0")
+                lines.append("    configuration:")
+                lines.append("      - name: default")
+                lines.append("        content: System Bridge")
+                lines.append("    interfaces:")
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port")
+                lines.append("        type: physical")
+
             # OOB core switch
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
@@ -2485,10 +2698,18 @@ class Renderer:
             lines.append("    x: -200")
             lines.append("    y: 0")
             lines.append("    interfaces:")
+            # If bridge enabled, add port 0 for external connector
+            port_offset = 1 if mgmt_bridge else 0
+            if mgmt_bridge:
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port0")
+                lines.append("        type: physical")
             for p in range(num_oob_sw):
-                lines.append(f"      - id: i{p}")
-                lines.append(f"        slot: {p}")
-                lines.append(f"        label: port{p}")
+                port_num = p + port_offset
+                lines.append(f"      - id: i{port_num}")
+                lines.append(f"        slot: {port_num}")
+                lines.append(f"        label: port{port_num}")
                 lines.append(f"        type: physical")
 
             # OOB access switches
@@ -2682,6 +2903,18 @@ class Renderer:
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
+            # External connector -> SWoob0 link (if --mgmt-bridge enabled)
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['ext-conn-mgmt']}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append("    i2: i0")
+
+            # OOB access switches -> SWoob0 links
+            port_offset = 1 if mgmt_bridge else 0
             for i in range(num_oob_sw):
                 oob_acc = f"SWoob{i+1}"
                 lines.append(f"  - id: l{lid}")
@@ -2689,7 +2922,7 @@ class Renderer:
                 lines.append(f"    n1: {node_ids[oob_acc]}")
                 lines.append("    i1: i0")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
-                lines.append(f"    i2: i{i}")
+                lines.append(f"    i2: i{i + port_offset}")
 
             # Routers -> OOB access switch
             router_mgmt_iface_id = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot

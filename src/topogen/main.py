@@ -1,6 +1,36 @@
 """
-a static topology generator
-argument parsing and logging
+TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
+
+PURPOSE:
+    Entry point for the topogen CLI tool. Handles argument parsing, validation,
+    configuration loading, and orchestrates the rendering pipeline based on user inputs.
+
+WHO READS ME:
+    - Users: via CLI command `topogen` or `python -m topogen.main`
+    - gui.py: when launching GUI mode with Gooey
+
+WHO I READ:
+    - config.py: Configuration loading and defaults
+    - models.py: TopogenError exception handling
+    - render.py: Renderer class and topology generation functions
+    - colorlog.py: Custom log formatting
+
+DEPENDENCIES:
+    - argparse: CLI argument parsing
+    - logging: Application logging
+    - os, sys: System operations
+
+KEY EXPORTS:
+    - main(): Application entry point
+    - create_argparser(): Creates and configures the argument parser
+    - valid_node_count(): Validates node count argument (2-1000)
+
+FLOW:
+    1. Parse CLI arguments (create_argparser)
+    2. Load configuration from config.toml (or defaults)
+    3. Validate arguments (node count, IP addresses, flag dependencies)
+    4. Create Renderer instance based on mode (nx, simple, flat, flat-pair, dmvpn)
+    5. Execute online (CML API) or offline (YAML generation) workflow
 """
 
 import argparse
@@ -321,6 +351,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help='VRF name for management interface (default: "%(default)s"); use "global" for global routing table',
     )
     parser.add_argument(
+        "--mgmt-bridge",
+        dest="mgmt_bridge",
+        action="store_true",
+        default=False,
+        help="Add external-connector to bridge OOB management network to external network (requires --mgmt)",
+    )
+    parser.add_argument(
         "--ntp",
         dest="ntp_server",
         type=str,
@@ -560,6 +597,9 @@ def main():
             # Normalize mgmt_vrf: treat "global" or empty as None (global table)
             if args.mgmt_vrf and args.mgmt_vrf.lower() == "global":
                 args.mgmt_vrf = None
+        # Validate mgmt-bridge requires mgmt
+        if getattr(args, "mgmt_bridge", False) and not getattr(args, "enable_mgmt", False):
+            parser.error("--mgmt-bridge requires --mgmt to be enabled")
         # Validate NTP flags
         if getattr(args, "ntp_server", None):
             from ipaddress import IPv4Address

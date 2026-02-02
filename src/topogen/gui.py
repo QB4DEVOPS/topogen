@@ -1,4 +1,41 @@
-"""Gooey-based GUI launcher for topogen."""
+"""
+TopoGen GUI Launcher - Gooey-Based Graphical User Interface
+
+PURPOSE:
+    Provides optional GUI wrapper for topogen using Gooey framework.
+    Wraps the same CLI argument parser with a graphical form interface
+    for users who prefer GUI over command-line interaction.
+
+WHO READS ME:
+    - Users: via command `topogen-gui`
+    - Entry point: topogen[gui] extra installation
+
+WHO I READ:
+    - main.py: create_argparser() to build GUI from CLI parser
+    - models.py: TopogenError for exception handling
+
+DEPENDENCIES:
+    - gooey: Gooey decorator, GooeyParser (optional dependency)
+    - sys: System operations
+
+KEY EXPORTS:
+    - main(): Entry point for GUI application
+
+INSTALLATION:
+    pip install 'topogen[gui]'
+
+FEATURES:
+    - Automatic form generation from argparse parser
+    - File choosers for YAML paths
+    - Dropdown menus for templates and device types
+    - Clear before run, no success/failure modals
+    - Reuses entire CLI argument structure
+
+BEHAVIOR:
+    - If Gooey not installed, prints error and exits
+    - Calls main.main() with parsed arguments
+    - Returns exit code from main application
+"""
 
 from __future__ import annotations
 

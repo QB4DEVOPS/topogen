@@ -14,6 +14,12 @@ This file lists changes.
   - feat(ntp): add NTP server configuration
     - enable with `--ntp IP`
     - optional VRF with `--ntp-vrf NAME` (inherits `--mgmt-vrf` if not specified)
+  - feat(mgmt): add external-connector bridge support for OOB management network
+    - enable with `--mgmt-bridge` (requires `--mgmt`)
+    - creates `ext-conn-mgmt` external_connector node with "System Bridge" mode
+    - bridges SWoob0 port 0 to external/physical network for bidirectional connectivity
+    - enables routers to reach external resources (internet, NTP servers, DHCP, etc.)
+    - supported in all offline modes: flat, flat-pair, dmvpn, dmvpn-flat-pair
   - feat(remark): add `--remark` flag to add custom notes to lab descriptions
   - feat(flat): add new mode "flat-pair" (odd-even pairing). Odd: Gi0/0 -> access switch and Gi0/1 -> even's Gi0/0. Even: no leaf link. Last odd without partner leaves Gi0/1 unused.
   - feat(vrf): add optional VRF support for flat-pair pair links (odd router Gi0/1)
