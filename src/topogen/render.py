@@ -994,13 +994,13 @@ class Renderer:
         )
 
         # Core switch
-        core = self.create_node("SWmgt0", "unmanaged_switch", Point(0, 0))
+        core = self.create_node("SW0", "unmanaged_switch", Point(0, 0))
 
         # Access switches positioned horizontally and connected to core
         switches: list[Node] = []
         for i in range(num_sw):
             x = (i + 1) * self.args.distance * 3
-            sw = self.create_node(f"SWmgt{i+1}", "unmanaged_switch", Point(x, 0))
+            sw = self.create_node(f"SW{i+1}", "unmanaged_switch", Point(x, 0))
             switches.append(sw)
             self.lab.create_link(self.new_interface(core), self.new_interface(sw))
             _LOGGER.info("switch-link: %s <-> %s", core.label, sw.label)
@@ -1748,10 +1748,10 @@ class Renderer:
         """Generate a CML-compatible YAML file locally for flat mode.
 
         This does not contact a controller. It writes a minimal topology with:
-        - SWmgt0 core unmanaged switch
-        - SWmgt1..N access unmanaged switches (N = ceil(nodes/group))
+        - SW0 core unmanaged switch
+        - SW1..N access unmanaged switches (N = ceil(nodes/group))
         - Routers R1..R<n> using args.dev_template (e.g., iosv)
-        - Links: each access switch linked to SWmgt0; each router Gi0/0 to its access switch
+        - Links: each access switch linked to SW0; each router Gi0/0 to its access switch
         - Per-router configuration rendered from the selected Jinja2 template
         """
 
@@ -1827,9 +1827,9 @@ class Renderer:
         node_ids: dict[str, str] = {}
         nid = 0
         # Core switch
-        node_ids["SWmgt0"] = f"n{nid}"; nid += 1
-        lines.append(f"  - id: {node_ids['SWmgt0']}")
-        lines.append("    label: SWmgt0")
+        node_ids["SW0"] = f"n{nid}"; nid += 1
+        lines.append(f"  - id: {node_ids['SW0']}")
+        lines.append("    label: SW0")
         lines.append("    node_definition: unmanaged_switch")
         lines.append("    x: 0")
         lines.append("    y: 0")
@@ -1854,7 +1854,7 @@ class Renderer:
         # Access switches
         access_if_start_slots: list[int] = []
         for i in range(num_sw):
-            label = f"SWmgt{i+1}"
+            label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
             x = (i + 1) * args.distance * 3
             lines.append(f"  - id: {node_ids[label]}")
@@ -2003,12 +2003,12 @@ class Renderer:
         lid = 0
         # Access -> core (use port equal to index for both ends)
         for i in range(num_sw):
-            acc = f"SWmgt{i+1}"
+            acc = f"SW{i+1}"
             lines.append(f"  - id: l{lid}")
             lid += 1
             lines.append(f"    n1: {node_ids[acc]}")
             lines.append(f"    i1: i0")
-            lines.append(f"    n2: {node_ids['SWmgt0']}")
+            lines.append(f"    n2: {node_ids['SW0']}")
             lines.append(f"    i2: i{i}")
         # Routers -> access switch
         per_sw_next_port = [1 for _ in range(num_sw)]  # reserve 0 for uplink
@@ -2016,7 +2016,7 @@ class Renderer:
             n = idx + 1
             rlabel = f"R{n}"
             sw_index = idx // group + 1
-            acc = f"SWmgt{sw_index}"
+            acc = f"SW{sw_index}"
             acc_port = per_sw_next_port[sw_index - 1]
             per_sw_next_port[sw_index - 1] += 1
             lines.append(f"  - id: l{lid}")
@@ -2112,6 +2112,12 @@ class Renderer:
             args_bits.append("--loopback-255")
         if getattr(args, "gi0_zero", False):
             args_bits.append("--gi0-zero")
+        if getattr(args, "enable_mgmt", False):
+            args_bits.append("--mgmt")
+            if getattr(args, "mgmt_vrf", None):
+                args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+        if getattr(args, "ntp_server", None):
+            args_bits.append(f"--ntp {args.ntp_server}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -2127,9 +2133,9 @@ class Renderer:
         node_ids: dict[str, str] = {}
         nid = 0
         # Core switch
-        node_ids["SWmgt0"] = f"n{nid}"; nid += 1
-        lines.append(f"  - id: {node_ids['SWmgt0']}")
-        lines.append("    label: SWmgt0")
+        node_ids["SW0"] = f"n{nid}"; nid += 1
+        lines.append(f"  - id: {node_ids['SW0']}")
+        lines.append("    label: SW0")
         lines.append("    node_definition: unmanaged_switch")
         lines.append("    x: 0")
         lines.append("    y: 0")
@@ -2152,7 +2158,7 @@ class Renderer:
         # Access switches
         access_if_start_slots: list[int] = []
         for i in range(num_sw):
-            label = f"SWmgt{i+1}"
+            label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
             x = (i + 1) * args.distance * 3
             lines.append(f"  - id: {node_ids[label]}")
@@ -2169,6 +2175,56 @@ class Renderer:
                 lines.append(f"        label: port{p}")
                 lines.append(f"        type: physical")
             access_if_start_slots.append(0)
+
+        # OOB management switches (if --mgmt enabled) - mirrors access switch pattern
+        enable_mgmt = getattr(args, "enable_mgmt", False)
+        mgmt_slot = getattr(args, "mgmt_slot", 5)
+        oob_group = group  # reuse flat_group_size for OOB switches
+        num_oob_sw = 0
+        oob_per_sw_counts: list[int] = []
+        if enable_mgmt:
+            from math import ceil
+            num_oob_sw = ceil(total / oob_group)
+            # Precompute how many routers per OOB access switch
+            for i in range(num_oob_sw):
+                start = i * oob_group + 1
+                end = min((i + 1) * oob_group, total)
+                oob_per_sw_counts.append(max(0, end - start + 1))
+
+            # OOB core switch
+            node_ids["SWoob0"] = f"n{nid}"; nid += 1
+            lines.append(f"  - id: {node_ids['SWoob0']}")
+            lines.append("    label: SWoob0")
+            lines.append("    node_definition: unmanaged_switch")
+            lines.append("    hide_links: true")
+            lines.append("    x: -200")
+            lines.append("    y: 0")
+            lines.append("    interfaces:")
+            for p in range(num_oob_sw):
+                lines.append(f"      - id: i{p}")
+                lines.append(f"        slot: {p}")
+                lines.append(f"        label: port{p}")
+                lines.append(f"        type: physical")
+
+            # OOB access switches
+            for i in range(num_oob_sw):
+                oob_label = f"SWoob{i+1}"
+                node_ids[oob_label] = f"n{nid}"; nid += 1
+                ox = -200 - (i + 1) * args.distance
+                lines.append(f"  - id: {node_ids[oob_label]}")
+                lines.append(f"    label: {oob_label}")
+                lines.append("    node_definition: unmanaged_switch")
+                lines.append("    hide_links: true")
+                lines.append(f"    x: {ox}")
+                lines.append(f"    y: {(i + 1) * args.distance}")
+                # Each OOB access switch: 1 uplink + ports for attached routers
+                oob_if_count = 1 + oob_per_sw_counts[i]
+                lines.append("    interfaces:")
+                for p in range(oob_if_count):
+                    lines.append(f"      - id: i{p}")
+                    lines.append(f"        slot: {p}")
+                    lines.append(f"        label: port{p}")
+                    lines.append(f"        type: physical")
 
         # Pre-compute /30 p2p addressing for odd-even pairs from cfg.p2pnets
         pair_ips_off: dict[int, tuple[IPv4Interface, IPv4Interface]] = {}
@@ -2229,7 +2285,29 @@ class Renderer:
                 loopback=IPv4Interface(f"{l_ip}/32"),
                 interfaces=ifaces,
             )
-            rendered = tpl.render(config=cfg, node=node, date=datetime.now(timezone.utc), origin="")
+            # Build mgmt/ntp context for template
+            mgmt_ctx = None
+            if enable_mgmt:
+                mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            rendered = tpl.render(
+                config=cfg,
+                node=node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=mgmt_ctx,
+                ntp=ntp_ctx,
+            )
 
             rx = (idx // group + 1) * args.distance * 3
             ry = (idx % group + 1) * args.distance
@@ -2257,6 +2335,18 @@ class Renderer:
                 lines.append("        slot: 1")
                 lines.append(f"        label: {iface_label_for_slot(1)}")
                 lines.append("        type: physical")
+            # Mgmt interface (if --mgmt enabled)
+            if enable_mgmt:
+                if dev_def == "csr1000v":
+                    csr_slot = mgmt_slot - 1
+                    lines.append(f"      - id: i{csr_slot}")
+                    lines.append(f"        slot: {csr_slot}")
+                    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                else:
+                    lines.append(f"      - id: i{mgmt_slot}")
+                    lines.append(f"        slot: {mgmt_slot}")
+                    lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
+                lines.append("        type: physical")
             lines.append("    configuration: |-")
             for ln in rendered.splitlines():
                 lines.append(f"      {ln}")
@@ -2266,24 +2356,24 @@ class Renderer:
         lid = 0
         # Access -> core
         for i in range(num_sw):
-            acc = f"SWmgt{i+1}"
+            acc = f"SW{i+1}"
             lines.append(f"  - id: l{lid}")
             lid += 1
             lines.append(f"    n1: {node_ids[acc]}")
             lines.append("    i1: i0")
-            lines.append(f"    n2: {node_ids['SWmgt0']}")
+            lines.append(f"    n2: {node_ids['SW0']}")
             lines.append(f"    i2: i{i}")
 
-        # Router -> access switch
+        # Router -> access switch (only odd routers connect Gi0/0 to access switch)
         router_sw_port: dict[str, tuple[str, int]] = {}
         per_sw_next_port = [1 for _ in range(num_sw)]  # reserve 0 for uplink
         for idx in range(total):
-            rlabel = f"R{idx + 1}"
+            n = idx + 1
             if n % 2 == 0:
                 continue  # even routers do not connect to access switch
             rlabel = f"R{n}"
             sw_index = idx // group + 1
-            acc = f"SWmgt{sw_index}"
+            acc = f"SW{sw_index}"
             acc_port = per_sw_next_port[sw_index - 1]
             per_sw_next_port[sw_index - 1] += 1
             lines.append(f"  - id: l{lid}")
@@ -2304,6 +2394,34 @@ class Renderer:
             lines.append("    i1: i1")
             lines.append(f"    n2: {node_ids[f'R{even}']}")
             lines.append("    i2: i0")
+
+        # OOB access -> OOB core links (if --mgmt enabled)
+        if enable_mgmt:
+            for i in range(num_oob_sw):
+                oob_acc = f"SWoob{i+1}"
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[oob_acc]}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{i}")
+
+            # Routers -> OOB access switch
+            router_mgmt_iface_id = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+            oob_per_sw_next_port = [1 for _ in range(num_oob_sw)]  # reserve 0 for uplink
+            for idx in range(total):
+                n = idx + 1
+                rlabel = f"R{n}"
+                oob_sw_index = idx // oob_group
+                oob_acc = f"SWoob{oob_sw_index + 1}"
+                oob_acc_port = oob_per_sw_next_port[oob_sw_index]
+                oob_per_sw_next_port[oob_sw_index] += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[rlabel]}")
+                lines.append(f"    i1: i{router_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids[oob_acc]}")
+                lines.append(f"    i2: i{oob_acc_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -2342,7 +2460,7 @@ class Renderer:
         _LOGGER.warning("Creating %d unmanaged switches for %d routers (group size %d)", num_sw, total, group)
 
         # Core switch in the middle
-        core = self.create_node("SWmgt0", "unmanaged_switch", Point(0, 0))
+        core = self.create_node("SW0", "unmanaged_switch", Point(0, 0))
 
         # OOB management switch (if --mgmt enabled)
         enable_mgmt = getattr(self.args, "enable_mgmt", False)
@@ -2357,7 +2475,7 @@ class Renderer:
         switches: list[Node] = []
         for i in range(num_sw):
             x = (i + 1) * self.args.distance * 3
-            sw = self.create_node(f"SWmgt{i+1}", "unmanaged_switch", Point(x, 0))
+            sw = self.create_node(f"SW{i+1}", "unmanaged_switch", Point(x, 0))
             switches.append(sw)
             # Connect each access switch back to core (star)
             self.lab.create_link(self.new_interface(core), self.new_interface(sw))

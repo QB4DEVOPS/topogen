@@ -27,10 +27,7 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-- [ ] Add OOB management network support for flat-pair mode
-  - reuse flat mgmt pattern (SWoob core + access switches)
-  - connect odd and even router mgmt interfaces to OOB switches
-  - pass mgmt/ntp context to templates
+- [ ] (add current work items here)
 
 ## Promote to Issues
 

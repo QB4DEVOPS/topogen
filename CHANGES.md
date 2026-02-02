@@ -3,7 +3,7 @@
 This file lists changes.
 
 - Unreleased
-  - feat(mgmt): add OOB management network support for flat mode
+  - feat(mgmt): add OOB management network support for flat and flat-pair modes
     - enable with `--mgmt`
     - creates `SWoob0` unmanaged switch (with `hide_links: true`) and connects all router mgmt interfaces
     - mgmt interface uses DHCP by default (slot 5: IOSv Gi0/5, CSR Gi5)
