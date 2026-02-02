@@ -3,13 +3,14 @@
 This file lists changes.
 
 - Unreleased
-  - feat(mgmt): add OOB management network support for flat and flat-pair modes
+  - feat(mgmt): add OOB management network support for flat, flat-pair, and dmvpn modes
     - enable with `--mgmt`
     - creates `SWoob0` unmanaged switch (with `hide_links: true`) and connects all router mgmt interfaces
     - mgmt interface uses DHCP by default (slot 5: IOSv Gi0/5, CSR Gi5)
     - default VRF `Mgmt-vrf`; use `--mgmt-vrf global` for global routing table
     - optional gateway route with `--mgmt-gw IP`
     - configurable slot with `--mgmt-slot N`
+    - dmvpn modes (flat and flat-pair underlay) now support `--mgmt` for OOB management
   - feat(ntp): add NTP server configuration
     - enable with `--ntp IP`
     - optional VRF with `--ntp-vrf NAME` (inherits `--mgmt-vrf` if not specified)
