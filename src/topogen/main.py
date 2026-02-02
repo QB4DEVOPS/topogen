@@ -169,9 +169,16 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "--dmvpn-security",
         dest="dmvpn_security",
         type=str,
-        choices=("none",),
+        choices=("none", "ikev2-psk"),
         default="none",
         help='DMVPN security/profile, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-psk",
+        dest="dmvpn_psk",
+        type=str,
+        default=None,
+        help="DMVPN IKEv2 pre-shared key (used when --dmvpn-security ikev2-psk)",
     )
     if is_gooey:
         parser.add_argument(
@@ -411,6 +418,11 @@ def main():
 
     try:
         args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
+
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-psk":
+            psk = getattr(args, "dmvpn_psk", None)
+            if not psk or not str(psk).strip():
+                parser.error("--dmvpn-security ikev2-psk requires --dmvpn-psk <key>")
 
         # DMVPN flat-pair uses odd routers as DMVPN endpoints. If hubs are not
         # provided, default to the first 3 endpoint routers (R1,R3,R5), or fewer

@@ -21,11 +21,19 @@ This file lists changes.
     - when `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (R1..R<nodes>)
     - spokes configure NHRP mappings and NHS entries for all hubs
   - feat(dmvpn): add DMVPN tunnel key option `--dmvpn-tunnel-key` (default: 10)
+  - feat(dmvpn): add DMVPN IKEv2 PSK security profile
+    - enable with `--dmvpn-security ikev2-psk`
+    - provide shared PSK with `--dmvpn-psk <key>`
   - feat(offline): fail if `--offline-yaml FILE` already exists (no-clobber by default)
     - overwrite explicitly with `--overwrite`
+  - feat(progress): improve progress/completion visibility
+    - DMVPN online supports `--progress` (opt-in)
+    - DMVPN offline YAML supports `--progress` (opt-in)
+    - DMVPN offline YAML emits a visible "written to <file>" completion message at default loglevel
   - feat(dmvpn): scale offline DMVPN NBMA segment using a flat-style unmanaged switch fabric (core + access switches)
     - uses `--flat-group-size` to control routers per access switch
     - offline YAML layout matches `flat` / `flat-pair` placement style
+  - chore: reduce default `DMVPN-ping.tcl` sweep size to 10 for faster ad-hoc validation
   - feat(gui): add optional Gooey GUI (`topogen-gui`) and `topogen[gui]` extra
     - GUI-only: template dropdown and common device-template dropdown
     - GUI-only: clearer offline/online YAML file labels and file-save pickers

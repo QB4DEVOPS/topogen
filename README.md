@@ -251,6 +251,9 @@ There are three modes available right now:
       - Even routers (`R2,R4,R6,...`): non-DMVPN pair partners (no Tunnel0/NHRP).
       - Spokes are the odd routers not selected as hubs; this is always derived from `nodes`.
   - Optional: set `--dmvpn-tunnel-key` to configure a GRE tunnel key (default: 10).
+  - Optional: set `--dmvpn-security ikev2-psk` to protect DMVPN with IKEv2+PSK.
+    - Requires `--dmvpn-psk <key>`.
+    - Uses IPsec transport mode with `tunnel protection ipsec profile ...` on `Tunnel0`.
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)
@@ -301,6 +304,12 @@ topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v `
 
 ```powershell
 topogen -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --eigrp-stub -L IOSV-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
+```
+
+- Offline YAML (DMVPN flat-pair, IOSv, VRF + IKEv2-PSK): 50 routers total, 3 hubs (`R1,R21,R41`).
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-hubs 1,21,41 --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-psk --dmvpn-psk "topogen123" --vrf --progress --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-3H-P3-EIGRP-VRF-IPSEC-PSK-N50.yaml --overwrite 50
 ```
 
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
@@ -408,6 +417,8 @@ By default, TopoGen will refuse to overwrite an existing offline YAML file.
 
 - If `FILE` already exists, the run fails with a clear error.
 - Use `--overwrite` to overwrite the existing file.
+
+Tip: add `--progress` to show a progress bar (opt-in).
 
 TopoGen does not pick an output filename automatically; you must provide one. We recommend `out/` for generated artifacts.
 
