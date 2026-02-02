@@ -20,14 +20,19 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Feature roadmap (ordered)
 
-1. OOB management network for flat-pair mode (this is the current work)
-2. DMVPN IPsec protection (IKEv2 + PSK)
+1. ~~OOB management network for flat, flat-pair, and DMVPN modes~~ (completed)
+2. DMVPN IPsec protection (IKEv2 + PSK) (completed)
 3. DMVPN security roadmap (PKI)
 4. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
 
-- [ ] (add current work items here)
+- [x] OOB management network for flat, flat-pair, and DMVPN modes (completed - see CHANGES.md)
+  - Added `--mgmt`, `--mgmt-cidr`, `--mgmt-gw`, `--mgmt-slot`, `--mgmt-vrf` flags
+  - Added `--ntp` and `--ntp-vrf` flags for NTP configuration
+  - Updated templates (iosv-dmvpn.jinja2) to support mgmt and NTP
+  - Offline YAML generation working for all modes
+  - All 8 test labs loaded on CML server successfully
 
 ## Promote to Issues
 

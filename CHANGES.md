@@ -14,6 +14,7 @@ This file lists changes.
   - feat(ntp): add NTP server configuration
     - enable with `--ntp IP`
     - optional VRF with `--ntp-vrf NAME` (inherits `--mgmt-vrf` if not specified)
+  - feat(remark): add `--remark` flag to add custom notes to lab descriptions
   - feat(flat): add new mode "flat-pair" (odd-even pairing). Odd: Gi0/0 -> access switch and Gi0/1 -> even's Gi0/0. Even: no leaf link. Last odd without partner leaves Gi0/1 unused.
   - feat(vrf): add optional VRF support for flat-pair pair links (odd router Gi0/1)
     - enable with `--vrf`
