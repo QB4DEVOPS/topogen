@@ -147,6 +147,37 @@ command is required instead to install SciPy and NumPy dependencies: `uv sync
 At this point, the `topogen` command should be available. Alternatively,
 if you did not activate the venv, use `uv run topogen`.
 
+## AI-Assisted Usage and Validation
+
+When using AI assistants (Claude, ChatGPT, etc.) to generate TopoGen labs, **always validate** that the generated YAML contains all expected configurations based on the flags used:
+
+**Required validations after generation:**
+- ✅ Lab title matches expectation (check `-L` flag was applied)
+- ✅ VRFs are configured if `--vrf` or `--mgmt-vrf` flags were used
+- ✅ External connector exists if `--mgmt-bridge` was used
+- ✅ Hub configuration is correct if `--dmvpn-hubs` was used:
+  - Verify hub routers have `ip nhrp redirect` (Phase 3) or no `ip nhrp nhs` (Phase 2)
+  - Verify spoke routers have `ip nhrp shortcut` (Phase 3) and `ip nhrp nhs` commands
+- ✅ NTP configuration exists if `--ntp` was used
+- ✅ Management network configuration if `--mgmt` was used
+
+**Example validation commands:**
+```bash
+# Check lab title and description
+head -3 out/your-lab.yaml
+
+# Verify VRFs are configured
+grep "ip vrf" out/your-lab.yaml
+
+# Verify external connector exists
+grep "ext-conn-mgmt" out/your-lab.yaml
+
+# Check hub configuration (should have "ip nhrp redirect" for Phase 3)
+grep -A 15 "interface Tunnel0" out/your-lab.yaml | grep "ip nhrp"
+```
+
+This validation step prevents importing incomplete or misconfigured labs into CML.
+
 ## Configuration
 
 ### CML2
@@ -208,6 +239,7 @@ optional arguments:
   --yaml FILE           Export the created lab to a YAML file at FILE (via controller API)
   --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller required)
   --cml-version ...     CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)
+  --start               Automatically start the lab after creation (online mode only)
 
 configuration:
   -c CONFIGFILE, --config CONFIGFILE
@@ -239,11 +271,11 @@ There are three modes available right now:
   - Odd routers: `Gi0/0` connects to the access switch and `Gi0/1` connects to the even router's `Gi0/0`.
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
-
 - `dmvpn`: hub-and-spoke DMVPN topology.
   - Default behavior: `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
   - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
     - When `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (`R1..R<nodes>`).
+    - **Important:** `--dmvpn-hubs` is a comma-separated *list of router numbers*, not a hub count. For example, `--dmvpn-hubs 3` means **R3 is the (only) hub**, not "3 hubs".
   - Underlay selection: use `--dmvpn-underlay` to choose the underlay model.
     - `flat` (default): DMVPN routers attach to a flat L2 fabric.
     - `flat-pair`: `nodes` is the total router count in the lab (`R1..R<nodes>`).
@@ -254,6 +286,7 @@ There are three modes available right now:
   - Optional: set `--dmvpn-security ikev2-psk` to protect DMVPN with IKEv2+PSK.
     - Requires `--dmvpn-psk <key>`.
     - Uses IPsec transport mode with `tunnel protection ipsec profile ...` on `Tunnel0`.
+    - **Important:** if you set `--dmvpn-security ikev2-psk` but omit `--dmvpn-psk`, TopoGen exits with an error.
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)
@@ -310,6 +343,12 @@ topogen -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv
 
 ```powershell
 topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-hubs 1,21,41 --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-psk --dmvpn-psk "topogen123" --vrf --progress --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-3H-P3-EIGRP-VRF-IPSEC-PSK-N50.yaml --overwrite 50
+```
+
+- Offline YAML (DMVPN flat-pair, IOSv, mgmt + mgmt bridge): 20 routers total, 3 hubs (`R1,R3,R5`). Bridges the OOB management switch (SWoob0) to your external network using an `external_connector` ("System Bridge" mode).
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-hubs 1,3,5 --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-psk --dmvpn-psk "topogen123" --mgmt --mgmt-bridge --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-3H-P3-EIGRP-MGMT-BRIDGE-N20.yaml --overwrite 20
 ```
 
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
@@ -445,8 +484,11 @@ In `flat`, `flat-pair`, and `dmvpn` modes, an optional out-of-band management ne
 - `--mgmt-gw IP`: optional gateway IP; adds a default route in the mgmt VRF
 - `--mgmt-slot N`: interface slot for management (default: 5; IOSv uses Gi0/5, CSR uses Gi5)
 - `--mgmt-vrf NAME`: VRF name for management interface (default: `Mgmt-vrf`); use `global` for global routing table
+- `--mgmt-bridge`: add external-connector to bridge OOB management network to external network (requires `--mgmt`)
 
 When enabled, the generated router configs include a management interface with DHCP addressing.
+
+The `--mgmt-bridge` flag creates an `ext-conn-mgmt` external_connector node using "System Bridge" mode, connecting SWoob0 to your physical/external network. This enables bidirectional connectivity, allowing routers to reach external resources (internet, NTP servers, external DHCP) and external systems to access the lab's management network.
 
 Example (flat mode with mgmt network):
 
@@ -474,6 +516,13 @@ Example (DMVPN flat-pair mode with mgmt network):
 ```powershell
 topogen --cml-version 0.3.0 -L "DMVPN-FlatPair-Mgmt-10" -T iosv-dmvpn --device-template iosv -m dmvpn \
   --dmvpn-underlay flat-pair --mgmt --offline-yaml out/dmvpn-flat-pair-mgmt-10.yaml 10
+```
+
+Example (flat mode with mgmt network + external bridge for internet access):
+
+```powershell
+topogen --cml-version 0.3.0 -L "Flat-Mgmt-Bridge-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --mgmt --mgmt-bridge --offline-yaml out/flat-mgmt-bridge-10.yaml 10
 ```
 
 ### NTP Configuration
@@ -508,6 +557,16 @@ Create a 20-node NX lab with EIGRP (non-flat):
 powershell
 topogen -L "NX-20-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
   -m nx --distance 250 --insecure --progress 20
+
+Create a 10-node simple lab with OOB management, external bridge, NTP, and auto-start:
+
+```powershell
+$env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="pass"
+topogen -L "Simple-10-Mgmt-Bridge" -T iosv-eigrp --device-template iosv -m simple \
+  --mgmt --mgmt-bridge --mgmt-vrf Mgmt-vrf --ntp 192.168.1.10 --ntp-vrf Mgmt-vrf \
+  --start --insecure --progress 10
+```
+
 Create and export a 500-node NX lab with EIGRP (YAML filename is Git-ignored):
 
 powershell

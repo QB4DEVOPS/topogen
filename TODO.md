@@ -27,12 +27,7 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-- [x] OOB management network for flat, flat-pair, and DMVPN modes (completed - see CHANGES.md)
-  - Added `--mgmt`, `--mgmt-cidr`, `--mgmt-gw`, `--mgmt-slot`, `--mgmt-vrf` flags
-  - Added `--ntp` and `--ntp-vrf` flags for NTP configuration
-  - Updated templates (iosv-dmvpn.jinja2) to support mgmt and NTP
-  - Offline YAML generation working for all modes
-  - All 8 test labs loaded on CML server successfully
+(empty - see Done section or CHANGES.md for completed features)
 
 ## Promote to Issues
 
@@ -44,8 +39,23 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 See `CHANGES.md` and `README.md` for completed features.
 
+Recent completions:
+- [x] Add `--mgmt-bridge` support for online NX and simple modes (see CHANGES.md)
+- [x] Add `--start` flag for auto-starting labs after creation (see CHANGES.md)
+- [x] Add lab URL printing after creation for easy browser access (see CHANGES.md)
+- [x] Include all CLI args in lab description for repeatability (see CHANGES.md)
+- [x] Add external-connector bridge support for OOB management (offline modes) (see CHANGES.md)
+- [x] OOB management network for flat, flat-pair, and DMVPN modes (see CHANGES.md)
+
 ## Future ideas
 
+- [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
+  - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
+  - Current implementation uses "System Bridge" mode (bidirectional connectivity)
+  - NAT mode would be useful for security-focused deployments where management plane should only initiate outbound connections
+- [ ] Refactor: deduplicate offline YAML emission for `--mgmt-bridge` (external_connector + SWoob0 port offset + links)
+  - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
+  - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
 - [ ] (add ideas here)
 - [ ] Optional: interactive dependency graph / call graph visualization
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
