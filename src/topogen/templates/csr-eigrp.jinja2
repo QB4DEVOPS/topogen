@@ -95,6 +95,37 @@ interface GigabitEthernet{{ loop.index0 + 1 }}
     no shutdown
 !
 {%- endfor %}
+{%- if mgmt and mgmt.enabled %}
+{%- if mgmt.vrf %}
+vrf definition {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+ address-family ipv4
+ exit-address-family
+!
+{%- endif %}
+interface GigabitEthernet{{ mgmt.slot }}
+    description OOB Management
+    {%- if mgmt.vrf %}
+    vrf forwarding {{ mgmt.vrf }}
+    {%- endif %}
+    ip address dhcp
+    no shutdown
+!
+{%- if mgmt.gw %}
+{%- if mgmt.vrf %}
+ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- else %}
+ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- endif %}
+{%- endif %}
+{%- endif %}
+{%- if ntp and ntp.server %}
+{%- if ntp.vrf %}
+ntp server vrf {{ ntp.vrf }} {{ ntp.server }}
+{%- else %}
+ntp server {{ ntp.server }}
+{%- endif %}
+{%- endif %}
 line vty 0 4
     transport input ssh telnet
     exec-timeout 0 0

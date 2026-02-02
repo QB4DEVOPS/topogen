@@ -278,6 +278,55 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         default="tenant",
         help='VRF name to apply to the flat-pair odd-router Gi0/1 (pair link), default "%(default)s"',
     )
+    parser.add_argument(
+        "--mgmt",
+        dest="enable_mgmt",
+        action="store_true",
+        default=False,
+        help="Enable a dedicated OOB management network (SWmgmt0 + router mgmt interfaces)",
+    )
+    parser.add_argument(
+        "--mgmt-cidr",
+        dest="mgmt_cidr",
+        type=str,
+        default="10.254.0.0/16",
+        help='Management network CIDR, default "%(default)s"',
+    )
+    parser.add_argument(
+        "--mgmt-gw",
+        dest="mgmt_gw",
+        type=str,
+        default=None,
+        help="Management network gateway IP (optional); adds a default route in the mgmt VRF if set",
+    )
+    parser.add_argument(
+        "--mgmt-slot",
+        dest="mgmt_slot",
+        type=int,
+        default=5,
+        help="Interface slot for management (IOSv Gi0/N, CSR GiN), default %(default)d",
+    )
+    parser.add_argument(
+        "--mgmt-vrf",
+        dest="mgmt_vrf",
+        type=str,
+        default="Mgmt-vrf",
+        help='VRF name for management interface (default: "%(default)s"); use "global" for global routing table',
+    )
+    parser.add_argument(
+        "--ntp",
+        dest="ntp_server",
+        type=str,
+        default=None,
+        help="NTP server IP address (optional)",
+    )
+    parser.add_argument(
+        "--ntp-vrf",
+        dest="ntp_vrf",
+        type=str,
+        default=None,
+        help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
+    )
     if is_gooey:
         parser.add_argument(
             "--yaml",
@@ -488,6 +537,32 @@ def main():
                     parser.error(
                         f"Invalid combination: nodes={args.nodes}, group_size={args.flat_group_size} requires more than 32 access switches (core ports). Increase --flat-group-size."
                     )
+        # Validate mgmt flags
+        if getattr(args, "enable_mgmt", False):
+            from ipaddress import IPv4Network
+            try:
+                IPv4Network(args.mgmt_cidr, strict=False)
+            except ValueError as exc:
+                parser.error(f"Invalid --mgmt-cidr: {exc}")
+            if args.mgmt_gw:
+                from ipaddress import IPv4Address
+                try:
+                    IPv4Address(args.mgmt_gw)
+                except ValueError as exc:
+                    parser.error(f"Invalid --mgmt-gw: {exc}")
+            # Normalize mgmt_vrf: treat "global" or empty as None (global table)
+            if args.mgmt_vrf and args.mgmt_vrf.lower() == "global":
+                args.mgmt_vrf = None
+        # Validate NTP flags
+        if getattr(args, "ntp_server", None):
+            from ipaddress import IPv4Address
+            try:
+                IPv4Address(args.ntp_server)
+            except ValueError as exc:
+                parser.error(f"Invalid --ntp: {exc}")
+            # If ntp_vrf not set but mgmt_vrf is, inherit mgmt_vrf
+            if not getattr(args, "ntp_vrf", None) and getattr(args, "mgmt_vrf", None):
+                args.ntp_vrf = args.mgmt_vrf
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
             if args.mode == "dmvpn":
