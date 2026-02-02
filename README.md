@@ -436,6 +436,46 @@ In `flat-pair` mode, an optional VRF can be applied to the odd router pair-link 
 
 When enabled, the generated router configs include a `ip vrf NAME` stanza and apply `ip vrf forwarding NAME` under `Gi0/1` on odd routers.
 
+### Management Network (OOB)
+
+In `flat` mode, an optional out-of-band management network can be created. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
+
+- `--mgmt`: enable management network
+- `--mgmt-cidr CIDR`: management network CIDR (default: `10.254.0.0/16`)
+- `--mgmt-gw IP`: optional gateway IP; adds a default route in the mgmt VRF
+- `--mgmt-slot N`: interface slot for management (default: 5; IOSv uses Gi0/5, CSR uses Gi5)
+- `--mgmt-vrf NAME`: VRF name for management interface (default: `Mgmt-vrf`); use `global` for global routing table
+
+When enabled, the generated router configs include a management interface with DHCP addressing.
+
+Example (flat mode with mgmt network):
+
+```powershell
+topogen --cml-version 0.3.0 -L "Flat-Mgmt-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --mgmt --offline-yaml out/flat-mgmt-10.yaml 10
+```
+
+Example (flat mode with mgmt network + VRF + gateway):
+
+```powershell
+topogen --cml-version 0.3.0 -L "Flat-Mgmt-VRF-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --mgmt --mgmt-vrf MGMT --mgmt-gw 10.254.0.1 --offline-yaml out/flat-mgmt-vrf-10.yaml 10
+```
+
+### NTP Configuration
+
+An optional NTP server can be configured on all routers.
+
+- `--ntp IP`: NTP server IP address
+- `--ntp-vrf NAME`: optional VRF for NTP source; inherits `--mgmt-vrf` if not specified
+
+Example (flat mode with mgmt + NTP):
+
+```powershell
+topogen --cml-version 0.3.0 -L "Flat-Mgmt-NTP-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --mgmt --mgmt-vrf MGMT --ntp 10.254.0.1 --offline-yaml out/flat-mgmt-ntp-10.yaml 10
+```
+
 ### Examples
 
 Create a 300-node flat star lab directly on a controller (insecure TLS):

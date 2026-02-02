@@ -3,6 +3,16 @@
 This file lists changes.
 
 - Unreleased
+  - feat(mgmt): add OOB management network support for flat mode
+    - enable with `--mgmt`
+    - creates `SWoob0` unmanaged switch (with `hide_links: true`) and connects all router mgmt interfaces
+    - mgmt interface uses DHCP by default (slot 5: IOSv Gi0/5, CSR Gi5)
+    - default VRF `Mgmt-vrf`; use `--mgmt-vrf global` for global routing table
+    - optional gateway route with `--mgmt-gw IP`
+    - configurable slot with `--mgmt-slot N`
+  - feat(ntp): add NTP server configuration
+    - enable with `--ntp IP`
+    - optional VRF with `--ntp-vrf NAME` (inherits `--mgmt-vrf` if not specified)
   - feat(flat): add new mode "flat-pair" (odd-even pairing). Odd: Gi0/0 -> access switch and Gi0/1 -> even's Gi0/0. Even: no leaf link. Last odd without partner leaves Gi0/1 unused.
   - feat(vrf): add optional VRF support for flat-pair pair links (odd router Gi0/1)
     - enable with `--vrf`
