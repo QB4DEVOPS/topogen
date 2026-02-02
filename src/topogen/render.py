@@ -337,6 +337,9 @@ class Renderer:
         """render the NX random network"""
 
         disable_pcl_loggers()
+
+        manager = None
+        ticks = None
         _LOGGER.warning("Creating network")
         graph = self.create_nx_network()
 
@@ -543,6 +546,9 @@ class Renderer:
         total_routers = int(self.args.nodes)
         total_endpoints = (total_routers + 1) // 2
 
+        manager = None
+        ticks = None
+
         stub_evens = bool(getattr(self.args, "eigrp_stub", False)) and str(
             getattr(self.args, "dmvpn_routing", "eigrp")
         ).lower() == "eigrp"
@@ -568,6 +574,16 @@ class Renderer:
         group = max(1, int(getattr(self.args, "flat_group_size", 20)))
         num_sw = Renderer.validate_flat_topology(total_endpoints, group)
 
+        if self.args.progress:
+            manager = enlighten.get_manager()
+            ticks = manager.counter(
+                total=1 + num_sw + total_routers,
+                desc="Progress",
+                unit="steps",
+                color="cyan",
+                leave=False,
+            )
+
         _LOGGER.warning(
             "[dmvpn/flat-pair] Creating %d routers (%d DMVPN endpoints)",
             total_routers,
@@ -575,12 +591,16 @@ class Renderer:
         )
 
         core = self.create_node("SWnbma0", "unmanaged_switch", Point(0, 0))
+        if ticks:
+            ticks.update()  # type: ignore
         switches: list[Node] = []
         for i in range(num_sw):
             x = (i + 1) * self.args.distance * 3
             sw = self.create_node(f"SWnbma{i+1}", "unmanaged_switch", Point(x, 0))
             switches.append(sw)
             self.lab.create_link(self.new_interface(core), self.new_interface(sw))
+            if ticks:
+                ticks.update()  # type: ignore
 
         l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
 
@@ -635,6 +655,8 @@ class Renderer:
 
             node = TopogenNode(hostname=hostname, loopback=loopback_ip, interfaces=ifaces)
             routers.append((rnum, node, cml_router))
+            if ticks:
+                ticks.update()  # type: ignore
 
         for rnum, _node, cml_router in routers:
             if (rnum % 2) == 0:
@@ -691,6 +713,8 @@ class Renderer:
                     dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
                     dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
+                    dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
+                    dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                 )
             else:
                 rendered = eigrp_template.render(
@@ -733,6 +757,11 @@ class Renderer:
             except Exception as exc:  # pragma: no cover
                 _LOGGER.error("YAML export failed: %s", exc)
 
+        if ticks:
+            ticks.close()  # type: ignore
+        if manager:
+            manager.stop()  # type: ignore
+
         return 0
 
     def render_dmvpn_network(self) -> int:
@@ -742,6 +771,9 @@ class Renderer:
         """
 
         disable_pcl_loggers()
+
+        manager = None
+        ticks = None
 
         try:
             nbma_net = IPv4Network(str(getattr(self.args, "dmvpn_nbma_cidr", "10.10.0.0/16")))
@@ -786,7 +818,19 @@ class Renderer:
                 total_routers,
             )
 
+        if self.args.progress:
+            manager = enlighten.get_manager()
+            ticks = manager.counter(
+                total=1 + total_routers,
+                desc="Progress",
+                unit="steps",
+                color="cyan",
+                leave=False,
+            )
+
         nbma_sw = self.create_node("SWnbma0", "unmanaged_switch", Point(0, 0))
+        if ticks:
+            ticks.update()  # type: ignore
 
         # Deterministic Loopback0 addressing (match flat/offline behavior)
         l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
@@ -834,6 +878,8 @@ class Renderer:
             )
 
             routers.append((node, cml_router))
+            if ticks:
+                ticks.update()  # type: ignore
 
         # hub_info is a list of {hub_nbma_ip, hub_tunnel_ip} entries used by spoke templates
         if hubs_list:
@@ -863,6 +909,8 @@ class Renderer:
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
                 dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
+                dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
+                dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
             )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
@@ -904,6 +952,11 @@ class Renderer:
                     _LOGGER.error("YAML export not supported by client library")
             except Exception as exc:  # pragma: no cover - best-effort export
                 _LOGGER.error("YAML export failed: %s", exc)
+
+        if ticks:
+            ticks.close()  # type: ignore
+        if manager:
+            manager.stop()  # type: ignore
 
         return 0
 
@@ -1101,6 +1154,9 @@ class Renderer:
             spokes = int(args.nodes)
             total_routers = spokes + 1
 
+        manager = None
+        ticks = None
+
         # CML input validation requires x/y coordinates to be within a bounded range.
         # The CML API currently enforces x <= 15000 (and similarly for y). Keep all
         # nodes within this range.
@@ -1172,6 +1228,16 @@ class Renderer:
                 f"DMVPN NBMA requires {num_access} access switches with group_size={group}, but core unmanaged_switch supports only 32 uplinks. Increase --flat-group-size."
             )
 
+        if getattr(args, "progress", False):
+            manager = enlighten.get_manager()
+            ticks = manager.counter(
+                total=1 + (2 * num_access) + (2 * total_routers),
+                desc="Progress",
+                unit="steps",
+                color="cyan",
+                leave=False,
+            )
+
         # Match flat/flat-pair layout: core at (0,0), access switches along +X,
         # routers stacked under their access switch.
         base_distance = int(getattr(args, "distance", 200))
@@ -1194,6 +1260,9 @@ class Renderer:
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
             lines.append("        type: physical")
+
+        if ticks:
+            ticks.update()  # type: ignore
 
         # Access NBMA switches (each has 1 uplink + router-facing ports)
         # router_port_map[idx] -> (access_switch_label, access_port)
@@ -1221,6 +1290,9 @@ class Renderer:
 
             for p in range(1, if_count):
                 router_port_map.append((sw_label, p))
+
+            if ticks:
+                ticks.update()  # type: ignore
 
         # Determine hub set and precompute hub_info for spoke templates
         if hubs_list:
@@ -1280,6 +1352,8 @@ class Renderer:
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
                 dmvpn_phase=getattr(args, "dmvpn_phase", 2),
+                dmvpn_security=getattr(args, "dmvpn_security", "none"),
+                dmvpn_psk=getattr(args, "dmvpn_psk", None),
             )
 
             # Flat-like placement
@@ -1300,6 +1374,9 @@ class Renderer:
             for ln in rendered.splitlines():
                 lines.append(f"      {ln}")
 
+            if ticks:
+                ticks.update()  # type: ignore
+
         # Links
         lines.append("links:")
         lid = 0
@@ -1314,6 +1391,9 @@ class Renderer:
             lines.append(f"    n2: {node_ids['SWnbma0']}")
             lines.append(f"    i2: i{sidx}")
 
+            if ticks:
+                ticks.update()  # type: ignore
+
         # Router-to-NBMA links (each router uses its slot-0 interface)
         for idx in range(total_routers):
             rlabel = f"R{idx + 1}"
@@ -1325,6 +1405,9 @@ class Renderer:
             lines.append(f"    n2: {node_ids[sw_label]}")
             lines.append(f"    i2: i{sw_port}")
 
+            if ticks:
+                ticks.update()  # type: ignore
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -1334,7 +1417,13 @@ class Renderer:
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.info("Offline YAML (dmvpn) written to %s", outfile)
+        _LOGGER.warning("Offline YAML (dmvpn) written to %s", outfile)
+
+        if ticks:
+            ticks.close()  # type: ignore
+        if manager:
+            manager.stop()  # type: ignore
+
         return 0
 
     @staticmethod
@@ -1374,6 +1463,9 @@ class Renderer:
         total_routers = int(args.nodes)
         total_endpoints = (total_routers + 1) // 2
 
+        manager = None
+        ticks = None
+
         max_odd_rnum = total_routers if (total_routers % 2) == 1 else (total_routers - 1)
         if max_odd_rnum > (nbma_net.num_addresses - 2):
             raise TopogenError(
@@ -1391,6 +1483,16 @@ class Renderer:
         base_sw_step_x = base_distance * 3
         sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_access + 1))))
         router_step_y = max(1, min(base_distance, max_coord // max(1, (group * 2 + 2))))
+
+        if getattr(args, "progress", False):
+            manager = enlighten.get_manager()
+            ticks = manager.counter(
+                total=1 + (2 * num_access) + total_routers + (2 * total_endpoints),
+                desc="Progress",
+                unit="steps",
+                color="cyan",
+                leave=False,
+            )
 
         dev_def = getattr(args, "dev_template", args.template)
 
@@ -1467,6 +1569,9 @@ class Renderer:
             for p in range(1, if_count):
                 endpoint_port_map.append((sw_label, p))
 
+            if ticks:
+                ticks.update()  # type: ignore
+
         if hubs_list:
             hub_set = set(int(h) for h in hubs_list)
         else:
@@ -1539,6 +1644,8 @@ class Renderer:
                     dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
                     dmvpn_phase=getattr(args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
+                    dmvpn_security=getattr(args, "dmvpn_security", "none"),
+                    dmvpn_psk=getattr(args, "dmvpn_psk", None),
                 )
             else:
                 pair_ip = pair_ips.get(rnum - 1, (None, None))[1]
@@ -1600,6 +1707,9 @@ class Renderer:
             lines.append(f"    n2: {node_ids[sw_label]}")
             lines.append(f"    i2: i{sw_port}")
 
+            if ticks:
+                ticks.update()  # type: ignore
+
         for ep in range(1, total_endpoints + 1):
             odd = ep * 2 - 1
             even = odd + 1
@@ -1612,6 +1722,9 @@ class Renderer:
             lines.append(f"    n2: {node_ids[f'R{even}']}")
             lines.append("    i2: i0")
 
+            if ticks:
+                ticks.update()  # type: ignore
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -1621,7 +1734,13 @@ class Renderer:
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.info("Offline YAML (dmvpn, flat-pair) written to %s", outfile)
+        _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s", outfile)
+
+        if ticks:
+            ticks.close()  # type: ignore
+        if manager:
+            manager.stop()  # type: ignore
+
         return 0
 
     @staticmethod

@@ -19,6 +19,36 @@ cdp run
 ip vrf {{ dmvpn_vrf }}
 !
 {%- endif %}
+{%- if dmvpn_security == "ikev2-psk" %}
+!
+crypto ikev2 proposal TOPGEN-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy TOPGEN-POL
+ proposal TOPGEN-PROP
+!
+crypto ikev2 keyring TOPGEN-KR
+ peer ANY
+  address 0.0.0.0 0.0.0.0
+  pre-shared-key local {{ dmvpn_psk }}
+  pre-shared-key remote {{ dmvpn_psk }}
+!
+crypto ikev2 profile TOPGEN-IKEV2
+ match identity remote address 0.0.0.0 0.0.0.0
+ authentication remote pre-share
+ authentication local pre-share
+ keyring local TOPGEN-KR
+!
+crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile TOPGEN-IPSEC
+ set transform-set TOPGEN-TS
+ set ikev2-profile TOPGEN-IKEV2
+!
+{%- endif %}
 !
 {%- set ns = namespace(nbma=None, tun=None, pair=None) %}
 {%- for iface in node.interfaces %}
@@ -62,6 +92,9 @@ interface Tunnel0
   tunnel key {{ dmvpn_tunnel_key }}
   tunnel mode gre multipoint
  ip nhrp network-id 10
+{%- if dmvpn_security == "ikev2-psk" %}
+ tunnel protection ipsec profile TOPGEN-IPSEC
+{%- endif %}
 {%- if is_hub %}
 {%- if (dmvpn_phase|default(2)) == 3 %}
  ip nhrp redirect

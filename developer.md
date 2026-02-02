@@ -339,6 +339,14 @@ If this file and the code disagree, treat the code as authoritative and update `
     - `VIRL2_PASS`
   - Uses `--insecure` if your controller TLS cert is not trusted.
 
+### Progress bars (`--progress`)
+
+- Progress bars are **opt-in** (they only show when `--progress` is provided).
+- Progress bars are supported for both:
+  - Offline YAML generation (local CPU work)
+  - Online controller lab creation (CML API calls + node/link creation)
+- Offline generation can complete very quickly even for large node counts (it does not boot routers).
+
 ## Gooey (GUI) notes
 
 TopoGen has an optional GUI wrapper that reuses the CLI.
