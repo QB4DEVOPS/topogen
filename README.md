@@ -239,6 +239,7 @@ optional arguments:
   --yaml FILE           Export the created lab to a YAML file at FILE (via controller API)
   --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller required)
   --cml-version ...     CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)
+  --start               Automatically start the lab after creation (online mode only)
 
 configuration:
   -c CONFIGFILE, --config CONFIGFILE
@@ -556,6 +557,16 @@ Create a 20-node NX lab with EIGRP (non-flat):
 powershell
 topogen -L "NX-20-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
   -m nx --distance 250 --insecure --progress 20
+
+Create a 10-node simple lab with OOB management, external bridge, NTP, and auto-start:
+
+```powershell
+$env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="pass"
+topogen -L "Simple-10-Mgmt-Bridge" -T iosv-eigrp --device-template iosv -m simple \
+  --mgmt --mgmt-bridge --mgmt-vrf Mgmt-vrf --ntp 192.168.1.10 --ntp-vrf Mgmt-vrf \
+  --start --insecure --progress 10
+```
+
 Create and export a 500-node NX lab with EIGRP (YAML filename is Git-ignored):
 
 powershell

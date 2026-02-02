@@ -371,6 +371,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         default=None,
         help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
     )
+    parser.add_argument(
+        "--start",
+        dest="start_lab",
+        action="store_true",
+        default=False,
+        help="Automatically start the lab after creation",
+    )
     if is_gooey:
         parser.add_argument(
             "--yaml",

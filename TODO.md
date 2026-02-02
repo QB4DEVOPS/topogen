@@ -27,19 +27,7 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-- [x] Add external-connector to bridge SWoob0 for external network access (completed - see CHANGES.md)
-  - Added `--mgmt-bridge` flag (requires `--mgmt`)
-  - Creates `ext-conn-mgmt` external_connector node with "System Bridge" mode
-  - Bridges SWoob0 port 0 to external network for bidirectional connectivity
-  - Supported in all offline modes: flat, flat-pair, dmvpn, dmvpn-flat-pair
-  - Tested on CML server successfully
-
-- [x] OOB management network for flat, flat-pair, and DMVPN modes (completed - see CHANGES.md)
-  - Added `--mgmt`, `--mgmt-cidr`, `--mgmt-gw`, `--mgmt-slot`, `--mgmt-vrf` flags
-  - Added `--ntp` and `--ntp-vrf` flags for NTP configuration
-  - Updated templates (iosv-dmvpn.jinja2) to support mgmt and NTP
-  - Offline YAML generation working for all modes
-  - All 8 test labs loaded on CML server successfully
+(empty - see Done section or CHANGES.md for completed features)
 
 ## Promote to Issues
 
@@ -50,6 +38,14 @@ This file tracks in-progress work and future ideas for TopoGen.
 ## Done
 
 See `CHANGES.md` and `README.md` for completed features.
+
+Recent completions:
+- [x] Add `--mgmt-bridge` support for online NX and simple modes (see CHANGES.md)
+- [x] Add `--start` flag for auto-starting labs after creation (see CHANGES.md)
+- [x] Add lab URL printing after creation for easy browser access (see CHANGES.md)
+- [x] Include all CLI args in lab description for repeatability (see CHANGES.md)
+- [x] Add external-connector bridge support for OOB management (offline modes) (see CHANGES.md)
+- [x] OOB management network for flat, flat-pair, and DMVPN modes (see CHANGES.md)
 
 ## Future ideas
 

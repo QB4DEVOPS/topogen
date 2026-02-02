@@ -20,6 +20,19 @@ This file lists changes.
     - bridges SWoob0 port 0 to external/physical network for bidirectional connectivity
     - enables routers to reach external resources (internet, NTP servers, DHCP, etc.)
     - supported in all offline modes: flat, flat-pair, dmvpn, dmvpn-flat-pair
+  - feat(mgmt): add `--mgmt-bridge` support for online NX and simple modes
+    - OOB management infrastructure created before router creation to avoid interface conflicts
+    - management interfaces connected to SWoob0 at creation time
+    - CSR1000v uses slot-1 adjustment (slot 5 -> GigabitEthernet4)
+  - feat(online): print lab URL after creation for easy browser access
+    - format: `Lab URL: https://<controller>/lab/<lab-id>`
+    - uses VIRL2_URL environment variable
+  - feat(online): add `--start` flag to auto-start labs after creation
+    - starts all nodes automatically when lab creation completes
+    - useful for immediate testing and validation
+  - feat(online): include all CLI args in lab description for repeatability
+    - lab descriptions now include --mgmt, --mgmt-vrf, --mgmt-bridge, --ntp, --ntp-vrf, --start
+    - enables exact command reconstruction from CML2 UI
   - feat(remark): add `--remark` flag to add custom notes to lab descriptions
   - feat(flat): add new mode "flat-pair" (odd-even pairing). Odd: Gi0/0 -> access switch and Gi0/1 -> even's Gi0/0. Even: no leaf link. Last odd without partner leaves Gi0/1 unused.
   - feat(vrf): add optional VRF support for flat-pair pair links (odd router Gi0/1)
