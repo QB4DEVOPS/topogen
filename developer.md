@@ -206,6 +206,12 @@ Pitfall:
 
 
 
+Maintenance note:
+
+- Some offline YAML generation features (notably `--mgmt-bridge` external_connector emission and related OOB switch/link wiring) currently appear as repeated blocks across multiple offline renderers in `src/topogen/render.py`. This is intentional for now, but it increases maintenance cost (a future edit could fix one mode and miss another). Prefer refactoring into a shared helper when touching this area again.
+
+
+
 ## Runtime dependencies (from `pyproject.toml`)
 
 
