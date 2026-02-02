@@ -20,20 +20,17 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Feature roadmap (ordered)
 
-1. EIGRP stub flag support (this is the current work)
+1. OOB management network for flat-pair mode (this is the current work)
 2. DMVPN IPsec protection (IKEv2 + PSK)
 3. DMVPN security roadmap (PKI)
 4. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
 
-- [ ] Implement EIGRP stub flag support
-  - add CLI flag: `--eigrp-stub`
-  - stub form: `eigrp stub connected summary`
-  - render EIGRP stub in templates (IOSv + CSR) (incremental)
-    - first: DMVPN underlay `flat-pair`: apply stub on even routers (companion `*-eigrp` templates)
-    - then: apply stub on odd DMVPN routers (`*-dmvpn` templates)
-  - add README + CHANGES updates when complete
+- [ ] Add OOB management network support for flat-pair mode
+  - reuse flat mgmt pattern (SWoob core + access switches)
+  - connect odd and even router mgmt interfaces to OOB switches
+  - pass mgmt/ntp context to templates
 
 ## Promote to Issues
 
@@ -43,14 +40,7 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Done
 
-- [ ] (move completed items here if you want a cleaner active list)
-
-- [x] DMVPN VRF support (flat-pair): odd (DMVPN) routers only
-  - VRF on pair-link + Loopback0 + Tunnel0
-  - even routers remain global (no VRF)
-  - ensure EIGRP split-horizon is correct in VRF mode
-
-- [x] Commit/push PR for `feat/dmvpn-underlay`
+See `CHANGES.md` and `README.md` for completed features.
 
 ## Future ideas
 
@@ -59,13 +49,6 @@ This file tracks in-progress work and future ideas for TopoGen.
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
   - Possible outputs: Mermaid graph in Markdown, Graphviz DOT/SVG, or JSON for a web viewer
   - Scope: at least `main.py` -> `render.py` -> `templates/*` plus other core modules
-- [ ] Flat management network generation
-  - Like `flat`, but add an external connector using a bridge for a management network
-  - IOS/IOS-XE routers connect management network on `Gi0/5` (IOSv) / `Gi5` (IOS-XE)
-  - `Gi0/5` / `Gi5` in `Mgmt-vrf`
-  - Addressing options:
-    - DHCP enabled, or
-    - deterministic management IPs generated from an input base CIDR (e.g. `10.10.0.0/16`)
 - [ ] Named EIGRP support (feature)
   - Standardize templates to support a named EIGRP config model intentionally (not incidentally)
   - Decide how this interacts with VRF (GRT + VRF address-families) and split-horizon controls
