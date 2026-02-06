@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.1.0
+Doc Version: v1.1.1
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions

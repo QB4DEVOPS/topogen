@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.0
+Doc Version: v1.1.0
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
