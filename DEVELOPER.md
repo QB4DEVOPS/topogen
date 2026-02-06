@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.1.1
+Doc Version: v1.2.0
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -44,6 +44,29 @@ This file is a developer-oriented starting point for TopoGen.
   - Prefer offline first: generate `--offline-yaml out\<lab>.yaml` and search output with PowerShell `Select-String`.
 
   - Then (if needed) boot in CML and run basic show commands (see "How to validate changes").
+
+## Architecture at a glance
+
+The diagram below shows the execution flow from CLI invocation to final output, highlighting where topology logic, template rendering, and PKI/TLS handling occur.
+
+```mermaid
+flowchart TD
+    A[TopoGen CLI<br/>topogen / topogen-gui]
+        --> B[main.py<br/>argparse + Config.load<br/>--ca / --insecure]
+
+    B --> C[render.py<br/>Authoritative Engine]
+
+    C --> D[Topology generation<br/>nodes · links · IPs]
+    C --> E[Template rendering<br/>Jinja2 configs]
+    C --> F[PKI / TLS handling<br/>ssl_verify logic]
+
+    D --> G[Final output]
+    E --> G
+    F --> G
+
+    G --> H[Offline CML YAML<br/>--offline-yaml]
+    G --> I[Live CML Controller<br/>virl2_client API]
+```
 
 ## Tested platforms
 
