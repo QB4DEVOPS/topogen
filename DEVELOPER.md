@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.2.0
+Doc Version: v1.2.1
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -47,7 +47,7 @@ This file is a developer-oriented starting point for TopoGen.
 
 ## Architecture at a glance
 
-The diagram below shows the execution flow from CLI invocation to final output, highlighting where topology logic, template rendering, and PKI/TLS handling occur.
+High-level execution flow showing the authoritative engine and delivery paths.
 
 ```mermaid
 graph TD
@@ -68,7 +68,7 @@ graph TD
         RENDER[render.py<br/>Authoritative Engine]
     end
 
-    subgraph Tasks ["Processing Logic"]
+    subgraph Tasks ["Core Responsibilities"]
         TOP[Topology Logic<br/>models.py]
         TMP[Render Configs<br/>templates/*.jinja2]
         PKI[PKI/CA Handling<br/>csr-pki-ca.jinja2]
