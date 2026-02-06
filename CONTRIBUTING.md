@@ -1,6 +1,21 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: Contributors (developers, AI assistants), GitHub PR reviewers, project maintainers
+- Reads from: Project conventions, team decisions, best practices
+- Writes to: None (documentation only, but enforces contribution standards)
+- Calls into: References DEVELOPER.md, README.md for context
+
+Purpose: Contribution guidelines for branching, commits, PRs, and code standards.
+         Ensures consistency across contributions from humans and AI assistants.
+
+Blast Radius: None (documentation only, but enforces workflow and quality standards)
+-->
+
 # Contributing to Topogen
 
-Thanks for contributing! This document describes how to propose changes and the repository’s working conventions.
+Thanks for contributing! This document describes how to propose changes and the repository's working conventions.
 
 ## Branching strategy
 - Create a feature branch from the default branch (main):

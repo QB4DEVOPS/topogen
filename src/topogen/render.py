@@ -2359,8 +2359,10 @@ class Renderer:
             end = min((i + 1) * group, total)
             per_sw_counts.append(max(0, end - start + 1))
 
-        # Core switch needs one port per access switch
+        # Core switch needs one port per access switch + 1 for CA if --pki
         core_if_count = num_sw
+        if getattr(args, "pki_enabled", False):
+            core_if_count += 1
         lines.append("    interfaces:")
         for p in range(core_if_count):
             lines.append(f"      - id: i{p}")
@@ -2438,7 +2440,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -2541,6 +2547,131 @@ class Renderer:
             for ln in rendered.splitlines():
                 lines.append(f"      {ln}")
 
+        # Create PKI Root CA router if --pki enabled
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+
+            # CA gets last usable IP in the flat CIDR (e.g., 10.10.255.254/16)
+            ca_g_ip = f"{g_base}.255.254"
+            ca_l_ip = f"{l_base}.255.254"
+
+            # CA-ROOT is always CSR1000v (required for PKI server features)
+            ca_dev_def = "csr1000v"
+
+            # Determine which CSR template to use based on regular router template
+            # This ensures CA uses same routing protocol as regular routers
+            template_name = getattr(args, "template", "iosv")
+            if "ospf" in template_name or template_name == "iosv":  # iosv defaults to OSPF
+                ca_template_name = "csr-ospf"
+            elif "eigrp" in template_name:
+                ca_template_name = "csr-eigrp"
+            else:
+                ca_template_name = "csr-eigrp"  # Default to EIGRP if unknown
+
+            # Load appropriate CSR template
+            try:
+                ca_base_tpl = env.get_template(f"{ca_template_name}{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                ca_base_tpl = tpl  # Fallback to default template
+
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=IPv4Interface(f"{ca_l_ip}/32"),
+                interfaces=[
+                    TopogenInterface(
+                        address=IPv4Interface(f"{ca_g_ip}/16"), description="=== SCEP Enrollment URL ===", slot=0
+                    )
+                ],
+            )
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            # Render base config with routing protocol
+            ca_base_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+            )
+
+            # Append PKI-specific config before the final "end"
+            pki_config_lines = [
+                "ntp master 5",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "!",
+                "crypto pki server ROOT-CA",
+                " database level complete",
+                " grant auto",
+                " lifetime ca-certificate 3650",
+                " lifetime certificate 1095",
+                " no shut",
+                "!",
+            ]
+
+            # Insert PKI config before "end"
+            ca_config_lines = ca_base_config.rstrip().split('\n')
+            # Remove trailing "end" if present
+            if ca_config_lines and ca_config_lines[-1].strip() == "end":
+                ca_config_lines.pop()
+
+            # Replace generic RSA key with named key for PKI
+            for i, line in enumerate(ca_config_lines):
+                if line.strip() == "crypto key generate rsa modulus 2048":
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label ROOT-CA.server"
+                    break
+
+            # Add PKI config
+            ca_config_lines.extend(pki_config_lines)
+            ca_config_lines.append("end")
+
+            ca_rendered = '\n'.join(ca_config_lines)
+
+            # Position CA to the left of SW0
+            ca_x = -args.distance * 3
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append(f"    node_definition: {ca_dev_def}")
+            lines.append(f"    x: {ca_x}")
+            lines.append("    y: 0")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            if ca_dev_def == "csr1000v":
+                lines.append("        label: GigabitEthernet1")
+            else:
+                lines.append("        label: GigabitEthernet0/0")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                if ca_dev_def == "csr1000v":
+                    csr_slot = mgmt_slot - 1
+                    lines.append(f"      - id: i{csr_slot}")
+                    lines.append(f"        slot: {csr_slot}")
+                    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                else:
+                    lines.append(f"      - id: i{mgmt_slot}")
+                    lines.append(f"        slot: {mgmt_slot}")
+                    lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_rendered.splitlines():
+                lines.append(f"      {ln}")
+
         # Links section
         lines.append("links:")
         lid = 0
@@ -2568,6 +2699,17 @@ class Renderer:
             lines.append("    i1: i0")
             lines.append(f"    n2: {node_ids[acc]}")
             lines.append(f"    i2: i{acc_port}")
+
+        # CA-ROOT -> SW0 link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            # SW0's next available port is after all access switch uplinks (i0 through i{num_sw-1})
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SW0']}")
+            lines.append(f"    i2: i{num_sw}")
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
@@ -2608,6 +2750,20 @@ class Renderer:
                 lines.append(f"    i1: i{router_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
+
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                # CA is always CSR1000v, so use slot - 1
+                ca_mgmt_iface_id = mgmt_slot - 1
+                # SWoob0's next available port after ext-conn-mgmt (if present) and OOB access switches
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -2784,7 +2940,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -3020,6 +3180,20 @@ class Renderer:
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
 
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                # CA is always CSR1000v, so use slot - 1
+                ca_mgmt_iface_id = mgmt_slot - 1
+                # SWoob0's next available port after ext-conn-mgmt (if present) and OOB access switches
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -3063,10 +3237,22 @@ class Renderer:
         enable_mgmt = getattr(self.args, "enable_mgmt", False)
         mgmt_slot = getattr(self.args, "mgmt_slot", 5)
         oob_switch = None
+        mgmt_ext_conn = None
         if enable_mgmt:
             oob_switch = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
             if hasattr(oob_switch, "hide_links"):
                 oob_switch.hide_links = True
+
+            # Create external connector for management bridge (if --mgmt-bridge enabled)
+            mgmt_bridge = getattr(self.args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                mgmt_ext_conn = self.create_node("ext-conn-mgmt", "external_connector", Point(-440, 0))
+                mgmt_ext_conn.configuration = "System Bridge"
+                self.lab.create_link(
+                    mgmt_ext_conn.get_interface_by_slot(0),
+                    oob_switch.get_interface_by_slot(0),
+                )
+                _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
 
         # Create access switches positioned horizontally
         switches: list[Node] = []
@@ -3151,6 +3337,80 @@ class Renderer:
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
+        # Create PKI Root CA router if --pki enabled
+        if getattr(self.args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            # Position CA to the left of SW0
+            ca_pos = Point(-self.args.distance * 3, 0)
+            ca_router = self.create_router(ca_label, ca_pos)
+
+            # Connect CA to core switch (SW0) on slot 0
+            ca_if = ca_router.get_interface_by_slot(0)
+            core_if = self.new_interface(core)
+            self.lab.create_link(ca_if, core_if)
+            _LOGGER.info("CA link: %s Gi0/0 -> %s", ca_label, core.label)
+
+            # Connect CA to OOB switch if enabled
+            if enable_mgmt and oob_switch is not None:
+                dev_def = getattr(self.args, "dev_template", self.args.template)
+                ca_mgmt_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+                try:
+                    ca_mgmt_if = ca_router.get_interface_by_slot(ca_mgmt_slot)
+                except Exception:
+                    ca_mgmt_if = ca_router.create_interface(slot=ca_mgmt_slot)
+                oob_ca_if = self.new_interface(oob_switch)
+                self.lab.create_link(ca_mgmt_if, oob_ca_if)
+                _LOGGER.info("CA mgmt-link: %s slot %d -> %s", ca_label, ca_mgmt_slot, oob_switch.label)
+
+            # Assign last usable IP in the flat CIDR (e.g., 10.10.255.254/16)
+            g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
+            l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
+            ca_g_addr = IPv4Interface(f"{g_base}.255.254/16")
+            ca_l_addr = IPv4Interface(f"{l_base}.255.254/32")
+
+            # Build mgmt/ntp context for CA
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "gw": getattr(self.args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(self.args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": self.args.ntp_server,
+                    "vrf": getattr(self.args, "ntp_vrf", None),
+                }
+
+            # Build config using csr-pki-ca template
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=ca_l_addr,
+                interfaces=[TopogenInterface(address=ca_g_addr, description="=== SCEP Enrollment URL ===", slot=0)],
+            )
+            # Load csr-pki-ca template (no trim_blocks/lstrip_blocks to preserve newlines)
+            import jinja2
+            from pathlib import Path
+            template_dir = Path(__file__).parent / "templates"
+            ca_template = jinja2.Environment(
+                loader=jinja2.FileSystemLoader(template_dir),
+            ).get_template("csr-pki-ca.jinja2")
+
+            ca_config = ca_template.render(
+                config=self.config,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                pki_ca_key="",  # Empty for now; will be filled once key is exported
+                pki_enrollment_url=str(ca_g_addr.ip),  # CA's own data interface IP
+            )
+            ca_router.configuration = ca_config  # type: ignore[method-assign]
+            _LOGGER.warning("PKI Root CA created: %s at %s", ca_label, ca_g_addr.ip)
+
         _LOGGER.warning("Flat management network created")
         # Optional YAML export
         outfile = getattr(self.args, "yaml_output", None)
@@ -3176,7 +3436,20 @@ class Renderer:
                     _LOGGER.error("YAML export not supported by client library")
             except Exception as exc:  # pragma: no cover - best-effort export
                 _LOGGER.error("YAML export failed: %s", exc)
+
+        # Print lab URL
+        import os
+        base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
+        _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
+
+        # Start lab if requested
+        if getattr(self.args, "start_lab", False):
+            _LOGGER.warning("Starting lab...")
+            self.lab.start()
+            _LOGGER.warning("Lab started")
+
         return 0
+
     def render_node_sequence(self):
         """render the square spiral / node sequence network. Note: due to TTL
         limitations, it does not make a lot of sense to have this larger than

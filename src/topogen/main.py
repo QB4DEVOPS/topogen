@@ -372,6 +372,21 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
     )
     parser.add_argument(
+        "--pki",
+        dest="pki_enabled",
+        action="store_true",
+        default=False,
+        help="Enable PKI Root CA (adds CA-ROOT router for certificate services)",
+    )
+    parser.add_argument(
+        "--pki-enroll",
+        dest="pki_enroll_mode",
+        type=str,
+        choices=["scep", "cli"],
+        default="scep",
+        help="PKI enrollment mode: scep (auto via SCEP) or cli (manual CLI enrollment for external CA)",
+    )
+    parser.add_argument(
         "--start",
         dest="start_lab",
         action="store_true",
@@ -617,6 +632,10 @@ def main():
             # If ntp_vrf not set but mgmt_vrf is, inherit mgmt_vrf
             if not getattr(args, "ntp_vrf", None) and getattr(args, "mgmt_vrf", None):
                 args.ntp_vrf = args.mgmt_vrf
+        # Warn if --start used with --offline-yaml
+        if getattr(args, "start_lab", False) and getattr(args, "offline_yaml", None):
+            _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller")
+
         # Offline YAML path requires no controller
         if getattr(args, "offline_yaml", None):
             if args.mode == "dmvpn":

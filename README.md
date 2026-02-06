@@ -1,3 +1,18 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
+- Reads from: None (documentation only)
+- Writes to: None (documentation only)
+- Calls into: References DEVELOPER.md, CONTRIBUTING.md, CHANGES.md, TESTED.md
+
+Purpose: User-facing documentation for TopoGen features, installation, usage, and examples.
+         Primary entry point for understanding what TopoGen does and how to use it.
+
+Blast Radius: None (documentation only, does not affect code execution)
+-->
+
 # TopoGen for CML2
 
 This package provides a `topogen` command which can create CML2 topologies.

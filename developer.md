@@ -1,3 +1,18 @@
+<!--
+File Chain (see DEVELOPER.md - this file!):
+Doc Version: v1.1.0
+
+- Called by: Developers (new contributors, AI assistants), maintainers
+- Reads from: Codebase analysis, architecture decisions, team conventions
+- Writes to: None (documentation only, but guides all development)
+- Calls into: References README.md, TESTED.md, CONTRIBUTING.md, TODO.md, code files
+
+Purpose: Developer-oriented guide to TopoGen codebase, file chains, validation, and workflows.
+         Primary reference for understanding code structure, dependencies, and development process.
+
+Blast Radius: None (documentation only, but critical for developer onboarding and AI navigation)
+-->
+
 # Developer notes
 
 
@@ -28,7 +43,13 @@ This file is a developer-oriented starting point for TopoGen.
 
   - Prefer offline first: generate `--offline-yaml out\<lab>.yaml` and search output with PowerShell `Select-String`.
 
-  - Then (if needed) boot in CML and run basic show commands (see “How to validate changes”).
+  - Then (if needed) boot in CML and run basic show commands (see "How to validate changes").
+
+## Tested platforms
+
+For detailed version information (Python, CML servers, node images, dependencies), see [TESTED.md](TESTED.md).
+
+**TL;DR**: Python 3.12.0, CML 2.6.1/2.7.0, CSR1000v 17.3, IOSv 15.9, Windows 11.
 
 ## 5-minute environment validation
 
@@ -560,9 +581,147 @@ If this file and the code disagree, treat the code as authoritative and update `
 
 
 
-- For an **AI**, these pointers help answer: “Where do I edit, and what else must I touch?”
+- For an **AI**, these pointers help answer: "Where do I edit, and what else must I touch?"
 
-- For a **human**, these pointers help answer: “What are the side effects and blast radius of a change?”
+- For a **human**, these pointers help answer: "What are the side effects and blast radius of a change?"
+
+
+
+### Understanding the File Chain Terms
+
+
+
+Each file in this codebase includes file chain documentation (in code comments or docstrings) using four key terms. This makes every file self-documenting for both humans and AI assistants. Here's what each term means:
+
+
+
+- **Called by**: Which files, functions, or systems invoke this code
+
+  - Answers: "Who triggers this?"
+
+  - Example: `src/topogen/render.py` is called by `src/topogen/main.py`
+
+  - Impact: If you change this file's interface (function signature, exports), you must update all callers
+
+
+
+- **Reads from**: What input data this code consumes
+
+  - Answers: "What does this depend on?"
+
+  - Examples: Config files, environment variables, Jinja context variables, API responses
+
+  - Impact: If you change what this file expects, you must ensure those inputs are provided correctly
+
+
+
+- **Writes to**: What output or side effects this code produces
+
+  - Answers: "What does this change or create?"
+
+  - Examples: Files written to disk, API calls that modify remote state, stdout/logging
+
+  - Impact: If you change what this file outputs, you must ensure downstream consumers can handle it
+
+
+
+- **Calls into**: What downstream dependencies this code triggers
+
+  - Answers: "What does this invoke?"
+
+  - Examples: Other Python modules, Jinja templates, external libraries, API clients
+
+  - Impact: If you change what this file calls, you must ensure those dependencies exist and work correctly
+
+
+
+**Why this matters**:
+
+- **Blast radius**: Quickly understand what breaks if you modify a file
+
+- **Dependencies**: Trace the full chain from CLI input to final output
+
+- **Self-documentation**: Read any single file and immediately understand its role
+
+- **AI-friendly**: Enables assistants to navigate the codebase without guessing
+
+
+
+### Document Versioning (MANDATORY)
+
+**IMPORTANT**: Every documentation file must include a `Doc Version` in its file chain header.
+
+**Format**: `Doc Version: v{major}.{minor}.{patch}` (semantic versioning)
+
+**Versioning Rules** (based on conventional commits):
+- **MAJOR** (v1.0.0 → v2.0.0): Breaking changes to documentation structure or format
+  - Triggered by: Commits with `BREAKING CHANGE:` in footer, or `!` after type (e.g., `docs!:`)
+  - Example: Restructuring file chain format, removing sections, changing header structure
+
+- **MINOR** (v1.0.0 → v1.1.0): New content, features, or sections
+  - Triggered by: `feat(scope):` commits
+  - Example: Adding new sections, new features documentation, new examples
+
+- **PATCH** (v1.0.0 → v1.0.1): Corrections, clarifications, or non-breaking updates
+  - Triggered by: `fix(scope):`, `docs(scope):`, `chore(scope):` commits
+  - Example: Typo fixes, clarifications, reformatting, minor updates
+
+**Commit Message Examples**:
+```bash
+# PATCH bump (v1.0.0 → v1.0.1)
+docs(developer): fix typo in versioning section
+docs(readme): clarify installation steps
+chore(tested): update Python version to 3.12.1
+
+# MINOR bump (v1.0.0 → v1.1.0)
+feat(developer): add PKI architecture section
+feat(tested): add new CML 2.8.0 validation results
+
+# MAJOR bump (v1.0.0 → v2.0.0)
+docs(developer)!: restructure file chain header format
+
+BREAKING CHANGE: File chain format now requires blast radius field
+```
+
+**File Examples**:
+
+Markdown files:
+```markdown
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: ...
+-->
+```
+
+Python/TOML files:
+```python
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+#
+# - Called by: ...
+```
+
+Jinja2 templates:
+```jinja2
+{# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0
+#
+# - Called by: ...
+#}
+```
+
+**Workflow**:
+1. Make your documentation changes
+2. Bump the version number (minor or major)
+3. Commit with message like `docs(readme): add usage examples (v1.0 → v1.1)`
+
+**Why mandatory**:
+- AI can track document evolution
+- Reviewers know if changes are significant
+- Version conflicts become visible
+- Documentation gets same rigor as code
 
 
 

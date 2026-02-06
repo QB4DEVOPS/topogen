@@ -1,3 +1,17 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+#
+# - Called by: pip/uv installers, build tools (hatchling), package managers (PyPI)
+# - Reads from: Project metadata, dependency specs, entry point definitions
+# - Writes to: Installed package metadata, console scripts (topogen, topogen-gui)
+# - Calls into: src/topogen/__init__.py (via entry points), hatchling (build backend)
+#
+# Purpose: Python project configuration (PEP 621). Defines package metadata, dependencies,
+#          entry points, build system, and dev tools (mypy, ruff).
+#
+# Blast Radius: High - changes here affect package installation, dependency resolution,
+#               available CLI commands, and Python version compatibility.
+
 [project]
 name = "topogen"
 version = "0.2.4"

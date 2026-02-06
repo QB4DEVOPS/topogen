@@ -1,3 +1,19 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: Users checking release notes, package managers, documentation generators
+- Reads from: Developer commits, PR descriptions, completed TODO items
+- Writes to: None (documentation only, but informs release notes and versioning)
+- Calls into: None (changelog-only)
+
+Purpose: Changelog documenting all user-facing changes, features, and bug fixes.
+         Follows conventional commit style (feat, fix, docs, refactor).
+         Used for release notes and version history.
+
+Blast Radius: None (documentation only, but critical for communicating changes to users)
+-->
+
 # Changes
 
 This file lists changes.

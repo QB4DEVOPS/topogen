@@ -1,3 +1,19 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: Developers planning features, LLMs adding work items, project management
+- Reads from: Developer input, user requests, issue tracker
+- Writes to: None (documentation only, but drives development decisions)
+- Calls into: References README.md, CHANGES.md, DEVELOPER.md for completed work
+
+Purpose: Living document tracking current work, future ideas, and issue candidates.
+         Organizes feature development roadmap and TODO items for developers and LLMs.
+
+Blast Radius: Medium (guides development priorities but doesn't affect code execution)
+              Moving items from "Current work" to "Done" signals feature completion.
+-->
+
 # TODO
 
 This file tracks in-progress work and future ideas for TopoGen.
@@ -27,7 +43,13 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-(empty - see Done section or CHANGES.md for completed features)
+### feat/pki-ca — Single root CA router for DMVPN PKI
+- [ ] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
+- [ ] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
+- [ ] Add RCA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt
+- [ ] CA IP = last usable in NBMA CIDR (no conflict with sequential router allocation)
+- [ ] Validate with offline YAML
+- Naming convention: RCA-ROOT (this branch), RCA-ICA / RCA-SIGN reserved for future multi-CA labs
 
 ## Promote to Issues
 
@@ -49,6 +71,12 @@ Recent completions:
 
 ## Future ideas
 
+- [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
+  - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
+  - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)
+  - Future: Make template adaptable to IOSv (GigabitEthernet0/1, Gi0/5) if PKI server works on IOSv
+  - Requires: Pass dev_def to template context, add conditional interface naming in template
+  - Blast radius: render.py (CA creation), csr-pki-ca.jinja2 (interface config), offline YAML generation
 - [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
   - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
   - Current implementation uses "System Bridge" mode (bidirectional connectivity)
