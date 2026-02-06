@@ -36,9 +36,20 @@ controller, creating the lab, nodes and links on the fly.
 - YAML export of generated labs via controller API
 - offline YAML generation for CML (no controller needed) with `--offline-yaml`
 
+## Documentation map
+
+| File | Audience | Purpose |
+|------|----------|---------|
+| README.md | Users | CLI usage, features, examples |
+| DEVELOPER.md | Developers | Architecture, file chains, workflows |
+| CONTRIBUTING.md | Contributors | Branching, commits, PR conventions |
+| TESTED.md | CI/CD | Platform and dependency validation |
+| CHANGES.md | All | Release history |
+| TODO.md | Developers | Roadmap and planned work |
+
 ## Code structure and dependencies
 
-For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [developer.md](developer.md).
+For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [DEVELOPER.md](DEVELOPER.md).
 
 - **src/topogen/main.py**
   - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.

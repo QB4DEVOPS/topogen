@@ -29,7 +29,7 @@ This file is a developer-oriented starting point for TopoGen.
 
   - `README.md` (user-facing behavior and examples)
 
-  - `developer.md` (this file)
+  - `DEVELOPER.md` (this file)
 
 - Core flow (where to look first):
 
@@ -381,7 +381,7 @@ Paste this into a fresh AI session to get it oriented quickly:
 
 ```text
 
-You are working in the TopoGen repo (Python 3.12+). Start by reading developer.md.
+You are working in the TopoGen repo (Python 3.12+). Start by reading DEVELOPER.md.
 
 
 
@@ -413,7 +413,7 @@ When adding a feature:
 
 
 
-Use the “File pointers” section in developer.md to understand what each file reads/writes/calls.
+Use the "File pointers" section in DEVELOPER.md to understand what each file reads/writes/calls.
 
 ```
 
@@ -435,7 +435,7 @@ Unless a task explicitly requires otherwise:
 
   - `src/topogen/templates/*.jinja2` (emitted device config)
 
-  - Docs: `README.md`, `CHANGES.md`, `developer.md`
+  - Docs: `README.md`, `CHANGES.md`, `DEVELOPER.md`
 
 
 
@@ -577,7 +577,7 @@ The intent of this section is to reduce guesswork.
 
 
 
-If this file and the code disagree, treat the code as authoritative and update `developer.md` in the same PR.
+If this file and the code disagree, treat the code as authoritative and update `DEVELOPER.md` in the same PR.
 
 
 
