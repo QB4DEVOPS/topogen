@@ -50,22 +50,52 @@ This file is a developer-oriented starting point for TopoGen.
 The diagram below shows the execution flow from CLI invocation to final output, highlighting where topology logic, template rendering, and PKI/TLS handling occur.
 
 ```mermaid
-flowchart TD
-    A[TopoGen CLI<br/>topogen / topogen-gui]
-        --> B[main.py<br/>argparse + Config.load<br/>--ca / --insecure]
+graph TD
+    classDef input fill:#5c7aff,stroke:#333,color:#fff,stroke-width:2px;
+    classDef engine fill:#3b59ff,stroke:#333,color:#fff,stroke-width:2px;
+    classDef logic fill:#444,stroke:#333,color:#fff,stroke-width:1px;
+    classDef output fill:#2ecc71,stroke:#333,color:#fff,stroke-width:2px;
 
-    B --> C[render.py<br/>Authoritative Engine]
+    subgraph Entry ["User Interface"]
+        CLI[TopoGen CLI<br/>main.py]
+    end
 
-    C --> D[Topology generation<br/>nodes · links · IPs]
-    C --> E[Template rendering<br/>Jinja2 configs]
-    C --> F[PKI / TLS handling<br/>ssl_verify logic]
+    subgraph Config ["Parsing"]
+        MAIN[config.py<br/>Config.load]
+    end
 
-    D --> G[Final output]
-    E --> G
-    F --> G
+    subgraph Core ["Engine"]
+        RENDER[render.py<br/>Authoritative Engine]
+    end
 
-    G --> H[Offline CML YAML<br/>--offline-yaml]
-    G --> I[Live CML Controller<br/>virl2_client API]
+    subgraph Tasks ["Processing Logic"]
+        TOP[Topology Logic<br/>models.py]
+        TMP[Render Configs<br/>templates/*.jinja2]
+        PKI[PKI/CA Handling<br/>csr-pki-ca.jinja2]
+    end
+
+    subgraph Destination ["Delivery"]
+        YAML[Offline CML YAML<br/>--offline-yaml]
+        LIVE[Live CML Controller<br/>virl2_client API]
+    end
+
+    CLI --> MAIN
+    MAIN --> RENDER
+    RENDER --> TOP
+    RENDER --> TMP
+    RENDER --> PKI
+    TOP --> YAML
+    TOP --> LIVE
+    TMP --> YAML
+    TMP --> LIVE
+    PKI --> YAML
+    PKI --> LIVE
+
+    class CLI input;
+    class MAIN engine;
+    class RENDER engine;
+    class TOP,TMP,PKI logic;
+    class YAML,LIVE output;
 ```
 
 ## Tested platforms

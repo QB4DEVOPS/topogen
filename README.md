@@ -19,21 +19,6 @@ This package provides a `topogen` command which can create CML2 topologies.
 It does this by using the PCL (VIRL Python Client Library) to talk to a live
 controller, creating the lab, nodes and links on the fly.
 
-```
-topogen CLI
-    ↓
-main.py (args + config)
-    ↓
-render.py (core engine)
-    ↓
-templates (*.jinja2)
-    ↓
-+--------------------+
-| Offline: YAML file |
-| Online: CML API    |
-+--------------------+
-```
-
 ![Demo](.images/demo.gif)
 
 ## Features
@@ -63,6 +48,21 @@ templates (*.jinja2)
 | TODO.md | Developers | Roadmap and planned work |
 
 ## Code structure and dependencies
+
+```
+topogen CLI
+    ↓
+main.py (args + config)
+    ↓
+render.py (core engine)
+    ↓
+templates (*.jinja2)
+    ↓
++--------------------+
+| Offline: YAML file |
+| Online: CML API    |
++--------------------+
+```
 
 For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [DEVELOPER.md](DEVELOPER.md).
 
