@@ -1747,7 +1747,8 @@ class Renderer:
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML (dmvpn) written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -2395,7 +2396,8 @@ class Renderer:
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -2922,7 +2924,8 @@ class Renderer:
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.info("Offline YAML written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
         return 0
     @staticmethod
     def offline_flat_pair_yaml(args: Namespace, cfg: Config) -> int:
@@ -3488,7 +3491,8 @@ class Renderer:
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.info("Offline YAML (flat-pair) written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
         return 0
     def render_flat_network(self) -> int:
         """Render a flat L2 management network.
