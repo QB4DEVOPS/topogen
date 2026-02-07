@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.0
+Doc Version: v1.2.0
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -173,3 +173,30 @@ Recent completions:
   - Why: The embedded `topogen --help` block in README can silently drift from `main.py` as new flags are added (e.g., `--pki`, `--mgmt`).
   - Options: (a) Auto-generate from `topogen --help` during release, (b) Replace with "run `topogen --help` for current flags" and link to DEVELOPER.md for flag details, (c) Add a CI check that diffs README help block against actual CLI output.
   - Blast radius: README.md only (documentation, no code changes).
+
+- [ ] Add machine-parsable artifact summary line after offline YAML generation (low effort).
+  - Why: Enables CI/CD pipelines and wrapper scripts to grep a single structured line for path, size, mode, and node count.
+  - Format: `ARTIFACT_YAML=out/lab.yaml bytes=862312 kind=flat-pair nodes=520`
+  - When: Implement when a CI/CD pipeline or automation script needs to consume the output programmatically.
+  - Blast radius: render.py (4 offline write paths), no behavior change to existing log lines.
+
+- [ ] Add `--quiet` flag to suppress non-essential output (low effort).
+  - Why: When running in scripts or CI/CD, users may only want errors or the final artifact path, not progress/config warnings.
+  - Behavior: Suppress INFO and WARNING logs, only show ERROR and the final output line.
+  - Pairs well with: Machine-parsable artifact summary (above) for clean scripted workflows.
+  - Blast radius: main.py (argparse + log level config), no changes to render logic.
+
+- [ ] Add `--import` and `--import-yaml` flags for offline-to-CML workflow (medium effort).
+  - Why: Currently there's no way to take an offline YAML and push it into CML without switching to online mode.
+    This bridges the gap: generate offline → inspect/edit → import → start.
+  - New flags:
+    - `--import-yaml <file>`: Read an existing offline YAML (skip generation)
+    - `--import`: Import the generated/read YAML into CML via `virl2_client`
+    - `--import-and-start`: Sugar for `--import --start` (composable)
+  - Existing flag: `--start` stays as-is (matches CML API `lab.start()` vocabulary)
+  - Composable examples:
+    - Generate + import + start: `topogen ... --offline-yaml out/lab.yaml --import --start`
+    - Read existing + import: `topogen --import-yaml out/lab.yaml --import`
+    - Read + import + start: `topogen --import-yaml out/lab.yaml --import-and-start`
+  - Output: Print lab URL after import (e.g., `https://controller/lab/abc123`) for easy browser access, same as online mode.
+  - Blast radius: main.py (argparse dispatch), render.py (import path via virl2_client), no changes to offline generation.
