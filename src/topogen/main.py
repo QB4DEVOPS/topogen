@@ -1,36 +1,35 @@
 """
-TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
 
-PURPOSE:
-    Entry point for the topogen CLI tool. Handles argument parsing, validation,
-    configuration loading, and orchestrates the rendering pipeline based on user inputs.
+- Called by: CLI command `topogen` (via entry_points in pyproject.toml), gui.py (GUI mode)
+- Reads from: config.py (Config class), models.py (TopogenError), render.py (Renderer, get_templates),
+             colorlog.py (CustomFormatter), CLI arguments (argparse)
+- Writes to: Renderer (passes validated args and config), stdout (logging), stderr (errors)
+- Calls into: config.load_config, render.Renderer (render methods and offline_*_yaml static methods),
+             get_templates, logging configuration
 
-WHO READS ME:
-    - Users: via CLI command `topogen` or `python -m topogen.main`
-    - gui.py: when launching GUI mode with Gooey
+Purpose: CLI entry point for TopoGen. Parses and validates arguments, loads configuration,
+         and orchestrates the topology generation workflow by delegating to Renderer based
+         on mode (nx/simple/flat/flat-pair/dmvpn) and target (online CML API vs offline YAML).
 
-WHO I READ:
-    - config.py: Configuration loading and defaults
-    - models.py: TopogenError exception handling
-    - render.py: Renderer class and topology generation functions
-    - colorlog.py: Custom log formatting
+Blast Radius: HIGH - All CLI invocations flow through this file
+              - Argument changes affect all users and scripts
+              - Flag additions/removals impact CLI interface stability
+              - Validation changes affect input acceptance
+              - Rendering mode routing affects all topology generation
 
-DEPENDENCIES:
-    - argparse: CLI argument parsing
-    - logging: Application logging
-    - os, sys: System operations
-
-KEY EXPORTS:
-    - main(): Application entry point
-    - create_argparser(): Creates and configures the argument parser
+Key Exports:
+    - main(): Application entry point (called by CLI command)
+    - create_argparser(): Creates and configures ArgumentParser with all CLI flags
     - valid_node_count(): Validates node count argument (2-1000)
 
-FLOW:
+Execution Flow:
     1. Parse CLI arguments (create_argparser)
     2. Load configuration from config.toml (or defaults)
     3. Validate arguments (node count, IP addresses, flag dependencies)
     4. Create Renderer instance based on mode (nx, simple, flat, flat-pair, dmvpn)
-    5. Execute online (CML API) or offline (YAML generation) workflow
+    5. Execute online (CML API) or offline (YAML generation) workflow via Renderer
 """
 
 import argparse
@@ -216,6 +215,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         type=str,
         default=None,
         help="DMVPN IKEv2 pre-shared key (used when --dmvpn-security ikev2-psk)",
+    )
+    parser.add_argument(
+        "--pki",
+        dest="pki_enabled",
+        action="store_true",
+        default=False,
+        help="Add PKI CA (root certificate authority) router to lab (CA-ROOT node)",
     )
     if is_gooey:
         parser.add_argument(

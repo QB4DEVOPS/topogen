@@ -1,76 +1,47 @@
 """
-TopoGen Topology Renderer - Core Topology Generation and Rendering Logic
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
 
-PURPOSE:
-    Core rendering engine for all topology modes. Handles both online (CML API) and
-    offline (YAML file) generation. Implements the topology creation logic for:
-    - Simple/NX mode: Star topology with central switch
-    - Flat mode: Hierarchical unmanaged switch fabric (core + access switches)
-    - Flat-pair mode: Odd-even router pairing with switch fabric
-    - DMVPN mode: Hub-spoke DMVPN with NBMA underlay (flat or flat-pair)
+- Called by: main.py (creates Renderer instances and calls render methods)
+- Reads from: config.py, models.py, dnshost.py, lxcfrr.py, templates/*.jinja2, CML API (online modes)
+- Writes to: CML2 API via virl2_client (online modes), offline YAML files (offline modes)
+- Calls into: virl2_client (CML API), config.Config, models (TopogenNode/Interface/Error),
+             dnshost.dnshostconfig, lxcfrr.lxcfrr_bootconfig, Jinja2 templates
 
-WHO READS ME:
-    - main.py: Creates Renderer instances and calls render methods
+Purpose: Core rendering engine for all topology modes (simple/NX/flat/flat-pair/DMVPN).
+         Handles both online (CML API) and offline (YAML file) generation with deterministic
+         addressing and layout. Orchestrates topology creation, node configuration rendering,
+         and network fabric construction.
 
-WHO I READ:
-    - config.py: Config class for configuration defaults
-    - models.py: TopogenNode, TopogenInterface, TopogenError, CoordsGenerator, DNShost, Point
-    - dnshost.py: dnshostconfig() for DNS host configuration
-    - lxcfrr.py: lxcfrr_bootconfig() for FRR LXC container configuration
-    - templates/: Jinja2 templates (*.jinja2) for router configurations
+Blast Radius: CRITICAL - All topology generation depends on this file
+              - Online modes: render_simple_network, render_flat_network, render_flat_pair_network, render_dmvpn
+              - Offline modes: offline_simple_yaml, offline_flat_yaml, offline_flat_pair_yaml, offline_dmvpn_yaml, offline_dmvpn_flat_pair_yaml
+              - Breaking changes affect all lab generation workflows
+              - Template context changes affect all router configurations
+              - Addressing changes affect all network connectivity
 
-DEPENDENCIES:
-    External packages:
-    - virl2_client: CML2 API client (ClientLibrary, Lab, Node, Interface)
-    - httpx: HTTP client (ConnectTimeout, HTTPError)
-    - jinja2: Template engine (Environment, PackageLoader, Template, select_autoescape)
-    - networkx: Graph algorithms (for topology generation)
-    - enlighten: Progress bar display
-
-    Standard library:
-    - ipaddress: IPv4 address/network calculations
-    - pathlib, os: File operations
-    - math: Ceiling calculations for switch counts
-    - datetime: Timestamps
-    - argparse: Namespace for CLI args
-
-KEY EXPORTS:
+Key Exports:
     - Renderer: Main class containing all rendering methods
     - get_templates(): Returns list of available Jinja2 templates
 
-KEY METHODS (Renderer class):
-    Online (CML API) methods:
-    - render_simple_network(): Simple/NX star topology (online)
-    - render_flat_network(): Flat hierarchical topology (online)
-    - render_flat_pair_network(): Flat-pair topology (online)
-    - render_dmvpn(): DMVPN hub-spoke (online)
-
-    Offline (YAML) static methods:
-    - offline_simple_yaml(): Simple/NX star topology (offline YAML)
-    - offline_flat_yaml(): Flat hierarchical topology (offline YAML)
-    - offline_flat_pair_yaml(): Flat-pair topology (offline YAML)
-    - offline_dmvpn_yaml(): DMVPN with flat underlay (offline YAML)
-    - offline_dmvpn_flat_pair_yaml(): DMVPN with flat-pair underlay (offline YAML)
-
-ARCHITECTURE:
-    - Online mode: Renderer.render_*() → CML API via virl2_client
-    - Offline mode: Renderer.offline_*_yaml() → YAML file generation
-    - Templates: Jinja2 templates in templates/ directory render router configs
-    - Addressing: Deterministic IPv4 address allocation for all interfaces
-    - Layout: Deterministic X/Y coordinates for visual topology in CML
-
-TOPOLOGY MODES:
+Topology Modes:
     1. Simple/NX: Central switch + N routers (star topology)
     2. Flat: Core switch + access switches + N routers (hierarchical)
     3. Flat-pair: Odd routers paired with even routers + switch fabric
     4. DMVPN flat: Hub-spoke DMVPN with flat underlay switches
     5. DMVPN flat-pair: Hub-spoke DMVPN with flat-pair underlay
 
-OOB MANAGEMENT:
-    All modes support optional OOB management network (--mgmt):
-    - SWoob0: Core OOB switch
-    - SWoobN: Access OOB switches (one per group of routers)
-    - ext-conn-mgmt: Optional external-connector for bridge mode (--mgmt-bridge)
+Architecture:
+    - Online mode: Renderer.render_*() → CML API via virl2_client
+    - Offline mode: Renderer.offline_*_yaml() → YAML file generation
+    - Templates: Jinja2 templates in templates/ directory render router configs
+    - Addressing: Deterministic IPv4 address allocation for all interfaces
+    - Layout: Deterministic X/Y coordinates for visual topology in CML
+
+Optional Features:
+    - OOB management: --mgmt (SWoob0 core + SWoobN access switches + ext-conn-mgmt bridge)
+    - NTP: --ntp (NTP server configuration with optional VRF)
+    - PKI: --pki (CA-ROOT node for certificate authority)
 """
 
 import importlib.resources as pkg_resources
@@ -1365,6 +1336,8 @@ class Renderer:
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
 
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn) | args: "
@@ -1440,7 +1413,11 @@ class Renderer:
         lines.append("    x: 0")
         lines.append("    y: 0")
         lines.append("    interfaces:")
-        for p in range(num_access):
+        # Core interfaces: one per access switch + 1 extra for CA-ROOT if --pki enabled
+        swnbma0_port_count = num_access
+        if getattr(args, "pki_enabled", False):
+            swnbma0_port_count += 1
+        for p in range(swnbma0_port_count):
             lines.append(f"      - id: i{p}")
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
@@ -1515,7 +1492,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -1661,6 +1642,100 @@ class Renderer:
             if ticks:
                 ticks.update()  # type: ignore
 
+        # CA-ROOT node (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+
+            # CA gets last usable IP in NBMA CIDR (avoid conflict with sequential router allocation)
+            ca_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 1}/{nbma_net.prefixlen}")
+
+            # CA-ROOT gets last usable IP in the /16 CIDR (.255.254)
+            # CA-POLICY (future) will use .255.253, CA-SIGN (future) will use .255.252
+            ca_loopback_ip = IPv4Interface(f"{l_base}.255.254/32")
+
+            # Create CA node with NBMA interface (connects to SWnbma0)
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=ca_loopback_ip,
+                interfaces=[
+                    TopogenInterface(
+                        address=ca_nbma_ip,
+                        description="=== SCEP Enrollment URL ===",
+                        slot=0,
+                    )
+                ],
+            )
+
+            # CA always uses EIGRP template (DMVPN default routing protocol)
+            try:
+                ca_base_tpl = env.get_template(f"csr-eigrp{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                raise TopogenError("CA template not found: csr-eigrp")
+
+            # Render base config with EIGRP routing
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ca_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+            )
+
+            # Replace base template's "crypto pki server" section with "crypto pki server CA-ROOT"
+            ca_config_lines = ca_config.splitlines()
+            for i in range(len(ca_config_lines)):
+                if "crypto pki trustpoint" in ca_config_lines[i].lower():
+                    ca_config_lines[i] = "crypto pki server CA-ROOT"
+                if "crypto key generate" in ca_config_lines[i].lower():
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+
+            # Remove any lines related to enrollment (enrollment url, revocation-check, etc.)
+            ca_config_clean = "\n".join(
+                ln for ln in ca_config_lines
+                if not any(
+                    kw in ln.lower()
+                    for kw in ["enrollment", "revocation-check", "rsakeypair"]
+                )
+            )
+
+            # Position CA to the left of SWnbma0
+            ca_x = -600
+            ca_y = 0
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append("    node_definition: csr1000v")
+            lines.append(f"    x: {ca_x}")
+            lines.append(f"    y: {ca_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                csr_mgmt_slot = mgmt_slot - 1
+                lines.append(f"      - id: i{csr_mgmt_slot}")
+                lines.append(f"        slot: {csr_mgmt_slot}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_config_clean.splitlines():
+                lines.append(f"      {ln}")
+
         # Links
         lines.append("links:")
         lid = 0
@@ -1691,6 +1766,17 @@ class Renderer:
 
             if ticks:
                 ticks.update()  # type: ignore
+
+        # CA-ROOT -> SWnbma0 data link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            ca_nbma_port = num_access  # CA uses the next available port on SWnbma0
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{ca_nbma_port}")
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
@@ -1737,6 +1823,19 @@ class Renderer:
 
                 if ticks:
                     ticks.update()  # type: ignore
+
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                ca_mgmt_iface_id = mgmt_slot - 1  # CA is always CSR1000v
+                # CA connects to SWoob0 port after all OOB access switches
+                ca_oob_port = num_oob_sw + port_offset
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{ca_oob_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -1885,6 +1984,8 @@ class Renderer:
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn flat-pair) | args: "
             + " ".join(args_bits)
@@ -2168,11 +2269,9 @@ class Renderer:
             # CA gets last usable IP in NBMA CIDR (avoid conflict with sequential router allocation)
             ca_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 1}/{nbma_net.prefixlen}")
 
-            # CA loopback using the same scheme as routers, with number = total_routers + 1
-            ca_num = total_routers + 1
-            hi = (ca_num // 256) & 0xFF
-            lo = ca_num % 256
-            ca_loopback_ip = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
+            # CA-ROOT gets last usable IP in the /16 CIDR (.255.254)
+            # CA-POLICY (future) will use .255.253, CA-SIGN (future) will use .255.252
+            ca_loopback_ip = IPv4Interface(f"{l_base}.255.254/32")
 
             # Create CA node with NBMA interface (connects to SWnbma0)
             ca_node = TopogenNode(
@@ -2480,6 +2579,8 @@ class Renderer:
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML) | args: "
             + " ".join(args_bits)
@@ -2982,6 +3083,8 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -3255,13 +3358,10 @@ class Renderer:
             ca_label = "CA-ROOT"
             node_ids[ca_label] = f"n{nid}"; nid += 1
 
-            # CA gets the same loopback scheme as routers, using total+1 as its number
-            ca_num = total + 1
-            hi, lo = addr_parts(ca_num)
-            ca_loopback_ip = f"{l_base}.{hi}.{lo}"
-
-            # CA gets a data network IP using the same /16 as routers
-            ca_data_ip = f"{g_base}.{hi}.{lo}"
+            # CA-ROOT gets last usable IP in the /16 CIDR (.255.254)
+            # CA-POLICY (future) will use .255.253, CA-SIGN (future) will use .255.252
+            ca_data_ip = f"{g_base}.255.254"
+            ca_loopback_ip = f"{l_base}.255.254"
 
             # Create CA node with data interface (connects to SW0)
             ca_node = TopogenNode(

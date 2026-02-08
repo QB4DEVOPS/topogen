@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.0
+Doc Version: v1.3.0
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -43,13 +43,27 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-### feat/pki-ca — Single root CA router for DMVPN PKI
-- [ ] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
-- [ ] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
-- [ ] Add RCA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt
-- [ ] CA IP = last usable in NBMA CIDR (no conflict with sequential router allocation)
-- [ ] Validate with offline YAML
-- Naming convention: RCA-ROOT (this branch), RCA-ICA / RCA-SIGN reserved for future multi-CA labs
+### ⚠️ DO THIS NEXT!!!! — Blank template for CML AutoNetkit bootstrap testing
+- [ ] Create `src/topogen/templates/blank.jinja2` with truly empty config (just `!` or `end`)
+- [ ] Test with: `topogen --template blank -m flat --offline-yaml out/bootstrap-test-100.yaml 100`
+- [ ] Verify CML AutoNetkit bootstrap works on import (no config = AutoNetkit runs on first boot)
+- [ ] Update README.md to document `--template blank` option
+- [ ] Update CHANGES.md with new blank template feature
+- Why critical: TopoGen should support blank/no-config topology generation for testing CML's AutoNetkit bootstrap at scale
+- Use case: Generate 10-100 node topologies with no configs, import to CML, test if AutoNetkit bootstrap function works
+
+### feat/pki-ca — CA-ROOT for flat, flat-pair, and DMVPN modes
+- [x] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point (DONE - template exists)
+- [x] Add `--pki` CLI flag (main.py) (DONE)
+- [x] Add CA-ROOT to offline_flat_yaml() — connects to SW0 (slot 0) + SWoob0 if --mgmt (DONE)
+- [x] Add CA-ROOT to offline_flat_pair_yaml() — connects to SW0 (slot 0) + SWoob0 if --mgmt (DONE)
+- [x] Add CA-ROOT to offline_dmvpn_yaml() — connects to SWnbma0 (slot 0) + SWoob0 if --mgmt (DONE)
+- [x] Add CA-ROOT to offline_dmvpn_flat_pair_yaml() — connects to SWnbma0 (slot 0) + SWoob0 if --mgmt (DONE)
+- [x] CA IP = last usable in appropriate CIDR (.255.254 for data/loopback, broadcast-1 for DMVPN NBMA) (DONE)
+- [x] Added --pki to args_bits in all 4 offline functions for lab description tracking (DONE)
+- [ ] Validate with offline YAML generation for all 4 modes
+- Naming convention: CA-ROOT (this branch), CA-POLICY (.255.253) / CA-SIGN (.255.252) reserved for future multi-CA labs
+- Scope: flat/flat-pair/dmvpn/dmvpn-flat-pair offline modes; simple/nx modes deferred
 
 ## Promote to Issues
 
@@ -71,12 +85,49 @@ Recent completions:
 
 ## Future ideas
 
+- [ ] 3-level PKI hierarchy (Root CA + Policy CA + End-entity certificates)
+  - Why: Production-grade PKI best practice; teach proper CA hierarchy design
+  - Nodes: CA-ROOT (root CA), CA-POLICY (policy/intermediate CA), spokes/hubs (end-entity certs)
+  - Certificate profiles for proper constraints and key usage:
+    ```
+    crypto pki certificate profile CA-ROOT-PROFILE
+     subject-name CN=CA-ROOT,O=Lab,C=US
+     validity 7300
+     basicConstraints ca true
+     key-usage keyCertSign cRLSign
+
+    crypto pki trustpoint CA-ROOT
+     certificate profile CA-ROOT-PROFILE
+    ```
+  - Device certificates (spokes/hubs) must include EKU IPsec:
+    ```
+    crypto pki certificate profile DEVICE-PROFILE
+     extended-key-usage ipsec
+    ```
+  - Naming: CA-ROOT (root), CA-POLICY (policy CA), CA-SIGN (alternate policy CA for future)
+  - Blast radius: render.py (create CA-POLICY node), templates (certificate profiles), DMVPN templates (device profiles with EKU)
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)
   - Future: Make template adaptable to IOSv (GigabitEthernet0/1, Gi0/5) if PKI server works on IOSv
   - Requires: Pass dev_def to template context, add conditional interface naming in template
   - Blast radius: render.py (CA creation), csr-pki-ca.jinja2 (interface config), offline YAML generation
+- [ ] Add `--strong` and `--stronger` flags for production-grade crypto (nice to have, educational)
+  - Why: Teach encryption best practices - demonstrate difference between lab crypto and production crypto
+  - Tiered approach: default (lab) → strong (compatible hardening) → stronger (maximum security, requires ECC)
+  - PKI changes:
+    - Default (no flag): RSA 2048-bit keys, 10-year CA cert, 3-year device certs (quick, "just get it running")
+    - `--strong`: RSA 4096-bit keys, 2-year CA cert, 1-year device certs (production-grade, compatible)
+    - `--stronger`: ECDSA P-256 or P-384 keys (ECC certificates), 2-year CA cert, 1-year device certs (maximum security, requires ECC support)
+  - IPsec changes (when `--dmvpn-security ikev2-psk` is used):
+    - Default: IKEv2 DH group 14 (2048-bit MODP), SHA-1, AES-128, PFS group 14
+    - `--strong`: IKEv2 DH group 15/16 (3072/4096-bit MODP, no ECC required), SHA-256, AES-256, PFS group 15/16, PRF SHA-256 (compatible with all devices)
+    - `--stronger`: IKEv2 DH group 19/20 (256/384-bit ECC), SHA-384, AES-256-GCM, PFS group 19/20, PRF SHA-384 (requires ECC support)
+  - Affects: PKI server config (csr-pki-ca.jinja2), spoke/hub crypto config (dmvpn templates), IKEv2 policy/proposal/profile
+  - Implementation: Add flags to main.py, pass `strong_crypto` and `stronger_crypto` to template context, conditional crypto settings in templates
+  - Educational value: Students learn "here's lab mode vs production hardening vs maximum hardening" across PKI AND IPsec
+  - Compatibility: `--strong` works on all IOS/IOS-XE, `--stronger` requires ECC-capable devices (documented limitation)
+  - Blast radius: main.py (argparse), render.py (context), PKI templates (conditional crypto config), DMVPN templates (IKEv2 policy)
 - [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
   - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
   - Current implementation uses "System Bridge" mode (bidirectional connectivity)
