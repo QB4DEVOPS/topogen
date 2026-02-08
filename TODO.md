@@ -217,3 +217,8 @@ Recent completions:
     ```
   - Depends on: `--import` and `--import-yaml` flags (above).
   - Blast radius: main.py (argparse alias), no new logic beyond existing import+start.
+
+- [ ] Trim and reorganize README.md for readability (low effort).
+  - Why: README has grown large with inline help output, detailed examples, and mixed audiences (end-users vs contributors). Makes it harder to scan and find what you need.
+  - Options: (a) Move contributor/developer content to DEVELOPER.md, (b) Collapse verbose sections behind summary headings, (c) Replace inline `--help` block with a link (pairs with the help-drift item above).
+  - Blast radius: README.md only (documentation, no code changes).
