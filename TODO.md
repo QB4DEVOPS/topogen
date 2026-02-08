@@ -200,3 +200,20 @@ Recent completions:
     - Read + import + start: `topogen --import-yaml out/lab.yaml --import-and-start`
   - Output: Print lab URL after import (e.g., `https://controller/lab/abc123`) for easy browser access, same as online mode.
   - Blast radius: main.py (argparse dispatch), render.py (import path via virl2_client), no changes to offline generation.
+
+- [ ] Add `--up <file>` shorthand and `--print-up-cmd` flag (low effort, sugar).
+  - Why: `--up` is sugar for `--import-yaml <file> --import --start` in a single flag.
+    Enables a clean two-step workflow: generate offline, then deploy when ready.
+  - `--print-up-cmd`: When used with `--offline-yaml`, prints the exact `topogen --up <file>` command
+    to run later. Only takes effect when `--up` is not already used on this run.
+  - Example workflow:
+    ```
+    # Step 1: Generate (no controller needed)
+    topogen ... --offline-yaml out/lab.yaml --print-up-cmd
+    # Output: "When you're ready: topogen --up out/lab.yaml"
+
+    # Step 2: Deploy (when ready)
+    topogen --up out/lab.yaml
+    ```
+  - Depends on: `--import` and `--import-yaml` flags (above).
+  - Blast radius: main.py (argparse alias), no new logic beyond existing import+start.
