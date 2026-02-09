@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.0
+Doc Version: v1.4.0
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -135,6 +135,36 @@ Recent completions:
 - [ ] Refactor: deduplicate offline YAML emission for `--mgmt-bridge` (external_connector + SWoob0 port offset + links)
   - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
   - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
+- [ ] Invisible metadata embedding via 1pt transparent annotation (low-medium effort, 2-3pt)
+  - Why: Enable round-trip regeneration (`topogen regenerate lab.yaml` / `topogen --up lab.yaml`) with zero visual footprint
+  - Contract: TopoGen stores regeneration intent in a CML Text Annotation named TOPOGEN_INTENT. Round-trip metadata must live in a first-class object that the platform itself owns.
+  - Approach: Embed base64-encoded JSON intent in a 1pt font, fully transparent annotation positioned off-canvas (-200, -200)
+  - Survives: All CML round-trips (export → download → share → import → re-export) — annotations are native CML 2.5+ feature
+  - Zero user impact: Literally invisible (1pt + transparent background/border + off-canvas position)
+  - Intent schema: `TOPOGEN-INTENT-v1:{base64(json({mode, nodes, template, flags, ...}))}` — version prefix allows future schema evolution
+  - Implementation:
+    - Add annotation injection to all 4 offline renderers (`offline_flat_yaml`, `offline_flat_pair_yaml`, `offline_dmvpn_yaml`, `offline_dmvpn_flat_pair_yaml`)
+    - Create parser function to extract/decode intent from annotations in imported YAML
+    - Add `topogen regenerate <file.yaml>` command to reconstruct args from embedded intent
+    - Optional: `--embed-metadata` (default on), `--visible-metadata-badge` (branding), `--hide-metadata` (strip on output)
+  - Level of effort: 4-6 hours (2-3 hours annotation injection + 1 hour parser + 1-2 hours testing + 30 min docs)
+  - Depends on: `--import` / `--up` flags for import workflow (see other future idea)
+  - Blast radius: render.py (4 offline functions + parser), main.py (regenerate command), no breaking changes
+  - Compared to alternatives:
+    - vs lab.description: Invisible (not visible in UI properties panel)
+    - vs metadata node: No canvas clutter (no extra router/device)
+    - vs external file: Survives round-trips (stays with the YAML)
+  - Workflow unlocked:
+    ```bash
+    # Generate offline (no controller)
+    topogen -m flat-pair -T iosv-eigrp --offline-yaml out/lab.yaml --mgmt --pki 50
+    # Share lab.yaml with colleague
+    # Colleague imports, tweaks in CML, exports as lab-v2.yaml
+    # Regenerate exact topology from exported YAML
+    topogen regenerate lab-v2.yaml --offline-yaml out/lab-v3.yaml
+    # Or deploy directly to CML
+    topogen --up lab-v2.yaml
+    ```
 - [ ] (add ideas here)
 - [ ] Optional: interactive dependency graph / call graph visualization
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
