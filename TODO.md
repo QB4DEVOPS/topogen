@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.0
+Doc Version: v1.3.1
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -86,6 +86,17 @@ Recent completions:
   - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
   - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
 - [ ] (add ideas here)
+- [ ] Add archive config to all templates. Use this block:
+  ```
+  archive
+   log config
+    logging enable
+    notify syslog contenttype plaintext
+    hidekeys
+   path flash:
+   maximum 5
+   write-memory
+  ```
 - [ ] Optional: interactive dependency graph / call graph visualization
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
   - Possible outputs: Mermaid graph in Markdown, Graphviz DOT/SVG, or JSON for a web viewer
