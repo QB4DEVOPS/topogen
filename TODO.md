@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.1
+Doc Version: v1.4.0
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -45,12 +45,12 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ### feat/pki-ca — Single root CA router for DMVPN PKI
 **Note: PKI is currently broken.** Do not rely on it until fixed.
-- [ ] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
-- [ ] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
-- [ ] Add RCA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt
-- [ ] CA IP = last usable in NBMA CIDR (no conflict with sequential router allocation)
+- [x] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
+- [x] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
+- [x] Add CA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt
+- [x] CA IP = last usable in NBMA CIDR (no conflict with sequential router allocation)
 - [ ] Validate with offline YAML
-- Naming convention: RCA-ROOT (this branch), RCA-ICA / RCA-SIGN reserved for future multi-CA labs
+- Naming convention: CA-ROOT (this branch), CA-POLICY / CA-SIGN reserved for future multi-CA labs
 
 ## Promote to Issues
 
@@ -78,6 +78,16 @@ Recent completions:
   - Future: Make template adaptable to IOSv (GigabitEthernet0/1, Gi0/5) if PKI server works on IOSv
   - Requires: Pass dev_def to template context, add conditional interface naming in template
   - Blast radius: render.py (CA creation), csr-pki-ca.jinja2 (interface config), offline YAML generation
+- [ ] 3-level PKI hierarchy: CA-ROOT → CA-POLICY → router enrollment
+  - Why: Simulate enterprise PKI depth with root CA offline, policy/issuing CA online, routers auto-enrolling via SCEP
+  - Naming: CA-ROOT (offline root), CA-POLICY (online issuing CA), CA-SIGN reserved for cross-cert scenarios
+  - Requires: csr-pki-policy.jinja2 template, CA-POLICY node in render_dmvpn_network(), chained enrollment config
+  - Blast radius: render.py (CA-POLICY node creation + links), templates (CA-ROOT signs CA-POLICY cert), main.py (--pki-depth or --pki-policy flag)
+- [ ] Add `--strong` / `--stronger` crypto flags for PKI and IKEv2 (low effort)
+  - Why: Default IOS XE RSA 2048 / AES-128 may not match security-conscious lab goals; named profiles simplify selection
+  - `--strong`: RSA 2048, AES-256, SHA-256 (NIST current)
+  - `--stronger`: RSA 4096, AES-256-GCM, SHA-384 (NIST future-proof)
+  - Blast radius: main.py (argparse), templates (crypto profile conditionals)
 - [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
   - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
   - Current implementation uses "System Bridge" mode (bidirectional connectivity)
@@ -144,6 +154,14 @@ Recent completions:
   - Implement a `topogen regenerate <file.yaml>` command that reads this metadata to deterministically recreate or update the lab.
 - [ ] Intent-based lab generation (medium effort)
   - Why: Unlock full round-trip editing and GitOps workflows by making intent the source of truth.
+
+- [ ] TOPOGEN_INTENT invisible annotation contract for CML labs (medium effort)
+  - Why: Embed generation parameters as an invisible text annotation inside the CML lab description so any tool (CLI, GUI, script) can recover the original intent directly from the live lab — not just from the offline YAML.
+  - Contract: A hidden `TOPOGEN_INTENT={...}` JSON block injected into the lab description/notes field, invisible in the CML UI but parseable by CLI.
+  - Data fields: mode, nodes, template, routing protocol, --pki, --mgmt, addressing params, topogen version.
+  - On import: `topogen regenerate` reads the annotation from the live CML lab and re-generates or updates deterministically.
+  - Complements: "Embed serialized intent in YAML" (above) — YAML embedding covers offline files; this covers live CML labs.
+  - Blast radius: render.py (inject annotation on online lab creation), main.py (--regenerate reads annotation from CML API).
 
 - [ ] Management Plane as First-Class Citizen:
   - Automate a dedicated `management-vrf` configuration for `GigabitEthernet0/0` across all routers.
