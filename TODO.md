@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.0
+Doc Version: v1.3.0
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -44,6 +44,7 @@ This file tracks in-progress work and future ideas for TopoGen.
 ## Current work
 
 ### feat/pki-ca — Single root CA router for DMVPN PKI
+**Note: PKI is currently broken.** Do not rely on it until fixed.
 - [ ] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
 - [ ] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
 - [ ] Add RCA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt

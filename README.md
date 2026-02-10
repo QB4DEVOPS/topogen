@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.0
+Doc Version: v1.3.0
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -506,6 +506,10 @@ TopoGen does not pick an output filename automatically; you must provide one. We
 - Topology: star fabric with one core `SWmgt0`, N access `SWmgt1..N`, and routers `R1..R${nodes}`.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
 - Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
+
+**Intent/metadata:** Lab description, notes (hidden span), and an off-canvas annotation with the full CLI args (including `-L` and `--offline-yaml`) are embedded only when generating **offline YAML** (`--offline-yaml`). This metadata is not added when creating labs online (no `--offline-yaml`). Intended for CI/CD to grep the generated YAML.
+
+**PKI:** PKI (CA-ROOT / feat/pki-ca) is currently broken. Do not rely on it until fixed.
 
 ### VRF support (flat-pair)
 

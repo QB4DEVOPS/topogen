@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.0
+Doc Version: v1.1.0
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -16,7 +16,7 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 
 # Changes
 
-This file lists changes.
+This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
   - feat(mgmt): add OOB management network support for flat, flat-pair, and dmvpn modes

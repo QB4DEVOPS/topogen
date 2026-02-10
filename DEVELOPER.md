@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.2.1
+Doc Version: v1.4.0
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -474,7 +474,11 @@ Use the "File pointers" section in DEVELOPER.md to understand what each file rea
 
 ## AI guardrails (default boundaries)
 
+**When to act (mandatory):**
 
+- Do not do anything unless the user has **expressly and explicitly** told you to do it. Ask the user for approval before running commands or editing files.
+- **Questions or statements are not instructions.** If the user asks a question (e.g. "why is X?") or makes a statement (e.g. "X should be Y"), only answer or explain. Do not treat that as a request to change code, run a command, or edit files — unless the user has explicitly updated their instructions (e.g. "then change it" or "add that to the doc").
+- End every response with exactly one of: **Done** | **Stopped** | **Blocked** | **I am confused** | **What options do you want me to do: 1, 2, or 3?** | **Task completed**.
 
 Unless a task explicitly requires otherwise:
 
@@ -1176,7 +1180,7 @@ Online (basic smoke checks once routers boot):
 
 
 
-See the README checklist and follow it for any change that affects behavior:
+See the README checklist and follow it for any change that affects behavior. When updating **CHANGES.md** (Unreleased), list each modified file and its new Doc Version (rev) so reviewers can see what was touched and to what rev. Example: `Files: src/topogen/render.py (rev v1.0.0), README.md (rev v1.2.1)`.
 
 
 
