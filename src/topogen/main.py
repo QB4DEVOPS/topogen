@@ -372,6 +372,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
     )
     parser.add_argument(
+        "--archive",
+        dest="archive",
+        action="store_true",
+        default=False,
+        help="Enable config archive on routers (log config, path flash:, write-memory, maximum 5)",
+    )
+    parser.add_argument(
         "--pki",
         dest="pki_enabled",
         action="store_true",

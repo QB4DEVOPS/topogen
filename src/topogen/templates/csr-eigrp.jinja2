@@ -10,6 +10,17 @@ ip subnet-zero
 ip domain lookup
 ip name-server {{ config.nameserver }}
 ip domain name {{ config.domainname }}
+{%- if archive %}
+archive
+ log config
+  logging enable
+  notify syslog contenttype plaintext
+  hidekeys
+ path flash:
+ maximum 5
+ write-memory
+!
+{%- endif %}
 crypto key generate rsa modulus 2048
 ip ssh version 2
 ip ssh server algorithm authentication password

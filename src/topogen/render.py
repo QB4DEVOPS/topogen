@@ -291,6 +291,8 @@ class Renderer:
                 args_bits.append(f"--ntp {args.ntp_server}")
                 if getattr(args, "ntp_vrf", None):
                     args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+            if getattr(args, "archive", False):
+                args_bits.append("--archive")
             if getattr(args, "start_lab", False):
                 args_bits.append("--start")
             desc = (
@@ -680,6 +682,7 @@ class Renderer:
                 origin="" if node_index != core else dns_addr,
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             if cmlnode is None:
                 continue
@@ -1415,6 +1418,8 @@ class Renderer:
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
 
@@ -1681,6 +1686,7 @@ class Renderer:
                 dmvpn_psk=getattr(args, "dmvpn_psk", None),
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # Flat-like placement
@@ -1940,6 +1946,8 @@ class Renderer:
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
         desc = (
@@ -2167,6 +2175,7 @@ class Renderer:
                     dmvpn_psk=getattr(args, "dmvpn_psk", None),
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
+                    archive=getattr(args, "archive", False),
                 )
             else:
                 pair_ip = pair_ips.get(rnum - 1, (None, None))[1]
@@ -2183,6 +2192,7 @@ class Renderer:
                     eigrp_stub=stub_evens,
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
+                    archive=getattr(args, "archive", False),
                 )
 
             sw_index = ((rnum - 1) // 2) // group
@@ -2274,6 +2284,7 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # Append PKI-specific config
@@ -2540,6 +2551,8 @@ class Renderer:
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
         desc = (
@@ -2728,6 +2741,7 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             rx = (idx // group + 1) * args.distance * 3
@@ -2819,6 +2833,7 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # Append PKI-specific config before the final "end"
@@ -3046,6 +3061,8 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -3273,6 +3290,7 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             rx = (idx // group + 1) * args.distance * 3
@@ -3380,6 +3398,7 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # Append PKI-specific config
@@ -3691,6 +3710,7 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
@@ -3762,6 +3782,7 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                archive=getattr(self.args, "archive", False),
                 pki_ca_key="",  # Empty for now; will be filled once key is exported
                 pki_enrollment_url=str(ca_g_addr.ip),  # CA's own data interface IP
             )
@@ -3909,6 +3930,7 @@ class Renderer:
                 node=node,
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             node_def = getattr(self.args, "dev_template", self.args.template)
             cml2_node = self.create_node(

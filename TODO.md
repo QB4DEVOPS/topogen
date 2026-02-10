@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.1
+Doc Version: v1.3.2
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -86,7 +86,7 @@ Recent completions:
   - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
   - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
 - [ ] (add ideas here)
-- [ ] Add archive config to all templates. Use this block:
+- [ ] Add archive config to all templates when --archive flag (like --ntp). Use this block:
   ```
   archive
    log config
