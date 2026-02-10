@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.4.0
+Doc Version: v1.5.0
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -467,6 +467,7 @@ When adding a feature:
 
 
 Use the "File pointers" section in DEVELOPER.md to understand what each file reads/writes/calls.
+Every file and every template has a File Chain header at the top (Doc Version, Called by, Reads from, Writes to, Calls into); this includes docs and other required files—read it for blast radius and dependencies (AI-first onboarding).
 
 ```
 
@@ -760,12 +761,15 @@ Python/TOML files:
 # - Called by: ...
 ```
 
-Jinja2 templates:
+Jinja2 templates (full format required for blast radius and AI-first onboarding):
 ```jinja2
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0
+# Doc Version: v1.0.0
 #
 # - Called by: ...
+# - Reads from: ...
+# - Writes to: ...
+# - Calls into: ...
 #}
 ```
 
@@ -873,6 +877,12 @@ Jinja2 templates:
   - `src/topogen/lxcfrr.py` (`lxcfrr_bootconfig()`)
 
   - `src/topogen/models.py` (TopogenNode/Interface models)
+
+
+
+### Templates (`src/topogen/templates/*.jinja2`)
+
+Each Jinja2 template includes a **File Chain header** in a comment at the top of the file: `File Chain`, `Doc Version`, `Called by`, `Reads from`, `Writes to`, `Calls into`. This is the single source of truth for blast radius and **AI-first onboarding**—read the header to know what the template depends on and what it emits. The same four-term format is used in Python/Markdown; see "Understanding the File Chain Terms" and the examples above.
 
 
 

@@ -4,8 +4,10 @@
 #          Used for both regular routers and PKI CA when --pki flag is enabled.
 #
 # File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.1
+#
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
-# - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp)
+# - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, archive)
 # - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
 # - Calls into: None (template-only)
 #

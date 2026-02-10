@@ -1,3 +1,11 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+#
+# - Called by: Users (CLI), gui.py
+# - Reads from: config.py, models.py, render.py
+# - Writes to: None (orchestrates render)
+# - Calls into: config.Config, render.Renderer
+#
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
 
