@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.0
+Doc Version: v1.1.1
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -86,6 +86,13 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - GUI-only: clearer offline/online YAML file labels and file-save pickers
   - docs: offline YAML output is recommended to be written under the `out/` directory (see README examples)
   - fix(templates): set `line vty 0 4` `exec-timeout` to `0 0` (was `720 0`)
+  - chore(ping): increase DMVPN-ping.tcl sweep max from 10 to 20 (reverts earlier reduction)
+  - docs(__init__): add File Chain front matter, entry points, and public API exports section
+    - Files: src/topogen/__init__.py (rev v1.1.0)
+  - docs(todo): update PKI naming (RCA-ROOT → CA-ROOT, RCA-ICA → CA-POLICY), mark 4 tasks complete, add future ideas
+    - Files: TODO.md (rev v1.4.0)
+  - docs(readme): add concrete intent/metadata example showing embedded string format and grep command
+    - Files: README.md (rev v1.3.1)
 
 - version 0.2.4
   - empty
