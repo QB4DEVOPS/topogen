@@ -8,6 +8,8 @@
 #            Future TODO: Support IOSv if PKI server works on IOSv platform.
 #
 # File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.2
+#
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, pki_enabled)
 # - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
@@ -51,7 +53,7 @@ ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
 !
-crypto key generate rsa modulus 2048 label CA-ROOT.server
+crypto key generate rsa modulus 2048 label CA-ROOT.server exportable
 !
 {%- set ns = namespace(seen={}) %}
 {%- for iface in node.interfaces %}
@@ -119,7 +121,9 @@ router eigrp 100
 {%- endif %}
 {%- for iface in node.interfaces %}
 interface GigabitEthernet{{ loop.index0 + 1 }}
-    {%- if iface.description %}
+    {%- if loop.first %}
+    description === SCEP Enrollment URL ===
+    {%- elif iface.description %}
     description {{ iface.description }}
     {%- endif %}
     {%- if iface.vrf %}
@@ -163,18 +167,47 @@ ntp server vrf {{ ntp.vrf }} {{ ntp.server }}
 ntp server {{ ntp.server }}
 {%- endif %}
 {%- endif %}
-ntp master 5
+ntp master 6
 !
 ip http server
-ip http secure-server
+no ip http secure-server
 !
 crypto pki server CA-ROOT
- database url flash:
  database level complete
  grant auto
- lifetime ca-certificate 3650
- lifetime certificate 1095
- no shut
+ lifetime certificate 7300
+ lifetime ca-certificate 7300
+ database url flash:
+ no shutdown
+!
+event manager environment TIME_DONE 0
+event manager applet CA-ROOT-SET-CLOCK
+ event timer countdown time 90
+ action 0.1 cli command "enable"
+ action 0.2 cli command "show event manager environment | include TIME_DONE"
+ action 0.3 regexp "TIME_DONE 1" "$_cli_result" match
+ action 0.4 if $_regexp_result eq "1"
+ action 0.5  exit
+ action 0.6 end
+ action 1.0 cli command "show ntp status"
+ action 1.1 regexp "Clock is synchronized" "$_cli_result" match
+ action 1.2 if $_regexp_result eq "1"
+ action 1.3  cli command "configure terminal"
+ action 1.4  cli command "event manager environment TIME_DONE 1"
+ action 1.5  cli command "end"
+ action 1.6  syslog msg "EEM: TIME_DONE set (NTP already synchronized - clock not changed)"
+ action 1.7  exit
+ action 1.8 end
+ action 2.0 cli command "configure terminal"
+ action 2.1 cli command "do clock set 00:00:00 01 January 2026"
+ action 2.2 cli command "ntp master 6"
+ action 2.3 cli command "end"
+ action 9.0 cli command "configure terminal"
+ action 9.1 cli command "event manager environment TIME_DONE 1"
+ action 9.2 cli command "end"
+ action 9.3 syslog msg "EEM: TIME_DONE set (clock forced + ntp master 6)"
+!
+alias exec rundiff show archive config differences system:running-config
 !
 line vty 0 4
     transport input ssh telnet

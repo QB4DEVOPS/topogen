@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.0
+Doc Version: v1.4.1
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -72,6 +72,13 @@ Recent completions:
 
 ## Future ideas
 
+- [ ] Replace `--pki-enroll scep|cli` with `--pki-scep` boolean flag (refactor + feature)
+  - `--pki-enroll` is defined in main.py but never read in render.py — it is dead code
+  - New design: `--pki` = CA-ROOT node in lab (no change to router configs); `--pki-scep` = non-CA routers get trustpoint + SCEP enrollment pointing at CA-ROOT
+  - Dependency: `--pki-scep` requires `--pki` (enforce in main.py)
+  - CA IP (`ca_g_addr.ip`) is already computed; pass it to router Jinja context as SCEP enrollment URL
+  - Also fix CA name inconsistency: DMVPN render path uses `ROOT-CA`; flat-pair render paths use `CA-ROOT` — standardize all to `CA-ROOT`
+  - Blast radius: main.py (remove `--pki-enroll`, add `--pki-scep`), render.py (fix CA name + pass ca_ip to router templates), router templates (add trustpoint block)
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)

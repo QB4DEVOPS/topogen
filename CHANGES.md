@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.1
+Doc Version: v1.1.5
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -93,6 +93,43 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - Files: TODO.md (rev v1.4.0)
   - docs(readme): add concrete intent/metadata example showing embedded string format and grep command
     - Files: README.md (rev v1.3.1)
+  - docs(todo): add --pki-scep future idea (replace dead --pki-enroll, CA name fix, router trustpoint)
+    - Files: TODO.md (rev v1.4.1)
+  - docs(templates): add File Chain front matter with Doc Version to csr-pki-ca.jinja2
+    - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.0)
+  - chore(templates): add `alias exec rundiff` to all router templates
+    - `alias exec rundiff show archive config differences system:running-config` placed before `line vty 0 4`
+    - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.1)
+    - Files: src/topogen/templates/csr-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-ospf.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iol-xe.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv.jinja2 (rev v1.0.0)
+  - feat(pki): harden CA-ROOT template with validated running config changes
+    - RSA key: add `exportable` flag (`crypto key generate rsa modulus 2048 label CA-ROOT.server exportable`)
+    - PKI server: reorder block to match IOS-XE canonical order
+    - PKI server: `lifetime certificate` and `lifetime ca-certificate` 3650/1095 → 7300 days
+    - PKI server: `no shut` → `no shutdown`
+    - HTTP: `ip http secure-server` → `no ip http secure-server` (SCEP uses plain HTTP only)
+    - NTP: `ntp master 5` → `ntp master 6` (matches validated lab config)
+    - Interface: Gi1 always gets `description === SCEP Enrollment URL ===`
+    - EEM: add `CA-ROOT-SET-CLOCK` applet (90s countdown, NTP check, clock force + ntp master fallback)
+    - EEM: init `event manager environment TIME_DONE 0` in startup config
+    - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.2)
+  - docs(templates): add File Chain front matter (Doc Version v1.0.0) to 9 templates missing it
+    - Files: src/topogen/templates/csr-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-ospf.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iol-xe.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv.jinja2 (rev v1.0.0)
 
 - version 0.2.4
   - empty
