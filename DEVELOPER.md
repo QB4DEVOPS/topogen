@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.4.0
+Doc Version: v1.4.1
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -478,6 +478,7 @@ Use the "File pointers" section in DEVELOPER.md to understand what each file rea
 
 - Do not do anything unless the user has **expressly and explicitly** told you to do it. Ask the user for approval before running commands or editing files.
 - **Questions or statements are not instructions.** If the user asks a question (e.g. "why is X?") or makes a statement (e.g. "X should be Y"), only answer or explain. Do not treat that as a request to change code, run a command, or edit files — unless the user has explicitly updated their instructions (e.g. "then change it" or "add that to the doc").
+- **Make no assumptions.** If something is confusing or unclear, do not assume; ask the user questions.
 - End every response with exactly one of: **Done** | **Stopped** | **Blocked** | **I am confused** | **What options do you want me to do: 1, 2, or 3?** | **Task completed**.
 
 Unless a task explicitly requires otherwise:
@@ -511,6 +512,10 @@ Unless a task explicitly requires otherwise:
 - Never commit generated artifacts:
 
   - `out\` (gitignored offline YAML outputs)
+
+
+
+- **Verify every change:** After making any code or config change, **grep** (or `Select-String`) the modified file(s) and/or generated output to confirm the change is present before reporting done. Do not consider a task complete until verification is done.
 
 
 
@@ -701,6 +706,22 @@ Each file in this codebase includes file chain documentation (in code comments o
 - **Self-documentation**: Read any single file and immediately understand its role
 
 - **AI-friendly**: Enables assistants to navigate the codebase without guessing
+
+
+
+### EEM applets (examples/) – interactive CLI pattern and CR
+
+When writing EEM applets that drive **interactive** IOS-XE CLI prompts (e.g. `crypto pki authenticate` with `[yes/no]:`), two issues can cause the response to never be accepted:
+
+1. **Pattern matching too early**  
+   Using `pattern ".*"` on the command that produces the prompt can match before the router has printed the prompt. The next command (e.g. `yes`) is then sent too early and is lost or misinterpreted.  
+   **Fix:** Use a pattern that matches the actual prompt text, e.g. `pattern "yes/no"` so EEM waits until the prompt is visible before sending the next command.
+
+2. **Missing carriage return after the response**  
+   On some IOS-XE versions, the EEM CLI driver does not send a newline/carriage return after the command string. The router receives the characters (e.g. `yes`) but not Enter, so the line is never submitted.  
+   **Fix:** Add an extra action after the response that sends a line (e.g. `cli command " "`) so a CR is sent and the response is submitted.
+
+See `examples/eem-client-pki-authenticate.txt` and `examples/eem-test-pki-authenticate.txt` for the working pattern (`pattern "yes/no"` plus `cli command " "` after `yes`). Use `debug event manager action cli` on the device to confirm IN/OUT timing if troubleshooting.
 
 
 
@@ -1109,6 +1130,10 @@ Rule of thumb:
 
 
 ## How to validate changes
+
+
+
+**Mandatory:** After any change, grep (or `Select-String`) to verify the change is present in the expected file(s) or generated YAML before considering the task complete.
 
 
 

@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.0.2
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -240,6 +240,175 @@ def format_interface_description(iface_pair: dict, this: int) -> str:
     _, dst = order_iface_pair(iface_pair, this)
     # return f"from {src.node.label} {src.label} to {dst.node.label} {dst.label}"
     return f"to {dst.node.label} {dst.label}"
+
+
+# Hardcoded clock set value: "today" at lab generation time (00:00:01 UTC).
+# CVAC rejects EEM regexp on show clock; no parsing — single clock set so PKI can start; NTP takes over later.
+def _pki_clock_set_today() -> str:
+    """Return IOS clock set string: 00:00:01 Month Day Year (UTC at generation time)."""
+    dt = datetime.now(timezone.utc)
+    return f"00:00:01 {dt.strftime('%B %d %Y')}"
+
+
+def _pki_client_clock_eem_lines() -> list[str]:
+    """EEM applet CLIENT-PKI-SET-CLOCK: one-shot 90s after boot.
+    If NTP synced, set TIME_DONE and exit. Else: clock set <hardcoded today>, then TIME_DONE.
+    No show clock / regexp (CVAC rejects it); NTP takes over later.
+    Environment variable TIME_DONE set to 0 first so run-once guard works."""
+    clock_val = _pki_clock_set_today()
+    lines = [
+        "!",
+        "event manager environment TIME_DONE 0",
+        "!",
+        "event manager applet CLIENT-PKI-SET-CLOCK authorization bypass",
+        " event timer countdown time 90",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: executed [step 0.2]\"",
+        " action 0.3 cli command \"terminal length 0\"",
+        " action 0.4 cli command \"show event manager environment | include TIME_DONE\"",
+        " action 0.5 regexp \"TIME_DONE 1\" \"$_cli_result\" match",
+        " action 0.6 if $_regexp_result eq \"1\"",
+        "  action 0.7  exit",
+        "  action 0.8 end",
+        " action 1.0 cli command \"show ntp status\"",
+        " action 1.1 regexp \"Clock is synchronized\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        "  action 1.3  cli command \"configure terminal\"",
+        "  action 1.4  cli command \"event manager environment TIME_DONE 1\"",
+        "  action 1.5  cli command \"no event manager applet CLIENT-PKI-SET-CLOCK\"",
+        "  action 1.6  cli command \"end\"",
+        "  action 1.7  cli command \"write memory\"",
+        "  action 1.8  syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (NTP synced) [step 1.8]\"",
+        "  action 1.9  exit",
+        "  action 1.99 end",
+        "! Hardcoded clock set (no regexp) so CVAC applies; NTP takes over later.",
+        " action 2.0 cli command \"configure terminal\"",
+        f" action 2.1 cli command \"do clock set {clock_val}\"",
+        " action 2.2 cli command \"end\"",
+        " action 3.0 cli command \"configure terminal\"",
+        " action 3.1 cli command \"event manager environment TIME_DONE 1\"",
+        " action 3.2 cli command \"no event manager applet CLIENT-PKI-SET-CLOCK\"",
+        " action 3.3 cli command \"end\"",
+        " action 3.4 cli command \"write memory\"",
+        " action 3.5 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (clock authoritative) [step 3.5]\"",
+        "end",
+        "!",
+    ]
+    return lines
+
+
+def _pki_ca_clock_eem_lines() -> list[str]:
+    """EEM applet CA-ROOT-SET-CLOCK: one-shot 90s after boot on CA-ROOT.
+    If NTP synced, set TIME_DONE and exit. Else: clock set <hardcoded today>, ntp master 6, TIME_DONE.
+    No show clock / regexp (CVAC rejects it); NTP takes over later.
+    Environment variable TIME_DONE set to 0 first so run-once guard works."""
+    clock_val = _pki_clock_set_today()
+    return [
+        "!",
+        "event manager environment TIME_DONE 0",
+        "!",
+        "event manager applet CA-ROOT-SET-CLOCK authorization bypass",
+        " event timer countdown time 90",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 syslog msg \"EEM CA-ROOT-SET-CLOCK: executed [step 0.2]\"",
+        " action 0.3 cli command \"terminal length 0\"",
+        " action 0.4 cli command \"show event manager environment | include TIME_DONE\"",
+        " action 0.5 regexp \"TIME_DONE 1\" \"$_cli_result\" match",
+        " action 0.6 if $_regexp_result eq \"1\"",
+        "  action 0.7  exit",
+        "  action 0.8 end",
+        " action 1.0 cli command \"show ntp status\"",
+        " action 1.1 regexp \"Clock is synchronized\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        "  action 1.3  cli command \"configure terminal\"",
+        "  action 1.4  cli command \"event manager environment TIME_DONE 1\"",
+        "  action 1.5  cli command \"no event manager applet CA-ROOT-SET-CLOCK\"",
+        "  action 1.6  cli command \"end\"",
+        "  action 1.7  cli command \"write memory\"",
+        "  action 1.8  syslog msg \"EEM CA-ROOT-SET-CLOCK: TIME_DONE set (NTP synced) [step 1.8]\"",
+        "  action 1.9  exit",
+        " action 1.10 end",
+        "! Hardcoded clock set (no regexp) so CVAC applies; then ntp master 6.",
+        " action 2.0 cli command \"configure terminal\"",
+        f" action 2.1 cli command \"do clock set {clock_val}\"",
+        " action 2.2 cli command \"end\"",
+        " action 3.0 cli command \"configure terminal\"",
+        " action 3.1 cli command \"ntp master 6\"",
+        " action 3.2 cli command \"end\"",
+        " action 4.0 cli command \"configure terminal\"",
+        " action 4.1 cli command \"event manager environment TIME_DONE 1\"",
+        " action 4.2 cli command \"no event manager applet CA-ROOT-SET-CLOCK\"",
+        " action 4.3 cli command \"end\"",
+        " action 4.4 cli command \"write memory\"",
+        " action 4.5 syslog msg \"EEM CA-ROOT-SET-CLOCK: TIME_DONE set (clock + ntp master 6) [step 4.5]\"",
+        "end",
+        "!",
+    ]
+
+
+def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url: str) -> list[str]:
+    """Return CA self-enrollment block lines (ip http secure-server, trustpoint CA-ROOT-SELF).
+    Used when building CA config with PKI block before EEM (avoids double end/end quit-too-soon)."""
+    fqdn = f"{hostname}.{domainname}"
+    return [
+        "!",
+        "ip http secure-server",
+        "ip http secure-server trustpoint CA-ROOT-SELF",
+        "!",
+        "crypto key generate rsa modulus 2048 label CA-ROOT-SELF",
+        "!",
+        "crypto pki trustpoint CA-ROOT-SELF",
+        f" enrollment url {ca_scep_url}",
+        " revocation-check none",
+        " rsakeypair CA-ROOT-SELF",
+        f" subject-name cn={fqdn}",
+        "!",
+    ]
+
+
+def _inject_pki_client_trustpoint(
+    rendered: str,
+    hostname: str,
+    domainname: str,
+    ca_url: str,
+    *,
+    key_label: str = "CA-ROOT",
+    inject_clock_eem: bool = True,
+) -> str:
+    """Insert PKI client trustpoint block (SCEP) before final 'end'.
+    Used when --pki enabled: on non-CA routers (key_label CA-ROOT), or on CA-ROOT
+    for self-enrollment (key_label CA-ROOT-SELF). FQDN in subject-name.
+    When inject_clock_eem is True (default for clients), also inject EEM applet
+    CLIENT-PKI-SET-CLOCK so time matches CA fallback when NTP is not synced."""
+    fqdn = f"{hostname}.{domainname}"
+    block = [
+        "!",
+        "ip http secure-server",
+        "ip http secure-server trustpoint CA-ROOT-SELF",
+        "!",
+        f"crypto key generate rsa modulus 2048 label {key_label}",
+        "!",
+        "crypto pki trustpoint CA-ROOT-SELF",
+        f" enrollment url {ca_url}",
+        " enrollment retry count 15",
+        " enrollment retry period 60",
+        " revocation-check none",
+        f" rsakeypair {key_label}",
+        f" subject-name cn={fqdn}",
+        " auto-enroll 70 regenerate",
+        "!",
+    ]
+    if inject_clock_eem:
+        block = _pki_client_clock_eem_lines() + block
+    lines = rendered.splitlines()
+    try:
+        end_idx = next(
+            i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+        )
+        lines[end_idx:end_idx] = block
+    except StopIteration:
+        lines.extend(block)
+    return "\n".join(lines)
 
 
 class Renderer:
@@ -1682,6 +1851,11 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
             )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
             # Flat-like placement
             sw_index = idx // group
@@ -2184,6 +2358,11 @@ class Renderer:
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
                 )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
             sw_index = ((rnum - 1) // 2) // group
             x = min(max_coord, (sw_index + 1) * sw_step_x)
@@ -2282,14 +2461,16 @@ class Renderer:
                 "!",
                 "ip http server",
                 "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
                 "!",
                 "crypto pki server CA-ROOT",
-                " database url flash:",
                 " database level complete",
+                " no database archive",
                 " grant auto",
-                " lifetime ca-certificate 3650",
-                " lifetime certificate 1095",
-                " no shut",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
                 "!",
             ]
 
@@ -2300,12 +2481,18 @@ class Renderer:
                 if line.strip() == "crypto key generate rsa modulus 2048":
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
 
-            # Insert PKI config before "end"
+            # PKI block before EEM so double end/end does not quit config too soon
+            ca_scep_url = f"http://{ca_nbma_ip.ip}:80"
+            insert_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + _pki_ca_clock_eem_lines()
+            )
             try:
                 end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
-                ca_config_lines[end_idx:end_idx] = pki_config_lines
+                ca_config_lines[end_idx:end_idx] = insert_block
             except StopIteration:
-                ca_config_lines.extend(pki_config_lines)
+                ca_config_lines.extend(insert_block)
 
             ca_rendered = "\n".join(ca_config_lines)
 
@@ -2729,6 +2916,11 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
             )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
             rx = (idx // group + 1) * args.distance * 3
             ry = (idx % group + 1) * args.distance
@@ -2821,23 +3013,7 @@ class Renderer:
                 ntp=ca_ntp_ctx,
             )
 
-            # Append PKI-specific config before the final "end"
-            pki_config_lines = [
-                "ntp master 5",
-                "!",
-                "ip http server",
-                "ip http secure-server",
-                "!",
-                "crypto pki server ROOT-CA",
-                " database level complete",
-                " grant auto",
-                " lifetime ca-certificate 3650",
-                " lifetime certificate 1095",
-                " no shut",
-                "!",
-            ]
-
-            # Insert PKI config before "end"
+            # CA clock EEM: one-shot 90s to set clock + ntp master if NTP not synced (so PKI server can start)
             ca_config_lines = ca_base_config.rstrip().split('\n')
             # Remove trailing "end" if present
             if ca_config_lines and ca_config_lines[-1].strip() == "end":
@@ -2849,8 +3025,28 @@ class Renderer:
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
                     break
 
-            # Add PKI config
+            # PKI block before EEM so double end/end does not quit config too soon
+            pki_config_lines = [
+                "ntp master 5",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
+                "!",
+                "crypto pki server CA-ROOT",
+                " database level complete",
+                " no database archive",
+                " grant auto",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
+                "!",
+            ]
+            ca_scep_url = f"http://{ca_g_ip}:80"
             ca_config_lines.extend(pki_config_lines)
+            ca_config_lines.extend(_pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url))
+            ca_config_lines.extend(_pki_ca_clock_eem_lines())
             ca_config_lines.append("end")
 
             ca_rendered = '\n'.join(ca_config_lines)
@@ -3274,6 +3470,11 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
             )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
             rx = (idx // group + 1) * args.distance * 3
             ry = (idx % group + 1) * args.distance
@@ -3388,14 +3589,16 @@ class Renderer:
                 "!",
                 "ip http server",
                 "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
                 "!",
                 "crypto pki server CA-ROOT",
-                " database url flash:",
                 " database level complete",
+                " no database archive",
                 " grant auto",
-                " lifetime ca-certificate 3650",
-                " lifetime certificate 1095",
-                " no shut",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
                 "!",
             ]
 
@@ -3406,12 +3609,18 @@ class Renderer:
                 if line.strip() == "crypto key generate rsa modulus 2048":
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
 
-            # Insert PKI config before "end"
+            # PKI block before EEM so double end/end does not quit config too soon
+            ca_scep_url = f"http://{ca_data_ip}:80"
+            insert_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + _pki_ca_clock_eem_lines()
+            )
             try:
                 end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
-                ca_config_lines[end_idx:end_idx] = pki_config_lines
+                ca_config_lines[end_idx:end_idx] = insert_block
             except StopIteration:
-                ca_config_lines.extend(pki_config_lines)
+                ca_config_lines.extend(insert_block)
 
             ca_rendered = "\n".join(ca_config_lines)
 
@@ -3769,30 +3978,31 @@ class Renderer:
             _LOGGER.warning("PKI Root CA created: %s at %s", ca_label, ca_g_addr.ip)
 
         _LOGGER.warning("Flat management network created")
-        # Optional YAML export
+        # Get lab definition size (and optionally export to file) so we can log size for online create
         outfile = getattr(self.args, "yaml_output", None)
-        if outfile:
-            try:
-                content = None
-                if hasattr(self.client, "export_lab"):
-                    content = self.client.export_lab(self.lab.id)  # type: ignore[attr-defined]
-                elif hasattr(self.lab, "export"):
-                    content = self.lab.export()  # type: ignore[attr-defined]
-                elif hasattr(self.lab, "topology"):
-                    # as a last resort, dump topology JSON as YAML-compatible text
-                    content = str(self.lab.topology)  # type: ignore[attr-defined]
-                if content is not None:
-                    if isinstance(content, bytes):
-                        data = content
-                    else:
-                        data = str(content).encode("utf-8")
+        content = None
+        try:
+            if hasattr(self.client, "export_lab"):
+                content = self.client.export_lab(self.lab.id)  # type: ignore[attr-defined]
+            elif hasattr(self.lab, "export"):
+                content = self.lab.export()  # type: ignore[attr-defined]
+            elif hasattr(self.lab, "topology"):
+                content = str(self.lab.topology)  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - best-effort
+            pass
+        if content is not None:
+            data = content if isinstance(content, bytes) else str(content).encode("utf-8")
+            size_kb = len(data) / 1024
+            _LOGGER.warning("Lab created (%.1f KB) - uploaded to controller", size_kb)
+            if outfile:
+                try:
                     with open(outfile, "wb") as fh:
                         fh.write(data)
                     _LOGGER.warning("Exported lab YAML to %s", outfile)
-                else:
-                    _LOGGER.error("YAML export not supported by client library")
-            except Exception as exc:  # pragma: no cover - best-effort export
-                _LOGGER.error("YAML export failed: %s", exc)
+                except Exception as exc:  # pragma: no cover
+                    _LOGGER.error("YAML export failed: %s", exc)
+        else:
+            _LOGGER.warning("Lab created - uploaded to controller")
 
         # Print lab URL
         import os

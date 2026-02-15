@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.0
+Doc Version: v1.5.0
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -52,11 +52,33 @@ This file tracks in-progress work and future ideas for TopoGen.
 - [ ] Validate with offline YAML
 - Naming convention: CA-ROOT (this branch), CA-POLICY / CA-SIGN reserved for future multi-CA labs
 
+### EEM scripts (PKI) — working status
+
+Script bodies live in `examples/`. Check off when confirmed working on device.
+
+| Script name | Example file | Working |
+|-------------|--------------|---------|
+| CA-ROOT-SET-CLOCK | `examples/eem-ca-root-set-clock.txt` | [x] |
+| CLIENT-PKI-SET-CLOCK | `examples/eem-client-pki-set-clock.txt` | [x] |
+| CLIENT-PKI-AUTHENTICATE | `examples/eem-client-pki-authenticate.txt` | [ ] |
+| CLIENT-PKI-CHAIN | `examples/eem-client-pki-chain.txt` | [ ] |
+| AUTO-AUTH | `examples/eem-auto-auth.txt` | [ ] |
+| CLIENT-PKI-ENROLL | `examples/eem-client-pki-enroll.txt` | [ ] |
+| do-ssh | `examples/eem-do-ssh.txt` | [ ] |
+
 ## Promote to Issues
 
 - [ ] (add issue-worthy items here)
 
+- [ ] Online lab creation: show lab definition size (X.X KB) when upload succeeds
+  - Current: render_flat_network() calls export_lab() after "Flat management network created"; if content is None we log "Lab created - uploaded to controller" (no size). When export_lab returns data we log "Lab created (%.1f KB) - uploaded to controller".
+  - Observed: online flat run showed "Lab created - uploaded to controller" (no size), so export_lab returned None or failed. Investigate virl2_client export_lab behavior so size is shown for online create (same UX as offline YAML file size).
+
 - [ ] Usability fix: allow `python -m topogen ...` (no `.main`) by adding `src/topogen/__main__.py`
+
+- [ ] Add `--import`: create lab offline, print file size, import YAML to controller, print lab URL; `--start` has the same function in offline+import as in online (start lab after import).
+
+- [ ] **Fix next:** CA-ROOT time EEM (CA-ROOT-SET-CLOCK) missing when lab is created online. Offline flat/DMVPN/flat-pair inject _pki_ca_clock_eem_lines() into CA config; online flat builds CA from csr-pki-ca.jinja2 only (no EEM). User expects PKI/clock behavior to work the same whether lab is created offline or online. Add CA clock EEM to online flat CA build in render_flat_network() (e.g. append _pki_ca_clock_eem_lines() before assigning ca_router.configuration).
 
 ## Done
 
@@ -83,6 +105,13 @@ Recent completions:
   - Naming: CA-ROOT (offline root), CA-POLICY (online issuing CA), CA-SIGN reserved for cross-cert scenarios
   - Requires: csr-pki-policy.jinja2 template, CA-POLICY node in render_dmvpn_network(), chained enrollment config
   - Blast radius: render.py (CA-POLICY node creation + links), templates (CA-ROOT signs CA-POLICY cert), main.py (--pki-depth or --pki-policy flag)
+- [ ] Add `--pki-ca-fingerprint` and `enrollment fingerprint` to client trustpoint (SCEP TOFU)
+  - Why: Lets clients authenticate the CA non-interactively so `crypto pki authenticate` and auto-enroll work on 300 routers without manual "yes".
+  - Fallback: If EEM-based authenticate (applet that runs `crypto pki authenticate` and answers "yes" via pattern) cannot be made to work, implement this sooner so clients can authenticate by fingerprint instead.
+  - Chicken-and-egg: Fingerprint must be known at lab generation time (to embed in client config). With on-box CA the CA cert does not exist until the lab is created and CA has booted — so fingerprint is unknown when running `topogen --pki ... --offline-yaml out.yaml 300`. With offline/imported root the user generates the root (and cert) before the lab, computes the fingerprint, then runs topogen with `--pki-ca-fingerprint <hex>`; clients get `enrollment fingerprint` in config and can authenticate without prompts.
+  - Implication: This feature pairs with "imported root" flow (user builds root offline, imports cert+key onto CA router). Without imported root, fingerprint at gen time is not available.
+  - Requires: main.py (--pki-ca-fingerprint), render.py (_inject_pki_client_trustpoint: add enrollment fingerprint when set), docs.
+  - Blast radius: main.py, render.py, client config output.
 - [ ] Add `--strong` / `--stronger` crypto flags for PKI and IKEv2 (low effort)
   - Why: Default IOS XE RSA 2048 / AES-128 may not match security-conscious lab goals; named profiles simplify selection
   - `--strong`: RSA 2048, AES-256, SHA-256 (NIST current)

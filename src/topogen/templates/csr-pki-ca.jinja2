@@ -167,14 +167,16 @@ ntp master 5
 !
 ip http server
 ip http secure-server
+ip http secure-server trustpoint CA-ROOT-SELF
 !
 crypto pki server CA-ROOT
- database url flash:
  database level complete
+ no database archive
  grant auto
- lifetime ca-certificate 3650
- lifetime certificate 1095
- no shut
+ lifetime certificate 7300
+ lifetime ca-certificate 7300
+ database url flash:
+ no shutdown
 !
 line vty 0 4
     transport input ssh telnet
