@@ -120,6 +120,9 @@ ntp server vrf {{ ntp.vrf }} {{ ntp.server }}
 ntp server {{ ntp.server }}
 {%- endif %}
 {%- endif %}
+{%- if ntp_oob and ntp_oob.server and ntp_oob.vrf %}
+ntp server vrf {{ ntp_oob.vrf }} {{ ntp_oob.server }}
+{%- endif %}
 line vty 0 4
     transport input ssh telnet
     exec-timeout 0 0

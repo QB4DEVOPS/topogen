@@ -346,11 +346,43 @@ def _pki_ca_clock_eem_lines() -> list[str]:
     ]
 
 
+def _pki_ca_authenticate_eem_lines() -> list[str]:
+    """EEM applet CA-ROOT-AUTHENTICATE: CA-ROOT only. Triggers on syslog PKI-6-CS_ENABLED (Certificate server now enabled).
+    Only the CA router sees that message; clients use a different trigger (e.g. TIME_DONE set or timer)."""
+    return [
+        "!",
+        "event manager applet CA-ROOT-AUTHENTICATE authorization bypass",
+        " event syslog pattern \"Certificate server now enabled\"",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 cli command \"terminal length 0\"",
+        " action 0.3 cli command \"show crypto pki certificates CA-ROOT-SELF\"",
+        " action 0.4 regexp \"CA Certificate\" \"$_cli_result\" match",
+        " action 0.5 if $_regexp_result eq \"1\"",
+        "  action 0.6  exit",
+        "  action 0.7 end",
+        " action 0.8 cli command \"configure terminal\"",
+        " action 0.9 cli command \"crypto pki authenticate CA-ROOT-SELF\" pattern \"yes/no\"",
+        " action 0.91 wait 2",
+        " action 0.92 cli command \"yes\" pattern \".*\"",
+        " action 0.93 cli command \" \"",
+        " action 0.94 cli command \"end\"",
+        " action 0.95 cli command \"write memory\"",
+        " action 0.96 cli command \"configure terminal\"",
+        " action 0.97 cli command \"no event manager applet CA-ROOT-AUTHENTICATE\"",
+        " action 0.98 cli command \"end\"",
+        " action 0.99 cli command \"write memory\"",
+        "!",
+        "end",
+    ]
+
+
 def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url: str) -> list[str]:
-    """Return CA self-enrollment block lines (ip http secure-server, trustpoint CA-ROOT-SELF).
-    Used when building CA config with PKI block before EEM (avoids double end/end quit-too-soon)."""
+    """Return CA self-enrollment block lines (do clock set, then ip http secure-server, trustpoint CA-ROOT-SELF).
+    do clock set placed after crypto pki server CA-ROOT block and before CA-ROOT-SELF key/trustpoint (working order)."""
     fqdn = f"{hostname}.{domainname}"
     return [
+        "!",
+        f"do clock set {_pki_clock_set_today()}",
         "!",
         "ip http secure-server",
         "ip http secure-server trustpoint CA-ROOT-SELF",
@@ -359,9 +391,13 @@ def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url:
         "!",
         "crypto pki trustpoint CA-ROOT-SELF",
         f" enrollment url {ca_scep_url}",
+        " enrollment retry count 15",
+        " enrollment retry period 60",
+        " auto-enroll 70 regenerate",
+        f" subject-name cn={fqdn}",
+        f" subject-alt-name {fqdn}",
         " revocation-check none",
         " rsakeypair CA-ROOT-SELF",
-        f" subject-name cn={fqdn}",
         "!",
     ]
 
@@ -383,6 +419,8 @@ def _inject_pki_client_trustpoint(
     fqdn = f"{hostname}.{domainname}"
     block = [
         "!",
+        f"do clock set {_pki_clock_set_today()}",
+        "!",
         "ip http secure-server",
         "ip http secure-server trustpoint CA-ROOT-SELF",
         "!",
@@ -395,11 +433,12 @@ def _inject_pki_client_trustpoint(
         " revocation-check none",
         f" rsakeypair {key_label}",
         f" subject-name cn={fqdn}",
+        f" subject-alt-name {fqdn}",
         " auto-enroll 70 regenerate",
         "!",
     ]
     if inject_clock_eem:
-        block = _pki_client_clock_eem_lines() + block
+        block = block + _pki_client_clock_eem_lines()
     lines = rendered.splitlines()
     try:
         end_idx = next(
@@ -839,6 +878,12 @@ class Renderer:
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
 
             # "origin" identifies the default gateway on the node connecting
             # to the DNS host
@@ -849,6 +894,7 @@ class Renderer:
                 origin="" if node_index != core else dns_addr,
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
             )
             if cmlnode is None:
                 continue
@@ -1582,10 +1628,14 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
         args_bits.append(f"-L {args.labname}")
-        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
 
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn) | args: "
@@ -1837,6 +1887,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             rendered = tpl.render(
                 config=cfg,
                 node=node,
@@ -1850,6 +1906,7 @@ class Renderer:
                 dmvpn_psk=getattr(args, "dmvpn_psk", None),
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
             )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -2112,10 +2169,14 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
         args_bits.append(f"-L {args.labname}")
-        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn flat-pair) | args: "
             + " ".join(args_bits)
@@ -2313,6 +2374,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
 
             if rnum % 2 == 1:
                 nbma_ip = IPv4Interface(f"{nbma_net.network_address + rnum}/{nbma_net.prefixlen}")
@@ -2341,6 +2408,7 @@ class Renderer:
                     dmvpn_psk=getattr(args, "dmvpn_psk", None),
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
+                    ntp_oob=ntp_oob_ctx,
                 )
             else:
                 pair_ip = pair_ips.get(rnum - 1, (None, None))[1]
@@ -2357,6 +2425,7 @@ class Renderer:
                     eigrp_stub=stub_evens,
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
+                    ntp_oob=ntp_oob_ctx,
                 )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -2406,11 +2475,8 @@ class Renderer:
             # CA gets last usable IP in NBMA CIDR (avoid conflict with sequential router allocation)
             ca_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 1}/{nbma_net.prefixlen}")
 
-            # CA loopback using the same scheme as routers, with number = total_routers + 1
-            ca_num = total_routers + 1
-            hi = (ca_num // 256) & 0xFF
-            lo = ca_num % 256
-            ca_loopback_ip = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
+            # CA loopback at upper end (same as flat mode: .255.254) for consistency with future CAs
+            ca_loopback_ip = IPv4Interface(f"{l_base}.255.254/32")
 
             # Create CA node with NBMA interface (connects to SWnbma0)
             ca_node = TopogenNode(
@@ -2446,6 +2512,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             ca_base_config = ca_base_tpl.render(
                 config=cfg,
                 node=ca_node,
@@ -2453,11 +2525,12 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
             )
 
             # Append PKI-specific config
             pki_config_lines = [
-                "ntp master 5",
+                "ntp master 6",
                 "!",
                 "ip http server",
                 "ip http secure-server",
@@ -2486,7 +2559,7 @@ class Renderer:
             insert_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
-                + _pki_ca_clock_eem_lines()
+                + _pki_ca_authenticate_eem_lines()
             )
             try:
                 end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
@@ -2725,10 +2798,14 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
         args_bits.append(f"-L {args.labname}")
-        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML) | args: "
             + " ".join(args_bits)
@@ -2908,6 +2985,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             rendered = tpl.render(
                 config=cfg,
                 node=node,
@@ -2915,6 +2998,7 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
             )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{g_base}.255.254:80"
@@ -3003,6 +3087,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             # Render base config with routing protocol
             ca_base_config = ca_base_tpl.render(
                 config=cfg,
@@ -3011,6 +3101,7 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
             )
 
             # CA clock EEM: one-shot 90s to set clock + ntp master if NTP not synced (so PKI server can start)
@@ -3027,7 +3118,7 @@ class Renderer:
 
             # PKI block before EEM so double end/end does not quit config too soon
             pki_config_lines = [
-                "ntp master 5",
+                "ntp master 6",
                 "!",
                 "ip http server",
                 "ip http secure-server",
@@ -3046,7 +3137,7 @@ class Renderer:
             ca_scep_url = f"http://{ca_g_ip}:80"
             ca_config_lines.extend(pki_config_lines)
             ca_config_lines.extend(_pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url))
-            ca_config_lines.extend(_pki_ca_clock_eem_lines())
+            ca_config_lines.extend(_pki_ca_authenticate_eem_lines())
             ca_config_lines.append("end")
 
             ca_rendered = '\n'.join(ca_config_lines)
@@ -3242,11 +3333,17 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
+            if getattr(args, "ntp_vrf", None):
+                args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
         args_bits.append(f"-L {args.labname}")
-        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '')}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, flat-pair) | args: "
             + " ".join(args_bits)
@@ -3462,6 +3559,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             rendered = tpl.render(
                 config=cfg,
                 node=node,
@@ -3469,6 +3572,7 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
             )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{g_base}.255.254:80"
@@ -3523,13 +3627,9 @@ class Renderer:
             ca_label = "CA-ROOT"
             node_ids[ca_label] = f"n{nid}"; nid += 1
 
-            # CA gets the same loopback scheme as routers, using total+1 as its number
-            ca_num = total + 1
-            hi, lo = addr_parts(ca_num)
-            ca_loopback_ip = f"{l_base}.{hi}.{lo}"
-
-            # CA gets a data network IP using the same /16 as routers
-            ca_data_ip = f"{g_base}.{hi}.{lo}"
+            # CA gets last usable IP in the flat CIDR (e.g. 10.10.255.254/16), same as flat mode
+            ca_loopback_ip = f"{l_base}.255.254"
+            ca_data_ip = f"{g_base}.255.254"
 
             # Create CA node with data interface (connects to SW0)
             ca_node = TopogenNode(
@@ -3574,6 +3674,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             ca_base_config = ca_base_tpl.render(
                 config=cfg,
                 node=ca_node,
@@ -3581,11 +3687,12 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
             )
 
             # Append PKI-specific config
             pki_config_lines = [
-                "ntp master 5",
+                "ntp master 6",
                 "!",
                 "ip http server",
                 "ip http secure-server",
@@ -3614,7 +3721,7 @@ class Renderer:
             insert_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
-                + _pki_ca_clock_eem_lines()
+                + _pki_ca_authenticate_eem_lines()
             )
             try:
                 end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
@@ -3886,6 +3993,12 @@ class Renderer:
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
 
             # Build config: Loopback0 and Gi0/0 with assigned addresses
             node = TopogenNode(
@@ -3900,6 +4013,7 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
@@ -3949,6 +4063,12 @@ class Renderer:
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
                 }
+            ca_ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
 
             # Build config using csr-pki-ca template
             ca_node = TopogenNode(
@@ -3971,6 +4091,7 @@ class Renderer:
                 origin="",
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
                 pki_ca_key="",  # Empty for now; will be filled once key is exported
                 pki_enrollment_url=str(ca_g_addr.ip),  # CA's own data interface IP
             )
@@ -4113,12 +4234,19 @@ class Renderer:
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
 
             config = self.template.render(
                 config=self.config,
                 node=node,
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
             )
             node_def = getattr(self.args, "dev_template", self.args.template)
             cml2_node = self.create_node(

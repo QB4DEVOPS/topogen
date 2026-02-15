@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.0
+Doc Version: v1.5.1
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -70,6 +70,10 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [ ] (add issue-worthy items here)
 
+- [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block.** Observed: `%HA_EM-6-FMPD_EEM_CONFIG: CA-ROOT-SET-CLOCK: "end" action found outside of conditional block`. EEM applet CA-ROOT-SET-CLOCK (and client CLIENT-PKI-SET-CLOCK) use `action X.Y end` to close if blocks; on some IOS-XE versions the parser reports "end" outside conditional. Fix: ensure `end` actions are indented so the parser associates them with the correct if block (e.g. ` action 1.10 end` → `  action 1.10 end` for CA-ROOT; client has ` action 1.99 end`). See render.py `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()`.
+
+- [ ] **Fix CA-ROOT boot: CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`.** Observed: `%CVAC-4-CLI_FAILURE: Configuration command failure: 'ip http secure-server trustpoint CA-ROOT-SELF' was rejected` (twice). Consequence: "Failed to generate persistent self-signed certificate. Secure server will use temporary self-signed certificate." Cause: config is applied in order; the trustpoint CA-ROOT-SELF does not exist yet when `ip http secure-server trustpoint CA-ROOT-SELF` is applied. Fix: reorder so `crypto key generate rsa ... CA-ROOT-SELF` and `crypto pki trustpoint CA-ROOT-SELF` (and subcommands) appear before `ip http secure-server` and `ip http secure-server trustpoint CA-ROOT-SELF` in all CA and client PKI blocks. Remove duplicate `ip http secure-server` / `ip http secure-server trustpoint` from inline pki_config_lines in render.py (they should only come from _pki_ca_self_enroll_block_lines / client block after trustpoint is defined).
+
 - [ ] Online lab creation: show lab definition size (X.X KB) when upload succeeds
   - Current: render_flat_network() calls export_lab() after "Flat management network created"; if content is None we log "Lab created - uploaded to controller" (no size). When export_lab returns data we log "Lab created (%.1f KB) - uploaded to controller".
   - Observed: online flat run showed "Lab created - uploaded to controller" (no size), so export_lab returned None or failed. Investigate virl2_client export_lab behavior so size is shown for online create (same UX as offline YAML file size).
@@ -94,6 +98,11 @@ Recent completions:
 
 ## Future ideas
 
+- [ ] Add `--clock-set` to opt-in to `do clock set` in PKI configs; default to not using `do` command for time
+  - Why: Today PKI injects `do clock set ...` so the clock is authoritative and PKI comes up quickly. Some users prefer NTP or external automation to set time and do not want TopoGen to inject clock-set.
+  - Behavior: When `--clock-set` is set, keep current behavior (inject `do clock set` in CA and client PKI blocks). When omitted, do not inject clock-set; time is left to NTP or other automation.
+  - Note: At this point, getting PKI and clients stable without injected clock may require other automation (e.g. Ansible, EEM, or out-of-band time sync) to take over. TopoGen would then focus on topology and base PKI config; clock and post-boot auth/save would be handled elsewhere.
+  - Blast radius: main.py (argparse), render.py (_pki_ca_self_enroll_block_lines, _inject_pki_client_trustpoint, _pki_ca_clock_eem_lines, _pki_client_clock_eem_lines — gate clock-set on flag), README.
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)

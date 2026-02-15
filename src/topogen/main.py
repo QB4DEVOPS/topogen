@@ -372,6 +372,20 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
     )
     parser.add_argument(
+        "--ntp-inband",
+        dest="ntp_inband",
+        action="store_true",
+        default=False,
+        help="Put --ntp server in global (inband); no VRF. Use when CA is NTP server on data network.",
+    )
+    parser.add_argument(
+        "--ntp-oob",
+        dest="ntp_oob_server",
+        type=str,
+        default=None,
+        help="Optional second NTP server in mgmt VRF (e.g. external NTP). Use with --mgmt.",
+    )
+    parser.add_argument(
         "--pki",
         dest="pki_enabled",
         action="store_true",
@@ -629,9 +643,18 @@ def main():
                 IPv4Address(args.ntp_server)
             except ValueError as exc:
                 parser.error(f"Invalid --ntp: {exc}")
-            # If ntp_vrf not set but mgmt_vrf is, inherit mgmt_vrf
-            if not getattr(args, "ntp_vrf", None) and getattr(args, "mgmt_vrf", None):
-                args.ntp_vrf = args.mgmt_vrf
+            # If ntp_vrf not set but mgmt_vrf is, inherit mgmt_vrf (unless --ntp-inband)
+            if not getattr(args, "ntp_inband", False):
+                if not getattr(args, "ntp_vrf", None) and getattr(args, "mgmt_vrf", None):
+                    args.ntp_vrf = args.mgmt_vrf
+            else:
+                args.ntp_vrf = None  # inband: no VRF for --ntp
+            if getattr(args, "ntp_oob_server", None):
+                from ipaddress import IPv4Address
+                try:
+                    IPv4Address(args.ntp_oob_server)
+                except ValueError as exc:
+                    parser.error(f"Invalid --ntp-oob: {exc}")
         # Warn if --start used with --offline-yaml
         if getattr(args, "start_lab", False) and getattr(args, "offline_yaml", None):
             _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller")

@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.0
+Doc Version: v1.3.2
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -510,6 +510,14 @@ TopoGen does not pick an output filename automatically; you must provide one. We
 **Intent/metadata:** Lab description, notes (hidden span), and an off-canvas annotation with the full CLI args (including `-L` and `--offline-yaml`) are embedded only when generating **offline YAML** (`--offline-yaml`). This metadata is not added when creating labs online (no `--offline-yaml`). Intended for CI/CD to grep the generated YAML.
 
 **PKI:** PKI (CA-ROOT / feat/pki-ca) is currently broken. Do not rely on it until fixed.
+
+**CA server boot order:** When using `--pki`, bring the CA-ROOT node online first. Once the root CA is available (certificate server enabled), start the rest of the lab (R1..R*n*). Clients need the CA to be up for SCEP enrollment and authentication.
+
+**PKI and clock:** PKI uses the `do` command to set the clock (e.g. `do clock set ...`) in the generated config so the device clock is authoritative before the CA starts and clients enroll. That speeds up PKI by avoiding certificate validity failures due to an unsynced or default clock. For labs where you prefer to rely on NTP or external automation for time, a future `--clock-set` option may allow disabling this behavior (see TODO.md).
+
+**PKI and DMVPN flat-pair:** In DMVPN with `--dmvpn-underlay flat-pair`, even routers (R2, R4, …) have no link to the NBMA/10.10.0.0 network; they are only connected to their odd partner. The CA-ROOT is on the NBMA network. So **even routers cannot reach the CA and do not get certificates**; only odd routers (DMVPN endpoints) can enroll. This is by design. Use OOB management (e.g. `--mgmt`) if even routers need to reach NTP or other services.
+
+**PKI client EEM:** The client EEM applet that is intended to run NTP sync check then `crypto pki authenticate` and `write memory` (see `examples/eem-client-pki-authenticate-ntp.txt`) does not work reliably. Client enrollment is not automated; use manual `crypto pki authenticate` and `write memory` on clients, or other automation.
 
 ### VRF support (flat-pair)
 

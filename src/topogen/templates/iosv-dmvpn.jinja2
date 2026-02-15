@@ -146,6 +146,10 @@ ntp server {{ ntp.server }}
 {%- endif %}
 !
 {%- endif %}
+{%- if ntp_oob and ntp_oob.server and ntp_oob.vrf %}
+ntp server vrf {{ ntp_oob.vrf }} {{ ntp_oob.server }}
+!
+{%- endif %}
 {%- if dmvpn_vrf %}
 router eigrp TOPGEN
  !
