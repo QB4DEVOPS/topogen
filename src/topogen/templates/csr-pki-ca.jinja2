@@ -1,10 +1,40 @@
-{# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+{# PKI Root CA Template for IOS-XE (CSR1000v ONLY - currently)
 #
-# - Called by: src/topogen/render.py (Jinja render step)
-# - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp)
+# Purpose: Generates startup configuration for a PKI Root CA router (CA-ROOT)
+#          with PKI server, HTTP/HTTPS, NTP master, and EIGRP routing.
+#
+# IMPORTANT: CA-ROOT is always deployed as CSR1000v (csr1000v node definition).
+#            This template uses CSR-style interface names (GigabitEthernet1, not Gi0/1).
+#            Future TODO: Support IOSv if PKI server works on IOSv platform.
+#
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.2
+#
+# - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
+# - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, pki_enabled)
 # - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
 # - Calls into: None (template-only)
+#
+# Context Variables:
+# - config: Config object (username, password, nameserver, domainname)
+# - node: TopogenNode (hostname, loopback, interfaces)
+# - mgmt: Management config (enabled, slot, vrf, gw) - optional
+# - ntp: NTP config (server, vrf) - optional
+# - origin: Default route origin IP - optional
+#
+# PKI-specific features:
+# - Named RSA key generation (CA-ROOT.server) - required for PKI server
+# - NTP master 5 (authoritative time source for PKI) - required before PKI init
+# - HTTP/HTTPS server (required for SCEP enrollment URL)
+# - PKI server CA-ROOT (grant auto, lifetimes, database on flash, database level complete)
+#
+# Routing: EIGRP 100 (classic mode) or EIGRP TOPGEN (VRF-aware named mode)
+#
+# Blast Radius (what breaks if you modify this):
+# - CA-ROOT router configuration in all offline YAML labs with --pki flag
+# - PKI server initialization and SCEP enrollment URL functionality
+# - NTP master timing (affects PKI certificate validity checks)
+# - Routing adjacencies between CA and regular routers (EIGRP)
 #}
 hostname {{ node.hostname }}
 !
@@ -18,11 +48,12 @@ ip subnet-zero
 ip domain lookup
 ip name-server {{ config.nameserver }}
 ip domain name {{ config.domainname }}
-crypto key generate rsa modulus 2048
 ip ssh version 2
 ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
+!
+crypto key generate rsa modulus 2048 label CA-ROOT.server exportable
 !
 {%- set ns = namespace(seen={}) %}
 {%- for iface in node.interfaces %}
@@ -90,7 +121,9 @@ router eigrp 100
 {%- endif %}
 {%- for iface in node.interfaces %}
 interface GigabitEthernet{{ loop.index0 + 1 }}
-    {%- if iface.description %}
+    {%- if loop.first %}
+    description === SCEP Enrollment URL ===
+    {%- elif iface.description %}
     description {{ iface.description }}
     {%- endif %}
     {%- if iface.vrf %}
@@ -133,10 +166,26 @@ ntp server vrf {{ ntp.vrf }} {{ ntp.server }}
 {%- else %}
 ntp server {{ ntp.server }}
 {%- endif %}
+!
 {%- endif %}
 {%- if ntp_oob and ntp_oob.server and ntp_oob.vrf %}
 ntp server vrf {{ ntp_oob.vrf }} {{ ntp_oob.server }}
+!
 {%- endif %}
+ntp master 6
+!
+ip http server
+ip http secure-server
+ip http secure-server trustpoint CA-ROOT-SELF
+!
+crypto pki server CA-ROOT
+ database level complete
+ no database archive
+ grant auto
+ lifetime certificate 7300
+ lifetime ca-certificate 7300
+ database url flash:
+ no shutdown
 !
 alias exec rundiff show archive config differences system:running-config
 !

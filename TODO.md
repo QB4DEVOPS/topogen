@@ -1,3 +1,19 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.5.1
+
+- Called by: Developers planning features, LLMs adding work items, project management
+- Reads from: Developer input, user requests, issue tracker
+- Writes to: None (documentation only, but drives development decisions)
+- Calls into: References README.md, CHANGES.md, DEVELOPER.md for completed work
+
+Purpose: Living document tracking current work, future ideas, and issue candidates.
+         Organizes feature development roadmap and TODO items for developers and LLMs.
+
+Blast Radius: Medium (guides development priorities but doesn't affect code execution)
+              Moving items from "Current work" to "Done" signals feature completion.
+-->
+
 # TODO
 
 This file tracks in-progress work and future ideas for TopoGen.
@@ -27,13 +43,46 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-(empty - see Done section or CHANGES.md for completed features)
+### feat/pki-ca — Single root CA router for DMVPN PKI
+**Note: PKI is currently broken.** Do not rely on it until fixed.
+- [x] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
+- [x] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
+- [x] Add CA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt
+- [x] CA IP = last usable in NBMA CIDR (no conflict with sequential router allocation)
+- [ ] Validate with offline YAML
+- Naming convention: CA-ROOT (this branch), CA-POLICY / CA-SIGN reserved for future multi-CA labs
+
+### EEM scripts (PKI) — working status
+
+Script bodies live in `examples/`. Check off when confirmed working on device.
+
+| Script name | Example file | Working |
+|-------------|--------------|---------|
+| CA-ROOT-SET-CLOCK | `examples/eem-ca-root-set-clock.txt` | [x] |
+| CLIENT-PKI-SET-CLOCK | `examples/eem-client-pki-set-clock.txt` | [x] |
+| CLIENT-PKI-AUTHENTICATE | `examples/eem-client-pki-authenticate.txt` | [ ] |
+| CLIENT-PKI-CHAIN | `examples/eem-client-pki-chain.txt` | [ ] |
+| AUTO-AUTH | `examples/eem-auto-auth.txt` | [ ] |
+| CLIENT-PKI-ENROLL | `examples/eem-client-pki-enroll.txt` | [ ] |
+| do-ssh | `examples/eem-do-ssh.txt` | [ ] |
 
 ## Promote to Issues
 
 - [ ] (add issue-worthy items here)
 
+- [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block.** Observed: `%HA_EM-6-FMPD_EEM_CONFIG: CA-ROOT-SET-CLOCK: "end" action found outside of conditional block`. EEM applet CA-ROOT-SET-CLOCK (and client CLIENT-PKI-SET-CLOCK) use `action X.Y end` to close if blocks; on some IOS-XE versions the parser reports "end" outside conditional. Fix: ensure `end` actions are indented so the parser associates them with the correct if block (e.g. ` action 1.10 end` → `  action 1.10 end` for CA-ROOT; client has ` action 1.99 end`). See render.py `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()`.
+
+- [ ] **Fix CA-ROOT boot: CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`.** Observed: `%CVAC-4-CLI_FAILURE: Configuration command failure: 'ip http secure-server trustpoint CA-ROOT-SELF' was rejected` (twice). Consequence: "Failed to generate persistent self-signed certificate. Secure server will use temporary self-signed certificate." Cause: config is applied in order; the trustpoint CA-ROOT-SELF does not exist yet when `ip http secure-server trustpoint CA-ROOT-SELF` is applied. Fix: reorder so `crypto key generate rsa ... CA-ROOT-SELF` and `crypto pki trustpoint CA-ROOT-SELF` (and subcommands) appear before `ip http secure-server` and `ip http secure-server trustpoint CA-ROOT-SELF` in all CA and client PKI blocks. Remove duplicate `ip http secure-server` / `ip http secure-server trustpoint` from inline pki_config_lines in render.py (they should only come from _pki_ca_self_enroll_block_lines / client block after trustpoint is defined).
+
+- [ ] Online lab creation: show lab definition size (X.X KB) when upload succeeds
+  - Current: render_flat_network() calls export_lab() after "Flat management network created"; if content is None we log "Lab created - uploaded to controller" (no size). When export_lab returns data we log "Lab created (%.1f KB) - uploaded to controller".
+  - Observed: online flat run showed "Lab created - uploaded to controller" (no size), so export_lab returned None or failed. Investigate virl2_client export_lab behavior so size is shown for online create (same UX as offline YAML file size).
+
 - [ ] Usability fix: allow `python -m topogen ...` (no `.main`) by adding `src/topogen/__main__.py`
+
+- [ ] Add `--import`: create lab offline, print file size, import YAML to controller, print lab URL; `--start` has the same function in offline+import as in online (start lab after import).
+
+- [ ] **Fix next:** CA-ROOT time EEM (CA-ROOT-SET-CLOCK) missing when lab is created online. Offline flat/DMVPN/flat-pair inject _pki_ca_clock_eem_lines() into CA config; online flat builds CA from csr-pki-ca.jinja2 only (no EEM). User expects PKI/clock behavior to work the same whether lab is created offline or online. Add CA clock EEM to online flat CA build in render_flat_network() (e.g. append _pki_ca_clock_eem_lines() before assigning ca_router.configuration).
 
 ## Done
 
@@ -49,6 +98,41 @@ Recent completions:
 
 ## Future ideas
 
+- [ ] Add `--clock-set` to opt-in to `do clock set` in PKI configs; default to not using `do` command for time
+  - Why: Today PKI injects `do clock set ...` so the clock is authoritative and PKI comes up quickly. Some users prefer NTP or external automation to set time and do not want TopoGen to inject clock-set.
+  - Behavior: When `--clock-set` is set, keep current behavior (inject `do clock set` in CA and client PKI blocks). When omitted, do not inject clock-set; time is left to NTP or other automation.
+  - Note: At this point, getting PKI and clients stable without injected clock may require other automation (e.g. Ansible, EEM, or out-of-band time sync) to take over. TopoGen would then focus on topology and base PKI config; clock and post-boot auth/save would be handled elsewhere.
+  - Blast radius: main.py (argparse), render.py (_pki_ca_self_enroll_block_lines, _inject_pki_client_trustpoint, _pki_ca_clock_eem_lines, _pki_client_clock_eem_lines — gate clock-set on flag), README.
+- [ ] Replace `--pki-enroll scep|cli` with `--pki-scep` boolean flag (refactor + feature)
+  - `--pki-enroll` is defined in main.py but never read in render.py — it is dead code
+  - New design: `--pki` = CA-ROOT node in lab (no change to router configs); `--pki-scep` = non-CA routers get trustpoint + SCEP enrollment pointing at CA-ROOT
+  - Dependency: `--pki-scep` requires `--pki` (enforce in main.py)
+  - CA IP (`ca_g_addr.ip`) is already computed; pass it to router Jinja context as SCEP enrollment URL
+  - Also fix CA name inconsistency: DMVPN render path uses `ROOT-CA`; flat-pair render paths use `CA-ROOT` — standardize all to `CA-ROOT`
+  - Blast radius: main.py (remove `--pki-enroll`, add `--pki-scep`), render.py (fix CA name + pass ca_ip to router templates), router templates (add trustpoint block)
+- [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
+  - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
+  - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)
+  - Future: Make template adaptable to IOSv (GigabitEthernet0/1, Gi0/5) if PKI server works on IOSv
+  - Requires: Pass dev_def to template context, add conditional interface naming in template
+  - Blast radius: render.py (CA creation), csr-pki-ca.jinja2 (interface config), offline YAML generation
+- [ ] 3-level PKI hierarchy: CA-ROOT → CA-POLICY → router enrollment
+  - Why: Simulate enterprise PKI depth with root CA offline, policy/issuing CA online, routers auto-enrolling via SCEP
+  - Naming: CA-ROOT (offline root), CA-POLICY (online issuing CA), CA-SIGN reserved for cross-cert scenarios
+  - Requires: csr-pki-policy.jinja2 template, CA-POLICY node in render_dmvpn_network(), chained enrollment config
+  - Blast radius: render.py (CA-POLICY node creation + links), templates (CA-ROOT signs CA-POLICY cert), main.py (--pki-depth or --pki-policy flag)
+- [ ] Add `--pki-ca-fingerprint` and `enrollment fingerprint` to client trustpoint (SCEP TOFU)
+  - Why: Lets clients authenticate the CA non-interactively so `crypto pki authenticate` and auto-enroll work on 300 routers without manual "yes".
+  - Fallback: If EEM-based authenticate (applet that runs `crypto pki authenticate` and answers "yes" via pattern) cannot be made to work, implement this sooner so clients can authenticate by fingerprint instead.
+  - Chicken-and-egg: Fingerprint must be known at lab generation time (to embed in client config). With on-box CA the CA cert does not exist until the lab is created and CA has booted — so fingerprint is unknown when running `topogen --pki ... --offline-yaml out.yaml 300`. With offline/imported root the user generates the root (and cert) before the lab, computes the fingerprint, then runs topogen with `--pki-ca-fingerprint <hex>`; clients get `enrollment fingerprint` in config and can authenticate without prompts.
+  - Implication: This feature pairs with "imported root" flow (user builds root offline, imports cert+key onto CA router). Without imported root, fingerprint at gen time is not available.
+  - Requires: main.py (--pki-ca-fingerprint), render.py (_inject_pki_client_trustpoint: add enrollment fingerprint when set), docs.
+  - Blast radius: main.py, render.py, client config output.
+- [ ] Add `--strong` / `--stronger` crypto flags for PKI and IKEv2 (low effort)
+  - Why: Default IOS XE RSA 2048 / AES-128 may not match security-conscious lab goals; named profiles simplify selection
+  - `--strong`: RSA 2048, AES-256, SHA-256 (NIST current)
+  - `--stronger`: RSA 4096, AES-256-GCM, SHA-384 (NIST future-proof)
+  - Blast radius: main.py (argparse), templates (crypto profile conditionals)
 - [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
   - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
   - Current implementation uses "System Bridge" mode (bidirectional connectivity)
@@ -57,6 +141,17 @@ Recent completions:
   - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
   - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
 - [ ] (add ideas here)
+- [ ] Add archive config to all templates. Use this block:
+  ```
+  archive
+   log config
+    logging enable
+    notify syslog contenttype plaintext
+    hidekeys
+   path flash:
+   maximum 5
+   write-memory
+  ```
 - [ ] Optional: interactive dependency graph / call graph visualization
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
   - Possible outputs: Mermaid graph in Markdown, Graphviz DOT/SVG, or JSON for a web viewer
@@ -105,6 +200,14 @@ Recent completions:
 - [ ] Intent-based lab generation (medium effort)
   - Why: Unlock full round-trip editing and GitOps workflows by making intent the source of truth.
 
+- [ ] TOPOGEN_INTENT invisible annotation contract for CML labs (medium effort)
+  - Why: Embed generation parameters as an invisible text annotation inside the CML lab description so any tool (CLI, GUI, script) can recover the original intent directly from the live lab — not just from the offline YAML.
+  - Contract: A hidden `TOPOGEN_INTENT={...}` JSON block injected into the lab description/notes field, invisible in the CML UI but parseable by CLI.
+  - Data fields: mode, nodes, template, routing protocol, --pki, --mgmt, addressing params, topogen version.
+  - On import: `topogen regenerate` reads the annotation from the live CML lab and re-generates or updates deterministically.
+  - Complements: "Embed serialized intent in YAML" (above) — YAML embedding covers offline files; this covers live CML labs.
+  - Blast radius: render.py (inject annotation on online lab creation), main.py (--regenerate reads annotation from CML API).
+
 - [ ] Management Plane as First-Class Citizen:
   - Automate a dedicated `management-vrf` configuration for `GigabitEthernet0/0` across all routers.
   - Implement a deterministic IP calculator to assign static IPv4 and IPv6 management addresses based on Node ID.
@@ -140,3 +243,57 @@ Recent completions:
 
 - [ ] Update README with topology diagrams and scale examples (low effort).
   - Why: Add visuals for flat star vs. pair topologies and command examples (e.g., 300-node flat lab); makes the project more approachable and helps users understand scale capabilities.
+
+- [ ] Rework README `--help` output block to prevent CLI drift (low effort).
+  - Why: The embedded `topogen --help` block in README can silently drift from `main.py` as new flags are added (e.g., `--pki`, `--mgmt`).
+  - Options: (a) Auto-generate from `topogen --help` during release, (b) Replace with "run `topogen --help` for current flags" and link to DEVELOPER.md for flag details, (c) Add a CI check that diffs README help block against actual CLI output.
+  - Blast radius: README.md only (documentation, no code changes).
+
+- [ ] Add machine-parsable artifact summary line after offline YAML generation (low effort).
+  - Why: Enables CI/CD pipelines and wrapper scripts to grep a single structured line for path, size, mode, and node count.
+  - Format: `ARTIFACT_YAML=out/lab.yaml bytes=862312 kind=flat-pair nodes=520`
+  - When: Implement when a CI/CD pipeline or automation script needs to consume the output programmatically.
+  - Blast radius: render.py (4 offline write paths), no behavior change to existing log lines.
+
+- [ ] Add `--quiet` flag to suppress non-essential output (low effort).
+  - Why: When running in scripts or CI/CD, users may only want errors or the final artifact path, not progress/config warnings.
+  - Behavior: Suppress INFO and WARNING logs, only show ERROR and the final output line.
+  - Pairs well with: Machine-parsable artifact summary (above) for clean scripted workflows.
+  - Blast radius: main.py (argparse + log level config), no changes to render logic.
+
+- [ ] Add `--import` and `--import-yaml` flags for offline-to-CML workflow (medium effort).
+  - Why: Currently there's no way to take an offline YAML and push it into CML without switching to online mode.
+    This bridges the gap: generate offline → inspect/edit → import → start.
+  - New flags:
+    - `--import-yaml <file>`: Read an existing offline YAML (skip generation)
+    - `--import`: Import the generated/read YAML into CML via `virl2_client`
+    - `--import-and-start`: Sugar for `--import --start` (composable)
+  - Existing flag: `--start` stays as-is (matches CML API `lab.start()` vocabulary)
+  - Composable examples:
+    - Generate + import + start: `topogen ... --offline-yaml out/lab.yaml --import --start`
+    - Read existing + import: `topogen --import-yaml out/lab.yaml --import`
+    - Read + import + start: `topogen --import-yaml out/lab.yaml --import-and-start`
+  - Output: Print lab URL after import (e.g., `https://controller/lab/abc123`) for easy browser access, same as online mode.
+  - Blast radius: main.py (argparse dispatch), render.py (import path via virl2_client), no changes to offline generation.
+
+- [ ] Add `--up <file>` shorthand and `--print-up-cmd` flag (low effort, sugar).
+  - Why: `--up` is sugar for `--import-yaml <file> --import --start` in a single flag.
+    Enables a clean two-step workflow: generate offline, then deploy when ready.
+  - `--print-up-cmd`: When used with `--offline-yaml`, prints the exact `topogen --up <file>` command
+    to run later. Only takes effect when `--up` is not already used on this run.
+  - Example workflow:
+    ```
+    # Step 1: Generate (no controller needed)
+    topogen ... --offline-yaml out/lab.yaml --print-up-cmd
+    # Output: "When you're ready: topogen --up out/lab.yaml"
+
+    # Step 2: Deploy (when ready)
+    topogen --up out/lab.yaml
+    ```
+  - Depends on: `--import` and `--import-yaml` flags (above).
+  - Blast radius: main.py (argparse alias), no new logic beyond existing import+start.
+
+- [ ] Trim and reorganize README.md for readability (low effort).
+  - Why: README has grown large with inline help output, detailed examples, and mixed audiences (end-users vs contributors). Makes it harder to scan and find what you need.
+  - Options: (a) Move contributor/developer content to DEVELOPER.md, (b) Collapse verbose sections behind summary headings, (c) Replace inline `--help` block with a link (pairs with the help-drift item above).
+  - Blast radius: README.md only (documentation, no code changes).

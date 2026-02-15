@@ -1,10 +1,32 @@
-{# File Chain (see DEVELOPER.md):
+{# OSPF Template for IOS-XE (CSR1000v)
+#
+# Purpose: Generates startup configuration for CSR1000v routers with OSPF routing.
+#          Used for both regular routers and PKI CA when --pki flag is enabled.
+#
+# File Chain (see DEVELOPER.md):
 # Doc Version: v1.0.0
 #
-# - Called by: src/topogen/render.py (Jinja render step)
+# - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp)
 # - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
 # - Calls into: None (template-only)
+#
+# Context Variables:
+# - config: Config object (username, password, nameserver, domainname)
+# - node: TopogenNode (hostname, loopback, interfaces)
+# - mgmt: Management config (enabled, slot, vrf, gw) - optional
+# - ntp: NTP config (server, vrf) - optional
+# - origin: Default route origin IP - optional
+#
+# Routing: OSPF process 1, area 0 for all networks
+#
+# Blast Radius (what breaks if you modify this):
+# - All CSR1000v routers using OSPF in offline YAML labs
+# - PKI CA-ROOT router when regular routers use OSPF (auto-selected in render.py)
+# - OSPF adjacencies and routing behavior
+#
+# Note: This template is auto-selected for CA-ROOT when regular routers use IOSv
+#       (which defaults to OSPF). The CA gets PKI config appended in render.py.
 #}
 hostname {{ node.hostname }}
 !
@@ -42,52 +64,13 @@ ip route 0.0.0.0 0.0.0.0 {{ origin.ip }}
 int Loopback0
     ip address {{ node.loopback.ip }} {{ node.loopback.netmask }}
 !
-{%- set ns_vrf = namespace(has=false) %}
-{%- for iface in node.interfaces %}
-{%- if iface.vrf %}
-{%- set ns_vrf.has = true %}
-{%- endif %}
+router ospf 1
+    passive-interface Loopback0
+    network {{ node.loopback.ip }} 0.0.0.0 area 0
+{%- for iface in node.interfaces if iface.address %}
+    network {{ iface.address.ip }} 0.0.0.0 area 0
 {%- endfor %}
-{%- if ns_vrf.has %}
-router eigrp TOPGEN
- !
- {%- set ns_eigrp = namespace(seen={}) %}
- {%- for iface in node.interfaces if iface.address and iface.vrf %}
- {%- if not ns_eigrp.seen.get(iface.vrf) %}
- address-family ipv4 unicast vrf {{ iface.vrf }} autonomous-system 100
-  !
-  topology base
-  exit-af-topology
-  {%- set _ = ns_eigrp.seen.update({iface.vrf: true}) %}
-  {%- for v in node.interfaces if v.address and v.vrf == iface.vrf %}
-  network {{ v.address.ip }} 0.0.0.0
-  {%- endfor %}
- exit-address-family
- !
- {%- endif %}
- {%- endfor %}
- address-family ipv4 unicast autonomous-system 100
-  !
-  topology base
-  exit-af-topology
-  {%- for iface in node.interfaces if iface.address and not iface.vrf %}
-  network {{ iface.address.ip }} 0.0.0.0
-  {%- endfor %}
-  network {{ node.loopback.ip }} 0.0.0.0
- exit-address-family
 !
-{%- else %}
-router eigrp 100
- {%- if eigrp_stub|default(false) %}
- eigrp stub connected summary
- {%- endif %}
- network {{ node.loopback.ip }} 0.0.0.0
- {%- for iface in node.interfaces if iface.address %}
- network {{ iface.address.ip }} 0.0.0.0
- {%- endfor %}
- passive-interface Loopback0
-!
-{%- endif %}
 {%- for iface in node.interfaces %}
 interface GigabitEthernet{{ loop.index0 + 1 }}
     {%- if iface.description %}
