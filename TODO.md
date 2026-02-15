@@ -38,19 +38,12 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 1. ~~OOB management network for flat, flat-pair, and DMVPN modes~~ (completed)
 2. DMVPN IPsec protection (IKEv2 + PSK) (completed)
-3. DMVPN security roadmap (PKI)
+3. ~~DMVPN security roadmap (PKI) — single root CA~~ (completed)
 4. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
 
-### feat/pki-ca — Single root CA router for DMVPN PKI
-**Note: PKI is currently broken.** Do not rely on it until fixed.
-- [x] Copy csr-dmvpn.jinja2 → csr-pki-ca.jinja2 as starting point
-- [x] Add `--pki` and `--pki-enroll scep|cli` CLI flags (main.py)
-- [x] Add CA-ROOT router to render_dmvpn_network() — connects to SWnbma0 (slot 0) + OOB switch if --mgmt
-- [x] CA IP = last usable in NBMA CIDR (no conflict with sequential router allocation)
-- [ ] Validate with offline YAML
-- Naming convention: CA-ROOT (this branch), CA-POLICY / CA-SIGN reserved for future multi-CA labs
+(none)
 
 ### EEM scripts (PKI) — working status
 
@@ -85,6 +78,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] feat/pki-ca: single root CA router for DMVPN PKI (merged; see CHANGES.md)
 - [x] Offline-to-CML import: `--import-yaml`, `--import`, `--up`, `--print-up-cmd`, non-blocking `--start` (see CHANGES.md)
 - [x] Allow `python -m topogen` via `src/topogen/__main__.py` (see CHANGES.md)
 - [x] Add `--mgmt-bridge` support for online NX and simple modes (see CHANGES.md)

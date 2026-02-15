@@ -110,6 +110,10 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - Files: README.md (rev v1.3.1)
   - docs(todo): add --pki-scep future idea (replace dead --pki-enroll, CA name fix, router trustpoint)
     - Files: TODO.md (rev v1.4.1)
+  - feat(pki): add single root CA router for DMVPN PKI
+    - `--pki`: add CA-ROOT node to DMVPN labs (connects to SWnbma0 slot 0 and OOB switch if `--mgmt`)
+    - `--pki-enroll scep|cli` CLI flags (main.py); CA IP = last usable in NBMA CIDR
+    - csr-pki-ca.jinja2 template; CA-ROOT naming; CA-POLICY / CA-SIGN reserved for future
   - docs(templates): add File Chain front matter with Doc Version to csr-pki-ca.jinja2
     - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.0)
   - chore(templates): add `alias exec rundiff` to all router templates
