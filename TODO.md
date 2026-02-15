@@ -103,6 +103,13 @@ Recent completions:
   - Behavior: When `--clock-set` is set, keep current behavior (inject `do clock set` in CA and client PKI blocks). When omitted, do not inject clock-set; time is left to NTP or other automation.
   - Note: At this point, getting PKI and clients stable without injected clock may require other automation (e.g. Ansible, EEM, or out-of-band time sync) to take over. TopoGen would then focus on topology and base PKI config; clock and post-boot auth/save would be handled elsewhere.
   - Blast radius: main.py (argparse), render.py (_pki_ca_self_enroll_block_lines, _inject_pki_client_trustpoint, _pki_ca_clock_eem_lines, _pki_client_clock_eem_lines — gate clock-set on flag), README.
+- [ ] Replace `--pki-enroll scep|cli` with `--pki-scep` boolean flag (refactor + feature)
+  - `--pki-enroll` is defined in main.py but never read in render.py — it is dead code
+  - New design: `--pki` = CA-ROOT node in lab (no change to router configs); `--pki-scep` = non-CA routers get trustpoint + SCEP enrollment pointing at CA-ROOT
+  - Dependency: `--pki-scep` requires `--pki` (enforce in main.py)
+  - CA IP (`ca_g_addr.ip`) is already computed; pass it to router Jinja context as SCEP enrollment URL
+  - Also fix CA name inconsistency: DMVPN render path uses `ROOT-CA`; flat-pair render paths use `CA-ROOT` — standardize all to `CA-ROOT`
+  - Blast radius: main.py (remove `--pki-enroll`, add `--pki-scep`), render.py (fix CA name + pass ca_ip to router templates), router templates (add trustpoint block)
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)

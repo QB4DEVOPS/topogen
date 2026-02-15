@@ -1,3 +1,11 @@
+{# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+#
+# - Called by: src/topogen/render.py (Jinja render step)
+# - Reads from: Jinja context (config, node, dmvpn settings, feature flags: mgmt, ntp, pki)
+# - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
+# - Calls into: None (template-only)
+#}
 hostname {{ node.hostname }}
 !
 service timestamps debug datetime msec
@@ -173,6 +181,8 @@ ntp server {{ ntp.server }}
 {%- if ntp_oob and ntp_oob.server and ntp_oob.vrf %}
 ntp server vrf {{ ntp_oob.vrf }} {{ ntp_oob.server }}
 {%- endif %}
+!
+alias exec rundiff show archive config differences system:running-config
 !
 line vty 0 4
  transport input ssh telnet
