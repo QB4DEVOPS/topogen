@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.2
+Doc Version: v1.3.4
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -35,6 +35,7 @@ controller, creating the lab, nodes and links on the fly.
 - flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
 - YAML export of generated labs via controller API
 - offline YAML generation for CML (no controller needed) with `--offline-yaml`
+- offline-to-CML import: `--import-yaml FILE` and `--import` to push YAML into CML (file size and lab URL printed; `--start` runs in background)
 
 ## Documentation map
 
@@ -65,6 +66,9 @@ templates (*.jinja2)
 ```
 
 For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [DEVELOPER.md](DEVELOPER.md).
+
+- **src/topogen/__main__.py**
+  - Enables `python -m topogen` (calls `main.main()` and exits with its return code). The console script `topogen` still resolves via `topogen:main` in `__init__.py`.
 
 - **src/topogen/main.py**
   - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.
@@ -242,8 +246,7 @@ IP** into your hosts file).
 
 ### Tool
 
-The tool accepts a variety of command line switches... they are all listed by
-providing `-h` or `--help`:
+Run the CLI with `topogen` (after install) or `python -m topogen`. The tool accepts a variety of command line switches... they are all listed by providing `-h` or `--help`:
 
 ```plain
 $ topogen --help
@@ -506,6 +509,23 @@ TopoGen does not pick an output filename automatically; you must provide one. We
 - Topology: star fabric with one core `SWmgt0`, N access `SWmgt1..N`, and routers `R1..R${nodes}`.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
 - Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
+
+### Offline-to-CML import (CLI)
+
+You can import an offline YAML into CML from the CLI so you don't have to use the CML UI.
+
+- **`--import-yaml FILE`**: path to an existing offline YAML (skip generation). Use with `--import`.
+- **`--import`**: import the generated or specified YAML into CML via virl2_client. Requires `--offline-yaml` or `--import-yaml`. Prints file size (KB) before import and lab URL after import (clickable).
+- **`--start`**: after import (or online creation), start the lab in the background so the CLI returns immediately; check the CML UI for when the lab has started.
+- **`--up FILE`**: shorthand for `--import-yaml FILE --import --start` (import YAML to CML and start lab in one flag).
+- **`--print-up-cmd`**: with `--offline-yaml`, after generating prints the exact `topogen --up <file>` command to run later (when you're ready to deploy).
+
+Workflows:
+
+- Generate, then import: `topogen -T iosv-eigrp -m flat --offline-yaml out\lab.yaml 10` then `topogen --import-yaml out\lab.yaml --import`
+- Generate, import, and start: `topogen -T iosv-eigrp -m flat --offline-yaml out\lab.yaml --import --start 10`
+- Import existing (e.g. after editing) and start: `topogen --import-yaml out\lab.yaml --import --start` or **`topogen --up out\lab.yaml`**
+- Generate, then deploy when ready: `topogen ... --offline-yaml out\lab.yaml --print-up-cmd` (prints "When you're ready: topogen --up out/lab.yaml"), then later run `topogen --up out\lab.yaml`
 
 **Intent/metadata:** Lab description, notes (hidden span), and an off-canvas annotation with the full CLI args (including `-L` and `--offline-yaml`) are embedded only when generating **offline YAML** (`--offline-yaml`). This metadata is not added when creating labs online (no `--offline-yaml`). Intended for CI/CD to grep the generated YAML.
 

@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.2
+# Doc Version: v1.0.4
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -85,6 +85,7 @@ import importlib.resources as pkg_resources
 import logging
 import math
 import os
+import threading
 from pathlib import Path
 from argparse import Namespace
 from datetime import datetime, timezone
@@ -185,6 +186,45 @@ def get_templates() -> list[str]:
         for t in pkg_resources.contents(templates)
         if t.endswith(Renderer.J2SUFFIX)
     ]
+
+
+def _init_client_from_args(args: Namespace) -> ClientLibrary:
+    """Initialize virl2_client from CLI args (for import path; no Renderer instance)."""
+    cainfo: Union[bool, str] = args.cafile
+    try:
+        os.stat(args.cafile)
+    except (FileNotFoundError, TypeError):
+        cainfo = not args.insecure
+    try:
+        client = ClientLibrary(ssl_verify=cainfo)
+        if not client.is_system_ready():
+            raise TopogenError("system is not ready")
+        return client
+    except ConnectTimeout as exc:
+        raise TopogenError("no connection: " + str(exc)) from None
+    except InitializationError as exc:
+        raise TopogenError(
+            "no env provided, need VIRL2_URL, VIRL2_USER and VIRL2_PASS"
+        ) from exc
+
+
+def _start_lab_in_background(lab: Lab, args: Namespace) -> None:
+    """Start the lab in a background thread; brief delay so the start request reaches CML before process exits."""
+    if not getattr(args, "start_lab", False):
+        return
+    _LOGGER.warning("Starting lab... (running in background; check CML UI for status)")
+
+    def _start() -> None:
+        try:
+            lab.start()
+        except Exception as exc:  # pragma: no cover
+            _LOGGER.error("Start failed: %s", exc)
+
+    t = threading.Thread(target=_start, daemon=True)
+    t.start()
+    # Let the thread send the start request before we exit (daemon dies on process exit)
+    import time
+    time.sleep(3)
 
 
 def disable_pcl_loggers():
@@ -577,6 +617,33 @@ class Renderer:
             ) from exc
 
     @staticmethod
+    def import_yaml_to_cml(yaml_path: str, args: Namespace, size_already_logged: bool = False) -> int:
+        """Import an offline YAML file into CML via virl2_client.
+
+        When size_already_logged is False (e.g. --import-yaml only), prints file size.
+        When True (generate then import), offline step already printed size; skip duplicate.
+        Prints lab URL and optionally starts the lab in the background (non-blocking).
+        """
+        disable_pcl_loggers()
+        path = Path(yaml_path)
+        if not path.exists():
+            raise TopogenError(f"YAML file not found: {yaml_path}")
+        size_bytes = path.stat().st_size
+        size_kb = size_bytes / 1024
+        if not size_already_logged:
+            _LOGGER.warning("Lab file: %s (%.1f KB)", path, size_kb)
+        _LOGGER.warning("Importing to CML...")
+        client = _init_client_from_args(args)
+        lab = client.import_lab_from_path(path, title=getattr(args, "labname", None) or path.stem)
+        base_url = os.environ.get(
+            "VIRL2_URL",
+            client.url if hasattr(client, "url") else "http://localhost",
+        ).rstrip("/")
+        _LOGGER.warning("Lab URL: %s/lab/%s", base_url, lab.id)
+        _start_lab_in_background(lab, args)
+        return 0
+
+    @staticmethod
     def validate_flat_topology(total_nodes: int, group_size: int) -> int:
         """Validate flat star L2 topology constraints and return access switch count.
 
@@ -951,11 +1018,8 @@ class Renderer:
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
         _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
 
-        # Start lab if requested
-        if getattr(self.args, "start_lab", False):
-            _LOGGER.warning("Starting lab...")
-            self.lab.start()
-            _LOGGER.warning("Lab started")
+        # Start lab if requested (non-blocking)
+        _start_lab_in_background(self.lab, self.args)
 
         return 0
 
@@ -4130,11 +4194,8 @@ class Renderer:
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
         _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
 
-        # Start lab if requested
-        if getattr(self.args, "start_lab", False):
-            _LOGGER.warning("Starting lab...")
-            self.lab.start()
-            _LOGGER.warning("Lab started")
+        # Start lab if requested (non-blocking)
+        _start_lab_in_background(self.lab, self.args)
 
         return 0
 
@@ -4292,10 +4353,7 @@ class Renderer:
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
         _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
 
-        # Start lab if requested
-        if getattr(self.args, "start_lab", False):
-            _LOGGER.warning("Starting lab...")
-            self.lab.start()
-            _LOGGER.warning("Lab started")
+        # Start lab if requested (non-blocking)
+        _start_lab_in_background(self.lab, self.args)
 
         return 0

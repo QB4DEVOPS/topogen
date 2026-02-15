@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.4.1
+Doc Version: v1.4.2
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -376,7 +376,7 @@ These resolve through `src/topogen/__init__.py` and then into the real logic:
 
 
 
-- CLI: `src/topogen/main.py:main()`
+- CLI: `src/topogen/main.py:main()` (also runnable as `python -m topogen` via `src/topogen/__main__.py`)
 
 - GUI: `src/topogen/gui.py:main()` (wraps the same CLI parsing and then calls `topogen.main.main()`)
 
@@ -831,13 +831,15 @@ Jinja2 templates:
 
 ### `src/topogen/main.py`
 
-
+- **Doc Version:** v1.0.0
 
 - **Called by**
 
   - `src/topogen/__init__.py` (entrypoint export)
 
   - `src/topogen/gui.py` (GUI wrapper)
+
+  - `src/topogen/__main__.py` (when running `python -m topogen`)
 
 - **Reads from**
 
@@ -863,7 +865,7 @@ Jinja2 templates:
 
 ### `src/topogen/render.py`
 
-
+- **Doc Version:** v1.0.4
 
 - **Called by**
 
@@ -894,6 +896,28 @@ Jinja2 templates:
   - `src/topogen/lxcfrr.py` (`lxcfrr_bootconfig()`)
 
   - `src/topogen/models.py` (TopogenNode/Interface models)
+
+
+
+### `src/topogen/__main__.py`
+
+- **Doc Version:** v1.0.0
+
+- **Called by**
+
+  - Python interpreter when running `python -m topogen`
+
+- **Reads from**
+
+  - None (entry point only)
+
+- **Writes to**
+
+  - None (calls `main()` and exits with its return code)
+
+- **Calls into**
+
+  - `src/topogen/main.py` (`main()`)
 
 
 

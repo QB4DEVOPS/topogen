@@ -1,3 +1,6 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+#
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
 
@@ -447,6 +450,34 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="Allow overwriting an existing output file when using --offline-yaml",
     )
     parser.add_argument(
+        "--import-yaml",
+        dest="import_yaml",
+        metavar="FILE",
+        type=str,
+        help="Path to existing offline YAML to import (skip generation); use with --import",
+    )
+    parser.add_argument(
+        "--import",
+        dest="do_import",
+        action="store_true",
+        default=False,
+        help="Import the generated or specified YAML into CML (requires --offline-yaml or --import-yaml)",
+    )
+    parser.add_argument(
+        "--up",
+        dest="up",
+        metavar="FILE",
+        type=str,
+        help="Shorthand for --import-yaml FILE --import --start (import YAML to CML and start lab)",
+    )
+    parser.add_argument(
+        "--print-up-cmd",
+        dest="print_up_cmd",
+        action="store_true",
+        default=False,
+        help="With --offline-yaml, print the topogen --up <file> command to run later",
+    )
+    parser.add_argument(
         "--cml-version",
         dest="cml_version",
         type=str,
@@ -643,9 +674,14 @@ def main():
                 IPv4Address(args.ntp_server)
             except ValueError as exc:
                 parser.error(f"Invalid --ntp: {exc}")
-            # If ntp_vrf not set but mgmt_vrf is, inherit mgmt_vrf (unless --ntp-inband)
+            # If ntp_vrf not set and OOB (--mgmt) is enabled, inherit mgmt_vrf (unless --ntp-inband).
+            # Without --mgmt, NTP is inband so do not set ntp_vrf (no "ntp server vrf Mgmt-vrf").
             if not getattr(args, "ntp_inband", False):
-                if not getattr(args, "ntp_vrf", None) and getattr(args, "mgmt_vrf", None):
+                if (
+                    not getattr(args, "ntp_vrf", None)
+                    and getattr(args, "enable_mgmt", False)
+                    and getattr(args, "mgmt_vrf", None)
+                ):
                     args.ntp_vrf = args.mgmt_vrf
             else:
                 args.ntp_vrf = None  # inband: no VRF for --ntp
@@ -655,20 +691,53 @@ def main():
                     IPv4Address(args.ntp_oob_server)
                 except ValueError as exc:
                     parser.error(f"Invalid --ntp-oob: {exc}")
-        # Warn if --start used with --offline-yaml
-        if getattr(args, "start_lab", False) and getattr(args, "offline_yaml", None):
-            _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller")
+        # --up is shorthand for --import-yaml FILE --import --start (ignore empty string from GUI)
+        up_val = getattr(args, "up", None)
+        if up_val and str(up_val).strip():
+            args.import_yaml = up_val.strip()
+            args.do_import = True
+            args.start_lab = True
 
-        # Offline YAML path requires no controller
+        # --import requires a YAML source
+        if getattr(args, "do_import", False):
+            if not (getattr(args, "offline_yaml", None) or getattr(args, "import_yaml", None)):
+                parser.error("--import requires --offline-yaml or --import-yaml")
+
+        # Warn if --start used with --offline-yaml but not importing (start would do nothing)
+        if (
+            getattr(args, "start_lab", False)
+            and getattr(args, "offline_yaml", None)
+            and not getattr(args, "do_import", False)
+        ):
+            _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller; use --import to import then start")
+
+        # Import-only path: existing YAML, no generation
+        if getattr(args, "import_yaml", None) and getattr(args, "do_import", False):
+            return Renderer.import_yaml_to_cml(args.import_yaml, args)
+
+        # Offline YAML path: generate, then optionally import
         if getattr(args, "offline_yaml", None):
             if args.mode == "dmvpn":
                 if getattr(args, "dmvpn_underlay", "flat") == "flat-pair":
-                    return Renderer.offline_dmvpn_flat_pair_yaml(args, cfg)
-                return Renderer.offline_dmvpn_yaml(args, cfg)
-            if args.mode == "flat-pair":
-                return Renderer.offline_flat_pair_yaml(args, cfg)
+                    retval = Renderer.offline_dmvpn_flat_pair_yaml(args, cfg)
+                else:
+                    retval = Renderer.offline_dmvpn_yaml(args, cfg)
+            elif args.mode == "flat-pair":
+                retval = Renderer.offline_flat_pair_yaml(args, cfg)
             else:
-                return Renderer.offline_flat_yaml(args, cfg)
+                retval = Renderer.offline_flat_yaml(args, cfg)
+            if retval != 0:
+                return retval
+            if getattr(args, "do_import", False):
+                return Renderer.import_yaml_to_cml(
+                    args.offline_yaml, args, size_already_logged=True
+                )
+            if getattr(args, "print_up_cmd", False) and not getattr(args, "up", None):
+                _LOGGER.warning(
+                    "When you're ready: topogen --up %s",
+                    args.offline_yaml.replace("\\", "/"),
+                )
+            return retval
 
         renderer = Renderer(args, cfg)
         # argparse ensures correct mode
