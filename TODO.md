@@ -39,11 +39,19 @@ This file tracks in-progress work and future ideas for TopoGen.
 1. ~~OOB management network for flat, flat-pair, and DMVPN modes~~ (completed)
 2. DMVPN IPsec protection (IKEv2 + PSK) (completed)
 3. ~~DMVPN security roadmap (PKI) — single root CA~~ (completed)
-4. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
+4. DMVPN with PKI authentication (next)
+5. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
 
-(none)
+### DMVPN with PKI authentication
+DMVPN IKEv2 using certificate-based auth (PKI) instead of or in addition to PSK. Builds on single root CA (feat/pki-ca); routers get trustpoints and use certs for IKEv2.
+
+- [ ] Define CLI: e.g. `--dmvpn-security ikev2-pki` or extend `--dmvpn-security` to support PKI (with `--pki` required)
+- [ ] Router trustpoints: non-CA routers get trustpoint + cert enrollment (SCEP or manual) pointing at CA-ROOT
+- [ ] IKEv2 profile: use `authentication local rsa-sig` / `authentication remote rsa-sig` (cert-based) in DMVPN template(s)
+- [ ] Templates: extend iosv-dmvpn / csr-dmvpn (or add PKI variants) for cert-based IKEv2
+- [ ] Validate: offline YAML then CML lab (CA up first, then spokes with certs)
 
 ### EEM scripts (PKI) — working status
 
