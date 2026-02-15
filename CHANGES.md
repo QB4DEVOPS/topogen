@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.5
+Doc Version: v1.1.7
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -19,6 +19,21 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(import): add offline-to-CML import workflow
+    - `--import-yaml FILE`: path to existing offline YAML (skip generation); use with `--import`
+    - `--import`: import the generated or specified YAML into CML via virl2_client (requires `--offline-yaml` or `--import-yaml`)
+    - prints file size (KB) before import and lab URL after import (clickable)
+    - `--start` works after import (start runs in background so CLI returns immediately)
+    - workflows: generate then import (`--offline-yaml out/lab.yaml --import`), or import existing (`--import-yaml out/lab.yaml --import`), optionally `--start`
+    - Files: src/topogen/main.py (rev v1.0.0), src/topogen/render.py (rev v1.0.4), src/topogen/__main__.py (rev v1.0.0), CHANGES.md (rev v1.1.7), README.md (rev v1.3.4), TODO.md (rev v1.5.2), DEVELOPER.md (rev v1.4.2)
+  - feat(cli): add `--up FILE` shorthand for `--import-yaml FILE --import --start`
+  - feat(cli): add `--print-up-cmd` to print "When you're ready: topogen --up <file>" after offline generation
+  - fix(ntp): NTP server uses VRF only when --mgmt is enabled (inband `ntp server IP` without OOB)
+  - feat(cli): add `src/topogen/__main__.py` so `python -m topogen` works
+  - fix(gooey): ignore empty `--up` from GUI so "Import requires ..." error does not occur when field left blank
+  - feat(online): make `--start` non-blocking (online and import paths)
+    - start runs in a background thread; CLI prints "Starting lab... (running in background; check CML UI for status)" and returns
+    - lab continues starting on the server; user can watch CML UI
   - feat(mgmt): add OOB management network support for flat, flat-pair, and dmvpn modes
     - enable with `--mgmt`
     - creates `SWoob0` unmanaged switch (with `hide_links: true`) and connects all router mgmt interfaces

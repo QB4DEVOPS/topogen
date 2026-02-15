@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.1
+Doc Version: v1.5.2
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -78,10 +78,6 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
   - Current: render_flat_network() calls export_lab() after "Flat management network created"; if content is None we log "Lab created - uploaded to controller" (no size). When export_lab returns data we log "Lab created (%.1f KB) - uploaded to controller".
   - Observed: online flat run showed "Lab created - uploaded to controller" (no size), so export_lab returned None or failed. Investigate virl2_client export_lab behavior so size is shown for online create (same UX as offline YAML file size).
 
-- [ ] Usability fix: allow `python -m topogen ...` (no `.main`) by adding `src/topogen/__main__.py`
-
-- [ ] Add `--import`: create lab offline, print file size, import YAML to controller, print lab URL; `--start` has the same function in offline+import as in online (start lab after import).
-
 - [ ] **Fix next:** CA-ROOT time EEM (CA-ROOT-SET-CLOCK) missing when lab is created online. Offline flat/DMVPN/flat-pair inject _pki_ca_clock_eem_lines() into CA config; online flat builds CA from csr-pki-ca.jinja2 only (no EEM). User expects PKI/clock behavior to work the same whether lab is created offline or online. Add CA clock EEM to online flat CA build in render_flat_network() (e.g. append _pki_ca_clock_eem_lines() before assigning ca_router.configuration).
 
 ## Done
@@ -89,6 +85,8 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] Offline-to-CML import: `--import-yaml`, `--import`, `--up`, `--print-up-cmd`, non-blocking `--start` (see CHANGES.md)
+- [x] Allow `python -m topogen` via `src/topogen/__main__.py` (see CHANGES.md)
 - [x] Add `--mgmt-bridge` support for online NX and simple modes (see CHANGES.md)
 - [x] Add `--start` flag for auto-starting labs after creation (see CHANGES.md)
 - [x] Add lab URL printing after creation for easy browser access (see CHANGES.md)
@@ -261,37 +259,25 @@ Recent completions:
   - Pairs well with: Machine-parsable artifact summary (above) for clean scripted workflows.
   - Blast radius: main.py (argparse + log level config), no changes to render logic.
 
-- [ ] Add `--import` and `--import-yaml` flags for offline-to-CML workflow (medium effort).
+- [x] Add `--import` and `--import-yaml` flags for offline-to-CML workflow (medium effort).
   - Why: Currently there's no way to take an offline YAML and push it into CML without switching to online mode.
     This bridges the gap: generate offline → inspect/edit → import → start.
-  - New flags:
-    - `--import-yaml <file>`: Read an existing offline YAML (skip generation)
-    - `--import`: Import the generated/read YAML into CML via `virl2_client`
-    - `--import-and-start`: Sugar for `--import --start` (composable)
-  - Existing flag: `--start` stays as-is (matches CML API `lab.start()` vocabulary)
-  - Composable examples:
+  - Implemented:
+    - `--import-yaml <file>`: Read an existing offline YAML (skip generation); use with `--import`
+    - `--import`: Import the generated/read YAML into CML via `virl2_client` (requires `--offline-yaml` or `--import-yaml`)
+    - Print file size (KB) before import and lab URL after import (same as online mode)
+    - `--start` works after import; start runs in background so CLI returns immediately (check CML UI for status)
+  - Examples:
     - Generate + import + start: `topogen ... --offline-yaml out/lab.yaml --import --start`
     - Read existing + import: `topogen --import-yaml out/lab.yaml --import`
-    - Read + import + start: `topogen --import-yaml out/lab.yaml --import-and-start`
-  - Output: Print lab URL after import (e.g., `https://controller/lab/abc123`) for easy browser access, same as online mode.
+    - Read + import + start: `topogen --import-yaml out/lab.yaml --import --start`
   - Blast radius: main.py (argparse dispatch), render.py (import path via virl2_client), no changes to offline generation.
 
-- [ ] Add `--up <file>` shorthand and `--print-up-cmd` flag (low effort, sugar).
-  - Why: `--up` is sugar for `--import-yaml <file> --import --start` in a single flag.
-    Enables a clean two-step workflow: generate offline, then deploy when ready.
-  - `--print-up-cmd`: When used with `--offline-yaml`, prints the exact `topogen --up <file>` command
-    to run later. Only takes effect when `--up` is not already used on this run.
-  - Example workflow:
-    ```
-    # Step 1: Generate (no controller needed)
-    topogen ... --offline-yaml out/lab.yaml --print-up-cmd
-    # Output: "When you're ready: topogen --up out/lab.yaml"
-
-    # Step 2: Deploy (when ready)
-    topogen --up out/lab.yaml
-    ```
-  - Depends on: `--import` and `--import-yaml` flags (above).
-  - Blast radius: main.py (argparse alias), no new logic beyond existing import+start.
+- [x] Add `--up <file>` shorthand and `--print-up-cmd` flag (low effort, sugar).
+  - Implemented: `--up FILE` is sugar for `--import-yaml FILE --import --start`.
+  - `--print-up-cmd`: with `--offline-yaml`, after generation prints "When you're ready: topogen --up <file>" (only when `--up` not used on this run).
+  - Example: generate `topogen ... --offline-yaml out/lab.yaml --print-up-cmd`, then deploy with `topogen --up out/lab.yaml`.
+  - Blast radius: main.py (argparse + dispatch).
 
 - [ ] Trim and reorganize README.md for readability (low effort).
   - Why: README has grown large with inline help output, detailed examples, and mixed audiences (end-users vs contributors). Makes it harder to scan and find what you need.
