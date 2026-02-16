@@ -44,6 +44,9 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
+### DMVPN IKEv2 PKI — not working yet
+- DMVPN with `--dmvpn-security ikev2-pki` and `--pki`: IKEv2 SAs do not form; tunnels do not come up. Needs troubleshooting (enrollment, certs, clock, or profile/config).
+
 ### EEM scripts (PKI) — working status
 
 Script bodies live in `examples/`. Check off when confirmed working on device.
