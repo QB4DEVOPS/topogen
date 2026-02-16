@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.4.2
+Doc Version: v1.4.3
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -273,6 +273,8 @@ Pitfall:
 - `src/topogen/templates/*.jinja2`: emitted device configuration (what nodes boot with)
 
 - `README.md`: user-facing CLI contract and examples
+
+- **DMVPN node count:** In DMVPN mode (default, no `--dmvpn-hubs`), `nodes` is the number of **spokes**; R1 is the hub. So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers). See README for `--dmvpn-hubs` and flat-pair semantics.
 
 - `CHANGES.md`: what changed between released versions
 

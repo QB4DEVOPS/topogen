@@ -476,6 +476,8 @@ def _inject_pki_client_trustpoint(
         f" subject-alt-name {fqdn}",
         " auto-enroll 70 regenerate",
         "!",
+        "alias configure authc crypto pki authenticate CA-ROOT-SELF",
+        "!",
     ]
     if inject_clock_eem:
         block = block + _pki_client_clock_eem_lines()
@@ -1199,6 +1201,11 @@ class Renderer:
                     dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                 )
+                if getattr(self.args, "pki_enabled", False):
+                    ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                    rendered = _inject_pki_client_trustpoint(
+                        rendered, node.hostname, self.config.domainname, ca_url
+                    )
             else:
                 rendered = eigrp_template.render(
                     config=self.config,
@@ -1395,6 +1402,11 @@ class Renderer:
                 dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
             )
+            if getattr(self.args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, node.hostname, self.config.domainname, ca_url
+                )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
             except Exception:
@@ -1677,6 +1689,8 @@ class Renderer:
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
         if hubs_list:
             args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -1769,7 +1783,10 @@ class Renderer:
         # Scale router Y spacing so the bottom-most router stays within max_coord.
         router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
 
-        # Core NBMA switch
+        # Core NBMA switch (one port per access switch + one for CA-ROOT if --pki)
+        swnbma0_port_count = num_access
+        if getattr(args, "pki_enabled", False):
+            swnbma0_port_count += 1
         node_ids["SWnbma0"] = f"n{nid}"; nid += 1
         lines.append(f"  - id: {node_ids['SWnbma0']}")
         lines.append("    label: SWnbma0")
@@ -1777,7 +1794,7 @@ class Renderer:
         lines.append("    x: 0")
         lines.append("    y: 0")
         lines.append("    interfaces:")
-        for p in range(num_access):
+        for p in range(swnbma0_port_count):
             lines.append(f"      - id: i{p}")
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
@@ -2010,6 +2027,111 @@ class Renderer:
             if ticks:
                 ticks.update()  # type: ignore
 
+        # CA-ROOT node (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+            ca_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 1}/{nbma_net.prefixlen}")
+            ca_loopback_ip = IPv4Interface(f"{l_base}.255.254/32")
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=ca_loopback_ip,
+                interfaces=[
+                    TopogenInterface(
+                        address=ca_nbma_ip,
+                        description="=== SCEP Enrollment URL ===",
+                        slot=0,
+                    )
+                ],
+            )
+            try:
+                ca_base_tpl = env.get_template(f"csr-eigrp{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                raise TopogenError("CA template not found: csr-eigrp")
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+            ca_base_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
+            )
+            pki_config_lines = [
+                "ntp master 6",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
+                "!",
+                "crypto pki server CA-ROOT",
+                " database level complete",
+                " no database archive",
+                " grant auto",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
+                "!",
+            ]
+            ca_config_lines = ca_base_config.splitlines()
+            for i, line in enumerate(ca_config_lines):
+                if line.strip() == "crypto key generate rsa modulus 2048":
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+            ca_scep_url = f"http://{ca_nbma_ip.ip}:80"
+            insert_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + _pki_ca_authenticate_eem_lines()
+            )
+            try:
+                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
+                ca_config_lines[end_idx:end_idx] = insert_block
+            except StopIteration:
+                ca_config_lines.extend(insert_block)
+            ca_rendered = "\n".join(ca_config_lines)
+            ca_x = -400
+            ca_y = 200
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append("    node_definition: csr1000v")
+            lines.append(f"    x: {ca_x}")
+            lines.append(f"    y: {ca_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                ca_mgmt_slot_id = mgmt_slot - 1
+                lines.append(f"      - id: i{ca_mgmt_slot_id}")
+                lines.append(f"        slot: {ca_mgmt_slot_id}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_rendered.splitlines():
+                lines.append(f"      {ln}")
+
         # Links
         lines.append("links:")
         lid = 0
@@ -2026,6 +2148,17 @@ class Renderer:
 
             if ticks:
                 ticks.update()  # type: ignore
+
+        # CA-ROOT -> SWnbma0 data link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            swnbma0_ca_port = num_access
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{swnbma0_ca_port}")
 
         # Router-to-NBMA links (each router uses its slot-0 interface)
         for idx in range(total_routers):
@@ -2218,6 +2351,8 @@ class Renderer:
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
         if hubs_list:
             args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")

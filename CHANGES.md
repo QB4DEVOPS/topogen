@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.7
+Doc Version: v1.1.8
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -19,6 +19,13 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(dmvpn): add DMVPN IKEv2 PKI (certificate-based auth)
+    - `--dmvpn-security ikev2-pki`: IKEv2 with RSA-sig auth using trustpoint CA-ROOT-SELF (requires `--pki`)
+    - CLI: add `ikev2-pki` to `--dmvpn-security` choices; validate `ikev2-pki` requires `--pki`
+    - Templates: iosv-dmvpn and csr-dmvpn emit IKEv2 profile with `authentication local rsa-sig`, `authentication remote rsa-sig`, `pki trustpoint CA-ROOT-SELF`; no keyring
+    - Online DMVPN: inject PKI client trustpoint on non-CA routers when `--pki` (flat and flat-pair)
+    - Offline DMVPN: args_bits include `--pki` when pki_enabled for lab description
+    - Files: src/topogen/main.py, src/topogen/render.py, src/topogen/templates/csr-dmvpn.jinja2 (rev v1.1.0), src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.1.0), README.md (rev v1.4.0), CHANGES.md (rev v1.1.8), TODO.md (rev v1.5.3), DEVELOPER.md (rev v1.4.3)
   - feat(import): add offline-to-CML import workflow
     - `--import-yaml FILE`: path to existing offline YAML (skip generation); use with `--import`
     - `--import`: import the generated or specified YAML into CML via virl2_client (requires `--offline-yaml` or `--import-yaml`)

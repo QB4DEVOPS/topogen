@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.4
+Doc Version: v1.4.0
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -316,7 +316,7 @@ There are three modes available right now:
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
 - `dmvpn`: hub-and-spoke DMVPN topology.
-  - Default behavior: `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
+  - Default behavior: `nodes` is the number of **spokes** (R1 is hub; R2.. are spokes). So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers).
   - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
     - When `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (`R1..R<nodes>`).
     - **Important:** `--dmvpn-hubs` is a comma-separated *list of router numbers*, not a hub count. For example, `--dmvpn-hubs 3` means **R3 is the (only) hub**, not "3 hubs".
@@ -331,6 +331,10 @@ There are three modes available right now:
     - Requires `--dmvpn-psk <key>`.
     - Uses IPsec transport mode with `tunnel protection ipsec profile ...` on `Tunnel0`.
     - **Important:** if you set `--dmvpn-security ikev2-psk` but omit `--dmvpn-psk`, TopoGen exits with an error.
+  - Optional: set `--dmvpn-security ikev2-pki` to protect DMVPN with IKEv2 and certificate-based auth (PKI).
+    - Requires `--pki` (adds CA-ROOT and injects trustpoint CA-ROOT-SELF on non-CA routers).
+    - IKEv2 profile uses `authentication local rsa-sig` / `authentication remote rsa-sig` and `pki trustpoint CA-ROOT-SELF`.
+    - **Important:** if you set `--dmvpn-security ikev2-pki` but omit `--pki`, TopoGen exits with an error.
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)
@@ -393,6 +397,12 @@ topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --
 
 ```powershell
 topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-hubs 1,3,5 --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-psk --dmvpn-psk "topogen123" --mgmt --mgmt-bridge --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-3H-P3-EIGRP-MGMT-BRIDGE-N20.yaml --overwrite 20
+```
+
+- Offline YAML (DMVPN with IKEv2 PKI): 4 routers (1 hub + 3 spokes), cert-based auth; requires `--pki` (CA-ROOT + client trustpoints).
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-security ikev2-pki --pki --offline-yaml out\IOSXE-DMVPN-IKEV2-PKI-N4.yaml --overwrite 4
 ```
 
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).

@@ -1,5 +1,5 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.1.0
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, dmvpn settings, feature flags: mgmt, ntp, pki)
@@ -59,6 +59,29 @@ crypto ipsec profile TOPGEN-IPSEC
  set transform-set TOPGEN-TS
  set ikev2-profile TOPGEN-IKEV2
 !
+{%- elif dmvpn_security == "ikev2-pki" %}
+!
+crypto ikev2 proposal TOPGEN-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy TOPGEN-POL
+ proposal TOPGEN-PROP
+!
+crypto ikev2 profile TOPGEN-IKEV2
+ match identity remote address 0.0.0.0 0.0.0.0
+ authentication local rsa-sig
+ authentication remote rsa-sig
+ pki trustpoint CA-ROOT-SELF
+!
+crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile TOPGEN-IPSEC
+ set transform-set TOPGEN-TS
+ set ikev2-profile TOPGEN-IKEV2
+!
 {%- endif %}
 !
 {%- set ns = namespace(nbma=None, tun=None, pair=None) %}
@@ -103,7 +126,7 @@ interface Tunnel0
  tunnel key {{ dmvpn_tunnel_key }}
  tunnel mode gre multipoint
  ip nhrp network-id 10
-{%- if dmvpn_security == "ikev2-psk" %}
+{%- if dmvpn_security == "ikev2-psk" or dmvpn_security == "ikev2-pki" %}
  tunnel protection ipsec profile TOPGEN-IPSEC
 {%- endif %}
 {%- if is_hub %}
