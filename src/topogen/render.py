@@ -1,5 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.5
+# Doc Version: v1.0.6
+# Date Modified: 2026-02-16
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models

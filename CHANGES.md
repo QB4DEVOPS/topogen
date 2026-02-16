@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.0
+Doc Version: v1.2.1
+Date Modified: 2026-02-16
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items

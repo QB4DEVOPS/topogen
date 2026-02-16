@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.0
+Doc Version: v1.0.1
+Date Modified: 2026-02-16
 
 Purpose: Report and recommendations for Doc Version enforcement (CI, hooks, commit message).
 -->

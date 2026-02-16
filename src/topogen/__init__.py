@@ -1,6 +1,7 @@
 """
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.0
+Doc Version: v1.1.1
+Date Modified: 2026-02-16
 
 - Called by: Python import system (when `import topogen` is executed), entry_points (CLI commands)
 - Reads from: importlib.metadata (package metadata), config.py, render.py, main.py

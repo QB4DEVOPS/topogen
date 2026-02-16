@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.0
+Doc Version: v1.6.1
+Date Modified: 2026-02-16
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker

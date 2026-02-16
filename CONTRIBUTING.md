@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.0
+Doc Version: v1.1.1
+Date Modified: 2026-02-16
 
 - Called by: Contributors (developers, AI assistants), GitHub PR reviewers, project maintainers
 - Reads from: Project conventions, team decisions, best practices

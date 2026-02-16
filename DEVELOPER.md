@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.0
+Doc Version: v1.7.1
+Date Modified: 2026-02-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -846,7 +847,7 @@ These rules are **enforced by CI** (or will be). Any PR that violates them will 
 
 See **AI Onboarding** above for invariants and enforcement. Below: format and file-style reference.
 
-**Format**: `Doc Version: v{major}.{minor}.{patch}` (semantic versioning)
+**Format**: `Doc Version: v{major}.{minor}.{patch}` (semantic versioning). **Date Modified**: On the line immediately below `Doc Version:`, include `Date Modified: YYYY-MM-DD` (ISO date when the file was last substantively changed).
 
 **File examples** (comment syntax by type):
 
@@ -855,6 +856,7 @@ Markdown:
 <!--
 File Chain (see DEVELOPER.md):
 Doc Version: v1.0.0
+Date Modified: YYYY-MM-DD
 
 - Called by: ...
 -->
@@ -864,6 +866,7 @@ Python/TOML:
 ```python
 # File Chain (see DEVELOPER.md):
 # Doc Version: v1.0.0
+# Date Modified: YYYY-MM-DD
 #
 # - Called by: ...
 ```
@@ -872,6 +875,7 @@ Jinja2:
 ```jinja2
 {# File Chain (see DEVELOPER.md):
 # Doc Version: v1.0.0
+# Date Modified: YYYY-MM-DD
 #
 # - Called by: ...
 #}

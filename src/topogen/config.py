@@ -1,6 +1,7 @@
 """
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.1
+Doc Version: v1.0.2
+Date Modified: 2026-02-16
 
 - Called by: main.py, render.py, dnshost.py, lxcfrr.py
 - Purpose: Configuration loading and defaults management
