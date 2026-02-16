@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.4.3
+Doc Version: v1.5.1
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -802,6 +802,79 @@ Jinja2 templates:
 - Reviewers know if changes are significant
 - Version conflicts become visible
 - Documentation gets same rigor as code
+
+**Doc Version rules (mandatory)**:
+- **Never decrease** Doc Version.
+- **Same commit**: Any PR that changes a versioned doc must include the Doc Version bump in the same commit (version change must appear in the commit diff).
+- **If unsure, bump PATCH.**
+- **Do not remove** the Doc Version line from a versioned file.
+- **Include the doc version change in the commit message** — e.g. `<file>: vOLD → vNEW` in subject or body (one per file). See "Commit Messages and Doc Versioning" below.
+
+
+### Commit Messages and Doc Versioning (Mandatory)
+
+**This section is normative. AI- and human-authored commits must follow these rules.**
+
+#### When this applies
+
+These rules apply to **any commit or PR that changes a versioned file** (a file containing `Doc Version:`).
+
+#### Required commit message content
+
+If a commit changes one or more versioned files, the commit message **MUST include the doc version change(s)** in the subject or body.
+
+**Required format (one per file):**
+
+```
+<file>: vOLD → vNEW
+```
+
+**Examples:**
+
+```
+docs(readme): clarify install instructions
+README.md: v1.3.4 → v1.3.5
+```
+
+```
+docs(developer): tighten doc version rules
+DEVELOPER.md: v1.4.2 → v1.5.0
+```
+
+If multiple versioned files are changed, list each on its own line.
+
+#### Ordering rules
+
+- The **Doc Version bump must appear in the same commit diff** as the content change.
+- The commit message must reflect the **actual version numbers in the diff**.
+
+#### Prohibited
+
+- Changing a versioned file without mentioning its version bump in the commit message.
+- Mentioning a version bump that does not appear in the diff.
+- Rolling back a Doc Version in either the file or the commit message.
+
+#### Verification step (required for AI)
+
+Before finalizing a commit that touches versioned files:
+
+1. Confirm the diff shows the version change:
+
+   ```bash
+   git diff HEAD -- <file> | grep 'Doc Version:'
+   ```
+
+2. Confirm the commit message includes:
+
+   ```
+   <file>: vOLD → vNEW
+   ```
+
+Commits that fail either check are invalid.
+
+#### Enforcement
+
+CI **may** enforce this rule in the future. Contributors (human or AI) are expected to follow it now.
 
 
 

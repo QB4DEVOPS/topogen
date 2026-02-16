@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.0
+Doc Version: v1.0.1
 
 - Called by: Contributors (developers, AI assistants), GitHub PR reviewers, project maintainers
 - Reads from: Project conventions, team decisions, best practices
@@ -39,6 +39,7 @@ Thanks for contributing! This document describes how to propose changes and the 
   - docs: add README usage examples
   - chore: bump dependencies / tooling
 - Keep the first line ≤ 72 chars; include context in the body if needed.
+- **Doc Version**: If you change a file that has a File Chain header with Doc Version, include the version change in the commit message (e.g. `README.md: v1.3.4 → v1.3.5` in subject or body; one per file). See DEVELOPER.md → Commit Messages and Doc Versioning.
 
 ## Pull requests
 - One logical change per PR. If it’s large, consider splitting into stacked PRs.
