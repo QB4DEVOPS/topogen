@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.1
+Doc Version: v1.7.2
 Date Modified: 2026-02-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -1300,6 +1300,8 @@ Online (basic smoke checks once routers boot):
   - Prefer squash-merge to keep history clean.
 
   - After merge: sync `main` locally and delete the feature branch.
+
+- **After push: validate CI.** Open the repository’s **Actions** tab on GitHub (or the commit/PR page) and confirm the workflow run for your push **succeeded** (all jobs green). If it failed, view or download the run log from that run to diagnose.
 
 - Interaction preference:
 
