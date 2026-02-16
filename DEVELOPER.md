@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.6.0
+Doc Version: v1.7.0
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -727,45 +727,130 @@ See `examples/eem-client-pki-authenticate.txt` and `examples/eem-test-pki-authen
 
 
 
-### Document Versioning (MANDATORY)
+### AI Onboarding: Doc Version & Commit Rules (Mandatory)
 
-**IMPORTANT**: Every documentation file must include a `Doc Version` in its file chain header.
+> **This section is normative. All AI-generated and human-generated changes MUST follow these rules.**
+
+#### Definition: versioned file
+
+A **versioned file** is any file that contains a line matching:
+
+```
+Doc Version: vMAJOR.MINOR.PATCH
+```
+
+in the base branch **or** in the proposed change.
+
+#### Mandatory invariants
+
+1. **If a versioned file changes, its Doc Version MUST change in the same commit/PR.**
+2. **Doc Version MUST NOT decrease.**
+3. **Exactly one `Doc Version:` line is allowed per file.**
+4. **The `Doc Version:` line MUST NOT be removed.**
+5. **Valid format is required:**
+
+   ```
+   Doc Version: v<major>.<minor>.<patch>
+   ```
+
+   (no suffixes, prefixes, or extra text)
+
+If any invariant is violated, the change is invalid.
+
+#### Choosing the bump
+
+- **PATCH** — wording changes, clarifications, formatting, examples, small fixes
+- **MINOR** — new sections, new rules, workflow-affecting clarifications
+- **MAJOR** — rule changes that invalidate prior assumptions
+
+**If unsure, bump PATCH.**
+
+#### Commit message requirements (mandatory)
+
+If a commit or PR changes one or more versioned files, the **commit message MUST include the Doc Version change(s)**.
+
+**Required format (one line per file):**
+
+```
+<file>: vOLD → vNEW
+```
+
+**Examples:**
+
+```
+docs(developer): tighten doc version enforcement
+DEVELOPER.md: v1.4.2 → v1.5.0
+```
+
+```
+docs(readme): clarify install steps
+README.md: v1.3.4 → v1.3.5
+```
+
+If multiple versioned files are changed, list **each file on its own line**.
+
+**Prohibited:**
+
+- Changing a versioned file without mentioning its version bump in the commit message
+- Mentioning a version bump that does not appear in the diff
+- Rolling back a Doc Version in either the file or the commit message
+
+#### Same-diff requirement (explicit)
+
+The Doc Version bump **must appear in the same diff** as the content change.
+Follow-up commits or separate PRs to "fix the version" are not allowed.
+
+#### Required self-checks (AI and human)
+
+Before finalizing a change that touches a versioned file:
+
+1. **Verify the diff shows the version change**
+
+   ```bash
+   git diff HEAD -- <file> | grep 'Doc Version:'
+   ```
+
+   The output **must show both**:
+
+   - the old `Doc Version:` line (removed), and
+   - the new `Doc Version:` line (added).
+
+2. **Verify the commit message includes the version delta**
+
+   ```
+   <file>: vOLD → vNEW
+   ```
+
+If either check fails, the change is invalid.
+
+#### Enforcement
+
+These rules are **enforced by CI** (or will be). Any PR that violates them will fail and must be corrected before merge.
+
+> **Intent does not override enforcement.**
+> A change that fails CI is considered incomplete, regardless of author (human or AI).
+
+#### Copy-paste rule summary (for automation)
+
+```
+- Versioned file changed ⇒ Doc Version must change in same diff
+- Never decrease or remove Doc Version
+- Exactly one Doc Version line per file
+- Commit message must include: <file>: vOLD → vNEW
+- If unsure, bump PATCH
+```
+
+---
+
+### Document Versioning — format and examples
+
+See **AI Onboarding** above for invariants and enforcement. Below: format and file-style reference.
 
 **Format**: `Doc Version: v{major}.{minor}.{patch}` (semantic versioning)
 
-**Versioning Rules** (based on conventional commits):
-- **MAJOR** (v1.0.0 → v2.0.0): Breaking changes to documentation structure or format
-  - Triggered by: Commits with `BREAKING CHANGE:` in footer, or `!` after type (e.g., `docs!:`)
-  - Example: Restructuring file chain format, removing sections, changing header structure
+**File examples** (comment syntax by type):
 
-- **MINOR** (v1.0.0 → v1.1.0): New content, features, or sections
-  - Triggered by: `feat(scope):` commits
-  - Example: Adding new sections, new features documentation, new examples
-
-- **PATCH** (v1.0.0 → v1.0.1): Corrections, clarifications, or non-breaking updates
-  - Triggered by: `fix(scope):`, `docs(scope):`, `chore(scope):` commits
-  - Example: Typo fixes, clarifications, reformatting, minor updates
-
-**Commit Message Examples**:
-```bash
-# PATCH bump (v1.0.0 → v1.0.1)
-docs(developer): fix typo in versioning section
-docs(readme): clarify installation steps
-chore(tested): update Python version to 3.12.1
-
-# MINOR bump (v1.0.0 → v1.1.0)
-feat(developer): add PKI architecture section
-feat(tested): add new CML 2.8.0 validation results
-
-# MAJOR bump (v1.0.0 → v2.0.0)
-docs(developer)!: restructure file chain header format
-
-BREAKING CHANGE: File chain format now requires blast radius field
-```
-
-**File Examples**:
-
-Markdown files:
+Markdown:
 ```markdown
 <!--
 File Chain (see DEVELOPER.md):
@@ -775,7 +860,7 @@ Doc Version: v1.0.0
 -->
 ```
 
-Python/TOML files:
+Python/TOML:
 ```python
 # File Chain (see DEVELOPER.md):
 # Doc Version: v1.0.0
@@ -783,98 +868,16 @@ Python/TOML files:
 # - Called by: ...
 ```
 
-Jinja2 templates:
+Jinja2:
 ```jinja2
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0
+# Doc Version: v1.0.0
 #
 # - Called by: ...
 #}
 ```
 
-**Workflow**:
-1. Make your documentation changes
-2. Bump the version number (minor or major)
-3. Commit with message like `docs(readme): add usage examples (v1.0 → v1.1)`
-
-**Why mandatory**:
-- AI can track document evolution
-- Reviewers know if changes are significant
-- Version conflicts become visible
-- Documentation gets same rigor as code
-
-**Doc Version rules (mandatory)**:
-- **Never decrease** Doc Version.
-- **Same commit**: Any PR that changes a versioned doc must include the Doc Version bump in the same commit (version change must appear in the commit diff).
-- **If unsure, bump PATCH.**
-- **Do not remove** the Doc Version line from a versioned file.
-- **Include the doc version change in the commit message** — e.g. `<file>: vOLD → vNEW` in subject or body (one per file). See "Commit Messages and Doc Versioning" below.
-
-
-### Commit Messages and Doc Versioning (Mandatory)
-
-**This section is normative. AI- and human-authored commits must follow these rules.**
-
-#### When this applies
-
-These rules apply to **any commit or PR that changes a versioned file** (a file containing `Doc Version:`).
-
-#### Required commit message content
-
-If a commit changes one or more versioned files, the commit message **MUST include the doc version change(s)** in the subject or body.
-
-**Required format (one per file):**
-
-```
-<file>: vOLD → vNEW
-```
-
-**Examples:**
-
-```
-docs(readme): clarify install instructions
-README.md: v1.3.4 → v1.3.5
-```
-
-```
-docs(developer): tighten doc version rules
-DEVELOPER.md: v1.4.2 → v1.5.0
-```
-
-If multiple versioned files are changed, list each on its own line.
-
-#### Ordering rules
-
-- The **Doc Version bump must appear in the same commit diff** as the content change.
-- The commit message must reflect the **actual version numbers in the diff**.
-
-#### Prohibited
-
-- Changing a versioned file without mentioning its version bump in the commit message.
-- Mentioning a version bump that does not appear in the diff.
-- Rolling back a Doc Version in either the file or the commit message.
-
-#### Verification step (required for AI)
-
-Before finalizing a commit that touches versioned files:
-
-1. Confirm the diff shows the version change:
-
-   ```bash
-   git diff HEAD -- <file> | grep 'Doc Version:'
-   ```
-
-2. Confirm the commit message includes:
-
-   ```
-   <file>: vOLD → vNEW
-   ```
-
-Commits that fail either check are invalid.
-
-#### Enforcement
-
-CI **may** enforce this rule in the future. Contributors (human or AI) are expected to follow it now.
+**Conventional-commit bump triggers** (reference): PATCH — `fix:`, `docs:`, `chore:`; MINOR — `feat:`; MAJOR — `BREAKING CHANGE:` or `!` after type.
 
 
 
