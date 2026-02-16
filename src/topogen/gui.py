@@ -1,4 +1,10 @@
 """
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: topogen-gui console script
+- Purpose: Optional Gooey-based GUI wrapper for topogen CLI
+
 TopoGen GUI Launcher - Gooey-Based Graphical User Interface
 
 PURPOSE:

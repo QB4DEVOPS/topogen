@@ -1,4 +1,10 @@
 """
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+- Called by: main.py
+- Purpose: ANSI color-coded log formatter for console output
+
 TopoGen Color Log Formatter - ANSI Color-Coded Log Message Formatting
 
 PURPOSE:

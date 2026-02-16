@@ -1,4 +1,10 @@
 """
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.1
+
+- Called by: main.py, render.py, dnshost.py, lxcfrr.py
+- Purpose: Configuration loading and defaults management
+
 TopoGen Configuration - Configuration Loading and Defaults Management
 
 PURPOSE:

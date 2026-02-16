@@ -1,3 +1,10 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+
+Purpose: Report and recommendations for Doc Version enforcement (CI, hooks, commit message).
+-->
+
 # Doc Version Enforcement — Report and Recommendations
 
 **Context**: Multiple LLMs were asked how to fix the recurring issue where AI (and sometimes humans) forget to bump **Doc Version** when editing docs, or accidentally roll back version numbers. This report synthesizes those suggestions and recommends what to do in the topogen repo.

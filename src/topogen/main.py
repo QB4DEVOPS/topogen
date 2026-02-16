@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.1.0
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
