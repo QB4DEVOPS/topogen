@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.6
-# Date Modified: 2026-02-16
+# Doc Version: v1.0.7
+# Date Modified: 2026-02-18
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -283,17 +283,19 @@ def format_interface_description(iface_pair: dict, this: int) -> str:
     return f"to {dst.node.label} {dst.label}"
 
 
-# Hardcoded clock set value: "today" at lab generation time (00:00:01 UTC).
-# CVAC rejects EEM regexp on show clock; no parsing — single clock set so PKI can start; NTP takes over later.
+# Hardcoded clock set value: "today" at lab generation time (00:01:00 UTC).
+# Must be after CA cert notBefore (often 00:00:21) so IKEv2 cert validation succeeds; NTP takes over later.
 def _pki_clock_set_today() -> str:
-    """Return IOS clock set string: 00:00:01 Month Day Year (UTC at generation time)."""
+    """Return IOS clock set string: 00:01:00 Month Day Year (UTC at generation time)."""
     dt = datetime.now(timezone.utc)
-    return f"00:00:01 {dt.strftime('%B %d %Y')}"
+    return f"00:01:00 {dt.strftime('%B %d %Y')}"
 
 
 def _pki_client_clock_eem_lines() -> list[str]:
     """EEM applet CLIENT-PKI-SET-CLOCK: one-shot 90s after boot.
     If NTP synced, set TIME_DONE and exit. Else: clock set <hardcoded today>, then TIME_DONE.
+    On completion (either path), runs 'event manager run CLIENT-PKI-AUTHENTICATE' so PKI
+    enrollment runs after clock is set, avoiding the 95s-vs-90s timer race.
     No show clock / regexp (CVAC rejects it); NTP takes over later.
     Environment variable TIME_DONE set to 0 first so run-once guard works."""
     clock_val = _pki_clock_set_today()
@@ -320,8 +322,9 @@ def _pki_client_clock_eem_lines() -> list[str]:
         "  action 1.6  cli command \"end\"",
         "  action 1.7  cli command \"write memory\"",
         "  action 1.8  syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (NTP synced) [step 1.8]\"",
-        "  action 1.9  exit",
-        "  action 1.99 end",
+        "  action 1.9  cli command \"event manager run CLIENT-PKI-AUTHENTICATE\"",
+        "  action 1.10 exit",
+        "  action 1.11 end",
         "! Hardcoded clock set (no regexp) so CVAC applies; NTP takes over later.",
         " action 2.0 cli command \"configure terminal\"",
         f" action 2.1 cli command \"do clock set {clock_val}\"",
@@ -332,6 +335,7 @@ def _pki_client_clock_eem_lines() -> list[str]:
         " action 3.3 cli command \"end\"",
         " action 3.4 cli command \"write memory\"",
         " action 3.5 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (clock authoritative) [step 3.5]\"",
+        " action 3.6 cli command \"event manager run CLIENT-PKI-AUTHENTICATE\"",
         "end",
         "!",
     ]
@@ -417,6 +421,51 @@ def _pki_ca_authenticate_eem_lines() -> list[str]:
     ]
 
 
+def _pki_client_authenticate_eem_lines() -> list[str]:
+    """EEM applet CLIENT-PKI-AUTHENTICATE: PKI clients only. Runs 95s after boot (after
+    CLIENT-PKI-SET-CLOCK at 90s). Proceeds only when TIME_DONE is 1 so cert validation
+    does not fail on time. Authenticates CA and enrolls; then removes itself.
+    Skips if CA cert already present."""
+    return [
+        "!",
+        "event manager applet CLIENT-PKI-AUTHENTICATE authorization bypass",
+        " event timer countdown time 95",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 cli command \"terminal length 0\"",
+        " action 0.3 cli command \"show event manager environment | include TIME_DONE\"",
+        " action 0.4 regexp \"TIME_DONE 1\" \"$_cli_result\" match",
+        " action 0.5 if $_regexp_result ne \"1\"",
+        "  action 0.6  cli command \"configure terminal\"",
+        "  action 0.7  cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
+        "  action 0.8  cli command \"end\"",
+        "  action 0.9  syslog msg \"EEM CLIENT-PKI-AUTHENTICATE: TIME_DONE not set, skipping\"",
+        "  action 0.10 exit",
+        "  action 0.11 end",
+        " action 1.0 cli command \"show crypto pki certificates CA-ROOT-SELF\"",
+        " action 1.1 regexp \"CA Certificate\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        "  action 1.3  cli command \"configure terminal\"",
+        "  action 1.4  cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
+        "  action 1.5  cli command \"end\"",
+        "  action 1.6  cli command \"write memory\"",
+        "  action 1.7  exit",
+        "  action 1.8  end",
+        " action 2.0 cli command \"configure terminal\"",
+        " action 2.1 cli command \"crypto pki authenticate CA-ROOT-SELF\" pattern \"yes/no\"",
+        " action 2.2 wait 2",
+        " action 2.3 cli command \"yes\" pattern \".*\"",
+        " action 2.4 cli command \" \"",
+        " action 2.5 cli command \"end\"",
+        " action 2.6 cli command \"write memory\"",
+        " action 2.7 cli command \"configure terminal\"",
+        " action 2.8 cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
+        " action 2.9 cli command \"end\"",
+        " action 3.0 cli command \"write memory\"",
+        "end",
+        "!",
+    ]
+
+
 def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url: str) -> list[str]:
     """Return CA self-enrollment block lines (do clock set, then ip http secure-server, trustpoint CA-ROOT-SELF).
     do clock set placed after crypto pki server CA-ROOT block and before CA-ROOT-SELF key/trustpoint (working order)."""
@@ -482,6 +531,7 @@ def _inject_pki_client_trustpoint(
     ]
     if inject_clock_eem:
         block = block + _pki_client_clock_eem_lines()
+        block = block + _pki_client_authenticate_eem_lines()
     lines = rendered.splitlines()
     try:
         end_idx = next(
@@ -939,7 +989,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -1201,6 +1251,7 @@ class Renderer:
                     dmvpn_vrf=dmvpn_vrf,
                     dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
+                    dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
                 )
                 if getattr(self.args, "pki_enabled", False):
                     ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -1402,6 +1453,7 @@ class Renderer:
                 dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
                 dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
+                dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
             )
             if getattr(self.args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -1629,10 +1681,16 @@ class Renderer:
 
         # set up Jinja to render configs from packaged templates
         env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        # DMVPN mode requires a template with Tunnel0/NHRP; use -dmvpn template if base was chosen
+        tpl_name = (
+            args.template
+            if args.template.endswith("-dmvpn")
+            else ("csr-dmvpn" if str(getattr(args, "dev_template", args.template)).lower() == "csr1000v" else "iosv-dmvpn")
+        )
         try:
-            tpl = env.get_template(f"{args.template}{Renderer.J2SUFFIX}")
+            tpl = env.get_template(f"{tpl_name}{Renderer.J2SUFFIX}")
         except TemplateNotFound as exc:  # pragma: no cover - defensive
-            raise TopogenError(f"template does not exist: {args.template}") from exc
+            raise TopogenError(f"template does not exist: {tpl_name}") from exc
 
         try:
             nbma_net = IPv4Network(str(getattr(args, "dmvpn_nbma_cidr", "10.10.0.0/16")))
@@ -1854,7 +1912,10 @@ class Renderer:
                 lines.append("        label: port")
                 lines.append("        type: physical")
 
-            # OOB core switch
+            # OOB core switch (one port per OOB access switch + one for CA-ROOT if --pki)
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
             lines.append("    label: SWoob0")
@@ -1870,7 +1931,7 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -1960,7 +2021,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -1986,6 +2047,7 @@ class Renderer:
                 dmvpn_phase=getattr(args, "dmvpn_phase", 2),
                 dmvpn_security=getattr(args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(args, "dmvpn_psk", None),
+                dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
@@ -2054,7 +2116,7 @@ class Renderer:
                 ca_mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ca_ntp_ctx = None
@@ -2220,6 +2282,18 @@ class Renderer:
 
                 if ticks:
                     ticks.update()  # type: ignore
+
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                ca_mgmt_iface_id = mgmt_slot - 1  # CA is always CSR1000v
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -2565,7 +2639,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -2606,6 +2680,7 @@ class Renderer:
                     dmvpn_vrf=dmvpn_vrf,
                     dmvpn_security=getattr(args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(args, "dmvpn_psk", None),
+                    dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
                     ntp_oob=ntp_oob_ctx,
@@ -2703,7 +2778,7 @@ class Renderer:
                 ca_mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ca_ntp_ctx = None
@@ -3176,7 +3251,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -3278,7 +3353,7 @@ class Renderer:
                 ca_mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ca_ntp_ctx = None
@@ -3750,7 +3825,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -3865,7 +3940,7 @@ class Renderer:
                 ca_mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ca_ntp_ctx = None
@@ -4184,7 +4259,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -4254,7 +4329,7 @@ class Renderer:
                 ca_mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ca_ntp_ctx = None
@@ -4422,7 +4497,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ntp_ctx = None
