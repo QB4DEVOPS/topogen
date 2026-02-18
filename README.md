@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.1
-Date Modified: 2026-02-16
+Doc Version: v1.4.2
+Date Modified: 2026-02-18
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -407,6 +407,16 @@ topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --
 topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-security ikev2-pki --pki --offline-yaml out\IOSXE-DMVPN-IKEV2-PKI-N4.yaml --overwrite 4
 ```
 
+- Offline YAML (DMVPN Phase 3, IKEv2 PKI, 1 hub + 10 spokes): Flat underlay, lab name matches filename. Bring up CA-ROOT first, then R1 (hub), then R2..R11 (see **DMVPN with IKEv2 PKI: bring-up order** above).
+
+```powershell
+# IOSv (lab title = DMVPN-P3-IOSv-11)
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-IOSv-11" --offline-yaml out/DMVPN-P3-IOSv-11.yaml --overwrite 11
+
+# CSR (lab title = DMVPN-P3-CSR-11)
+topogen -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-CSR-11" --offline-yaml out/DMVPN-P3-CSR-11.yaml --overwrite 11
+```
+
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
 
 ```powershell
@@ -560,11 +570,19 @@ Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are r
 
 **CA server boot order:** When using `--pki`, bring the CA-ROOT node online first. Once the root CA is available (certificate server enabled), start the rest of the lab (R1..R*n*). Clients need the CA to be up for SCEP enrollment and authentication.
 
+**DMVPN with IKEv2 PKI: bring-up order** — For DMVPN labs using `--dmvpn-security ikev2-pki` and `--pki`, start nodes in this order so crypto and NHRP come up cleanly:
+
+1. **CA-ROOT** — Start the CA node and wait until the PKI server is enabled (e.g. "Certificate server now enabled" or CA self-enrollment complete). The CA must be reachable (e.g. at 10.10.255.254) for SCEP before any router enrolls.
+2. **R1 (hub)** — Start the hub. Authenticate and enroll manually: `configure terminal` → `authc` → `yes` → `end` → `write memory`. (The EEM auto-authenticate applet is still broken; see PKI client EEM note below.)
+3. **Spokes (R2, R3, …)** — Start spokes in any order. Get the CA fingerprint from R1 (or CA-ROOT) after R1 has authenticated. On each spoke, from exec run `crypto pki authenticate CA-ROOT-SELF fingerprint <fingerprint>`, then `write memory` — no interactive yes required.
+
+Use `--mgmt` for OOB SSH; use `--mgmt-vrf global` to keep management in the global routing table. For step-by-step troubleshooting (clock, certificates, IKEv2), see [docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md](docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md).
+
 **PKI and clock:** PKI uses the `do` command to set the clock (e.g. `do clock set ...`) in the generated config so the device clock is authoritative before the CA starts and clients enroll. That speeds up PKI by avoiding certificate validity failures due to an unsynced or default clock. For labs where you prefer to rely on NTP or external automation for time, a future `--clock-set` option may allow disabling this behavior (see TODO.md).
 
 **PKI and DMVPN flat-pair:** In DMVPN with `--dmvpn-underlay flat-pair`, even routers (R2, R4, …) have no link to the NBMA/10.10.0.0 network; they are only connected to their odd partner. The CA-ROOT is on the NBMA network. So **even routers cannot reach the CA and do not get certificates**; only odd routers (DMVPN endpoints) can enroll. This is by design. Use OOB management (e.g. `--mgmt`) if even routers need to reach NTP or other services.
 
-**PKI client EEM:** The client EEM applet that is intended to run NTP sync check then `crypto pki authenticate` and `write memory` (see `examples/eem-client-pki-authenticate-ntp.txt`) does not work reliably. Client enrollment is not automated; use manual `crypto pki authenticate` and `write memory` on clients, or other automation.
+**PKI client EEM:** The clock-setting applet (CLIENT-PKI-SET-CLOCK at 90 s) works. The auto-authenticate applet (CLIENT-PKI-AUTHENTICATE at 95 s) is **still broken and is to be fixed**; manual authentication is required. On R1 (hub), run `configure terminal` → `authc` (or `crypto pki authenticate CA-ROOT-SELF`) → `yes` → `end` → `write memory`. Once R1 has authenticated, obtain the CA certificate fingerprint (from the authenticate prompt on R1 or from CA-ROOT). On each spoke, from exec run `crypto pki authenticate CA-ROOT-SELF fingerprint <fingerprint>` — this avoids the interactive yes prompt — then `write memory`.
 
 ### VRF support (flat-pair)
 
