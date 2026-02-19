@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.7
+# Doc Version: v1.0.10
 # Date Modified: 2026-02-18
 #
 # - Called by: src/topogen/main.py
@@ -304,7 +304,7 @@ def _pki_client_clock_eem_lines() -> list[str]:
         "event manager environment TIME_DONE 0",
         "!",
         "event manager applet CLIENT-PKI-SET-CLOCK authorization bypass",
-        " event timer countdown time 90",
+        " event timer countdown time 300",
         " action 0.1 cli command \"enable\"",
         " action 0.2 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: executed [step 0.2]\"",
         " action 0.3 cli command \"terminal length 0\"",
@@ -429,7 +429,7 @@ def _pki_client_authenticate_eem_lines() -> list[str]:
     return [
         "!",
         "event manager applet CLIENT-PKI-AUTHENTICATE authorization bypass",
-        " event timer countdown time 95",
+        " event timer countdown time 305",
         " action 0.1 cli command \"enable\"",
         " action 0.2 cli command \"terminal length 0\"",
         " action 0.3 cli command \"show event manager environment | include TIME_DONE\"",
@@ -501,13 +501,21 @@ def _inject_pki_client_trustpoint(
     key_label: str = "CA-ROOT",
     inject_clock_eem: bool = True,
 ) -> str:
-    """Insert PKI client trustpoint block (SCEP) before final 'end'.
-    Used when --pki enabled: on non-CA routers (key_label CA-ROOT), or on CA-ROOT
-    for self-enrollment (key_label CA-ROOT-SELF). FQDN in subject-name.
-    When inject_clock_eem is True (default for clients), also inject EEM applet
-    CLIENT-PKI-SET-CLOCK so time matches CA fallback when NTP is not synced."""
+    """Insert PKI client trustpoint definition before 'crypto ikev2 proposal' and
+    EEM applets at the end of the config (before the final 'end').
+
+    Two separate injection points are required:
+    - Trustpoint definition BEFORE 'crypto ikev2 proposal': IOS-XE processes startup
+      config sequentially and silently rejects forward references to undefined trustpoints,
+      so the trustpoint must be defined before the IKEv2 profile references it.
+    - EEM applets LAST (before final 'end'): each EEM applet's closing 'end' exits
+      IOS-XE global config mode. If placed before interface/routing/crypto sections,
+      those sections are never loaded from startup config.
+
+    Falls back to before 'end' for the trustpoint when no IKEv2 section is present.
+    """
     fqdn = f"{hostname}.{domainname}"
-    block = [
+    trustpoint_block = [
         "!",
         f"do clock set {_pki_clock_set_today()}",
         "!",
@@ -529,17 +537,33 @@ def _inject_pki_client_trustpoint(
         "alias configure authc crypto pki authenticate CA-ROOT-SELF",
         "!",
     ]
-    if inject_clock_eem:
-        block = block + _pki_client_clock_eem_lines()
-        block = block + _pki_client_authenticate_eem_lines()
     lines = rendered.splitlines()
+    # Inject trustpoint before "crypto ikev2 proposal" (forward reference fix).
+    # Fall back to before "end" when no IKEv2 section is present.
     try:
-        end_idx = next(
-            i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+        inject_idx = next(
+            i for i, line in enumerate(lines)
+            if line.strip().startswith("crypto ikev2 proposal")
         )
-        lines[end_idx:end_idx] = block
     except StopIteration:
-        lines.extend(block)
+        try:
+            inject_idx = next(
+                i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+            )
+        except StopIteration:
+            inject_idx = len(lines)
+    lines[inject_idx:inject_idx] = trustpoint_block
+    # Inject EEM applets LAST (before final 'end') so their closing 'end' lines
+    # do not exit global config mode before interfaces/routing/crypto are applied.
+    if inject_clock_eem:
+        eem_block = _pki_client_clock_eem_lines() + _pki_client_authenticate_eem_lines()
+        try:
+            end_idx = next(
+                i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+            )
+            lines[end_idx:end_idx] = eem_block
+        except StopIteration:
+            lines.extend(eem_block)
     return "\n".join(lines)
 
 

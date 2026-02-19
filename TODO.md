@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.1
-Date Modified: 2026-02-16
+Doc Version: v1.6.2
+Date Modified: 2026-02-18
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -45,9 +45,6 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Current work
 
-### DMVPN IKEv2 PKI — not working yet
-- DMVPN with `--dmvpn-security ikev2-pki` and `--pki`: IKEv2 SAs do not form; tunnels do not come up. Needs troubleshooting (enrollment, certs, clock, or profile/config).
-
 ### EEM scripts (PKI) — working status
 
 Script bodies live in `examples/`. Check off when confirmed working on device.
@@ -56,7 +53,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 |-------------|--------------|---------|
 | CA-ROOT-SET-CLOCK | `examples/eem-ca-root-set-clock.txt` | [x] |
 | CLIENT-PKI-SET-CLOCK | `examples/eem-client-pki-set-clock.txt` | [x] |
-| CLIENT-PKI-AUTHENTICATE | `examples/eem-client-pki-authenticate.txt` | [ ] |
+| CLIENT-PKI-AUTHENTICATE | `examples/eem-client-pki-authenticate.txt` | [ ] (structurally fixed v1.0.9; timing-dependent — fires at 305 s; manual `authc` if CA-ROOT misses window) |
 | CLIENT-PKI-CHAIN | `examples/eem-client-pki-chain.txt` | [ ] |
 | AUTO-AUTH | `examples/eem-auto-auth.txt` | [ ] |
 | CLIENT-PKI-ENROLL | `examples/eem-client-pki-enroll.txt` | [ ] |
@@ -81,6 +78,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] DMVPN IKEv2 PKI validated (`--dmvpn-security ikev2-pki` + `--pki`): IKEv2 rsa-sig tunnels come up; flat, flat-pair underlays confirmed; EEM applets structurally fixed (injected last, before final `end`); timers 300 s/305 s; manual `authc` is workaround when CA-ROOT timing misses auto-enrollment window (see CHANGES.md v1.2.2–v1.2.4)
 - [x] DMVPN with PKI authentication: `--dmvpn-security ikev2-pki` (requires `--pki`); IKEv2 rsa-sig + pki trustpoint CA-ROOT-SELF in iosv-dmvpn/csr-dmvpn; online DMVPN injects PKI client when --pki (see CHANGES.md)
 - [x] feat/pki-ca: single root CA router for DMVPN PKI (merged; see CHANGES.md)
 - [x] Offline-to-CML import: `--import-yaml`, `--import`, `--up`, `--print-up-cmd`, non-blocking `--start` (see CHANGES.md)
