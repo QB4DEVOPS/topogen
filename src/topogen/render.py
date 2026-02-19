@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.10
-# Date Modified: 2026-02-18
+# Doc Version: v1.0.11
+# Date Modified: 2026-02-19
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -2404,11 +2404,10 @@ class Renderer:
         num_oob_sw = 0
         oob_per_sw_counts: list[int] = []
         if enable_mgmt:
-            num_oob_sw = num_access  # Match the number of NBMA switches
-            # Precompute how many routers per OOB access switch
-            # In flat-pair, routers are paired (total_endpoints is the pair count)
-            # But we connect ALL routers to mgmt, so use total_routers
+            # OOB connects ALL routers (not just DMVPN endpoints), so size based on total_routers
             from math import ceil
+            num_oob_sw = ceil(total_routers / oob_group)
+            # Precompute how many routers per OOB access switch
             routers_per_oob = ceil(total_routers / num_oob_sw)
             for i in range(num_oob_sw):
                 start = i * routers_per_oob
