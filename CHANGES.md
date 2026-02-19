@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.4
-Date Modified: 2026-02-18
+Doc Version: v1.2.5
+Date Modified: 2026-02-19
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,8 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(dmvpn): OOB switch overflow in `offline_dmvpn_flat_pair_yaml` — `num_oob_sw` was set to `num_access` (NBMA switch count, based on odd routers only), but OOB connects ALL routers; with large labs (e.g. 200 nodes, group=20) each OOB access switch got 40 routers + 1 uplink = 41 ports, exceeding the CML `unmanaged_switch` 32-port cap; fix: `num_oob_sw = ceil(total_routers / oob_group)` so OOB switches are sized by total router count
+    - Files: src/topogen/render.py (rev v1.0.10 → v1.0.11), CHANGES.md (rev v1.2.4 → v1.2.5)
   - fix(dmvpn): EEM CLIENT-PKI-SET-CLOCK and CLIENT-PKI-AUTHENTICATE timers increased from 90 s/95 s to 300 s/305 s to give CA-ROOT sufficient time to boot and start its PKI server before spoke enrollment attempts; if CA-ROOT is not reachable when the timer fires, manual `authc` is the workaround
     - Files: src/topogen/render.py (rev v1.0.9 → v1.0.10), CHANGES.md (rev v1.2.3 → v1.2.4)
   - fix(dmvpn): EEM applets now injected LAST in startup config (before final `end`), after all interface/routing/crypto sections — previously EEM applets were placed before the IKEv2/interface/routing sections, and each applet's closing `end` exits IOS-XE global config mode, causing everything after the first EEM `end` to be silently ignored at boot (interfaces never came up, no IPs assigned, no EIGRP/DMVPN)
