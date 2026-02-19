@@ -1,5 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.0.1
+# Date Modified: 2026-02-16
 #
 # - Called by: pip/uv installers, build tools (hatchling), package managers (PyPI)
 # - Reads from: Project metadata, dependency specs, entry point definitions

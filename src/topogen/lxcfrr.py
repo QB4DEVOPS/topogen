@@ -1,4 +1,11 @@
 """
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.1
+Date Modified: 2026-02-16
+
+- Called by: render.py
+- Purpose: LXC FRR boot script generator for FRRouting containers
+
 TopoGen LXC FRR Configuration - FRRouting Container Boot Script Generator
 
 PURPOSE:

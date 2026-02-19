@@ -1,5 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.1.2
+# Date Modified: 2026-02-18
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -209,9 +210,16 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "--dmvpn-security",
         dest="dmvpn_security",
         type=str,
-        choices=("none", "ikev2-psk"),
+        choices=("none", "ikev2-psk", "ikev2-pki", "ikev2-rsa"),
         default="none",
-        help='DMVPN security/profile, default "%(default)s"',
+        help='DMVPN security: none, ikev2-psk (requires --dmvpn-psk), ikev2-pki (requires --pki), ikev2-rsa (PKI/cert, requires --dmvpn-trustpoint), default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-trustpoint",
+        dest="dmvpn_trustpoint",
+        type=str,
+        default="CA-ROOT-SELF",
+        help="DMVPN IKEv2 PKI trustpoint name (used when --dmvpn-security ikev2-rsa), default CA-ROOT-SELF",
     )
     parser.add_argument(
         "--dmvpn-psk",
@@ -372,7 +380,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="ntp_vrf",
         type=str,
         default=None,
-        help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
+        help="VRF for NTP (e.g. Mgmt-vrf). Omit for global. With --mgmt, default is mgmt VRF unless --ntp-inband.",
     )
     parser.add_argument(
         "--ntp-inband",
@@ -546,6 +554,9 @@ def main():
     """main function, returns 0 on success, 1 otherwise"""
     parser = create_argparser()
     args = parser.parse_args()
+    # Default lab name: when generating offline YAML and user did not pass -L, use filename (no path, no extension); otherwise "topogen lab" (e.g. online).
+    if getattr(args, "offline_yaml", None) and getattr(args, "labname", None) == "topogen lab":
+        args.labname = os.path.splitext(os.path.basename(args.offline_yaml))[0]
     setup_logging(args.loglevel)
 
     def parse_dmvpn_hubs(value: str | None) -> list[int] | None:
@@ -583,6 +594,12 @@ def main():
             psk = getattr(args, "dmvpn_psk", None)
             if not psk or not str(psk).strip():
                 parser.error("--dmvpn-security ikev2-psk requires --dmvpn-psk <key>")
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-pki":
+            if not getattr(args, "pki_enabled", False):
+                parser.error("--dmvpn-security ikev2-pki requires --pki")
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-rsa":
+            if not getattr(args, "dmvpn_trustpoint", "").strip():
+                parser.error("--dmvpn-security ikev2-rsa requires --dmvpn-trustpoint (e.g. CA-ROOT-SELF)")
 
         # DMVPN flat-pair uses odd routers as DMVPN endpoints. If hubs are not
         # provided, default to the first 3 endpoint routers (R1,R3,R5), or fewer

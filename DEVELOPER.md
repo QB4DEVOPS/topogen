@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.4.2
+Doc Version: v1.7.2
+Date Modified: 2026-02-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -273,6 +274,8 @@ Pitfall:
 - `src/topogen/templates/*.jinja2`: emitted device configuration (what nodes boot with)
 
 - `README.md`: user-facing CLI contract and examples
+
+- **DMVPN node count:** In DMVPN mode (default, no `--dmvpn-hubs`), `nodes` is the number of **spokes**; R1 is the hub. So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers). See README for `--dmvpn-hubs` and flat-pair semantics.
 
 - `CHANGES.md`: what changed between released versions
 
@@ -725,81 +728,160 @@ See `examples/eem-client-pki-authenticate.txt` and `examples/eem-test-pki-authen
 
 
 
-### Document Versioning (MANDATORY)
+### AI Onboarding: Doc Version & Commit Rules (Mandatory)
 
-**IMPORTANT**: Every documentation file must include a `Doc Version` in its file chain header.
+> **This section is normative. All AI-generated and human-generated changes MUST follow these rules.**
 
-**Format**: `Doc Version: v{major}.{minor}.{patch}` (semantic versioning)
+#### Definition: versioned file
 
-**Versioning Rules** (based on conventional commits):
-- **MAJOR** (v1.0.0 → v2.0.0): Breaking changes to documentation structure or format
-  - Triggered by: Commits with `BREAKING CHANGE:` in footer, or `!` after type (e.g., `docs!:`)
-  - Example: Restructuring file chain format, removing sections, changing header structure
+A **versioned file** is any file that contains a line matching:
 
-- **MINOR** (v1.0.0 → v1.1.0): New content, features, or sections
-  - Triggered by: `feat(scope):` commits
-  - Example: Adding new sections, new features documentation, new examples
-
-- **PATCH** (v1.0.0 → v1.0.1): Corrections, clarifications, or non-breaking updates
-  - Triggered by: `fix(scope):`, `docs(scope):`, `chore(scope):` commits
-  - Example: Typo fixes, clarifications, reformatting, minor updates
-
-**Commit Message Examples**:
-```bash
-# PATCH bump (v1.0.0 → v1.0.1)
-docs(developer): fix typo in versioning section
-docs(readme): clarify installation steps
-chore(tested): update Python version to 3.12.1
-
-# MINOR bump (v1.0.0 → v1.1.0)
-feat(developer): add PKI architecture section
-feat(tested): add new CML 2.8.0 validation results
-
-# MAJOR bump (v1.0.0 → v2.0.0)
-docs(developer)!: restructure file chain header format
-
-BREAKING CHANGE: File chain format now requires blast radius field
+```
+Doc Version: vMAJOR.MINOR.PATCH
 ```
 
-**File Examples**:
+in the base branch **or** in the proposed change.
 
-Markdown files:
+#### Mandatory invariants
+
+1. **If a versioned file changes, its Doc Version MUST change in the same commit/PR.**
+2. **Doc Version MUST NOT decrease.**
+3. **Exactly one `Doc Version:` line is allowed per file.**
+4. **The `Doc Version:` line MUST NOT be removed.**
+5. **Valid format is required:**
+
+   ```
+   Doc Version: v<major>.<minor>.<patch>
+   ```
+
+   (no suffixes, prefixes, or extra text)
+
+If any invariant is violated, the change is invalid.
+
+#### Choosing the bump
+
+- **PATCH** — wording changes, clarifications, formatting, examples, small fixes
+- **MINOR** — new sections, new rules, workflow-affecting clarifications
+- **MAJOR** — rule changes that invalidate prior assumptions
+
+**If unsure, bump PATCH.**
+
+#### Commit message requirements (mandatory)
+
+If a commit or PR changes one or more versioned files, the **commit message MUST include the Doc Version change(s)**.
+
+**Required format (one line per file):**
+
+```
+<file>: vOLD → vNEW
+```
+
+**Examples:**
+
+```
+docs(developer): tighten doc version enforcement
+DEVELOPER.md: v1.4.2 → v1.5.0
+```
+
+```
+docs(readme): clarify install steps
+README.md: v1.3.4 → v1.3.5
+```
+
+If multiple versioned files are changed, list **each file on its own line**.
+
+**Prohibited:**
+
+- Changing a versioned file without mentioning its version bump in the commit message
+- Mentioning a version bump that does not appear in the diff
+- Rolling back a Doc Version in either the file or the commit message
+
+#### Same-diff requirement (explicit)
+
+The Doc Version bump **must appear in the same diff** as the content change.
+Follow-up commits or separate PRs to "fix the version" are not allowed.
+
+#### Required self-checks (AI and human)
+
+Before finalizing a change that touches a versioned file:
+
+1. **Verify the diff shows the version change**
+
+   ```bash
+   git diff HEAD -- <file> | grep 'Doc Version:'
+   ```
+
+   The output **must show both**:
+
+   - the old `Doc Version:` line (removed), and
+   - the new `Doc Version:` line (added).
+
+2. **Verify the commit message includes the version delta**
+
+   ```
+   <file>: vOLD → vNEW
+   ```
+
+If either check fails, the change is invalid.
+
+#### Enforcement
+
+These rules are **enforced by CI** (or will be). Any PR that violates them will fail and must be corrected before merge.
+
+> **Intent does not override enforcement.**
+> A change that fails CI is considered incomplete, regardless of author (human or AI).
+
+#### Copy-paste rule summary (for automation)
+
+```
+- Versioned file changed ⇒ Doc Version must change in same diff
+- Never decrease or remove Doc Version
+- Exactly one Doc Version line per file
+- Commit message must include: <file>: vOLD → vNEW
+- If unsure, bump PATCH
+```
+
+---
+
+### Document Versioning — format and examples
+
+See **AI Onboarding** above for invariants and enforcement. Below: format and file-style reference.
+
+**Format**: `Doc Version: v{major}.{minor}.{patch}` (semantic versioning). **Date Modified**: On the line immediately below `Doc Version:`, include `Date Modified: YYYY-MM-DD` (ISO date when the file was last substantively changed).
+
+**File examples** (comment syntax by type):
+
+Markdown:
 ```markdown
 <!--
 File Chain (see DEVELOPER.md):
 Doc Version: v1.0.0
+Date Modified: YYYY-MM-DD
 
 - Called by: ...
 -->
 ```
 
-Python/TOML files:
+Python/TOML:
 ```python
 # File Chain (see DEVELOPER.md):
 # Doc Version: v1.0.0
+# Date Modified: YYYY-MM-DD
 #
 # - Called by: ...
 ```
 
-Jinja2 templates:
+Jinja2:
 ```jinja2
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0
+# Doc Version: v1.0.0
+# Date Modified: YYYY-MM-DD
 #
 # - Called by: ...
 #}
 ```
 
-**Workflow**:
-1. Make your documentation changes
-2. Bump the version number (minor or major)
-3. Commit with message like `docs(readme): add usage examples (v1.0 → v1.1)`
-
-**Why mandatory**:
-- AI can track document evolution
-- Reviewers know if changes are significant
-- Version conflicts become visible
-- Documentation gets same rigor as code
+**Conventional-commit bump triggers** (reference): PATCH — `fix:`, `docs:`, `chore:`; MINOR — `feat:`; MAJOR — `BREAKING CHANGE:` or `!` after type.
 
 
 
@@ -1218,6 +1300,8 @@ Online (basic smoke checks once routers boot):
   - Prefer squash-merge to keep history clean.
 
   - After merge: sync `main` locally and delete the feature branch.
+
+- **After push: validate CI.** Open the repository’s **Actions** tab on GitHub (or the commit/PR page) and confirm the workflow run for your push **succeeded** (all jobs green). If it failed, view or download the run log from that run to diagnose.
 
 - Interaction preference:
 

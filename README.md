@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.4
+Doc Version: v1.4.3
+Date Modified: 2026-02-18
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -316,7 +317,7 @@ There are three modes available right now:
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
 - `dmvpn`: hub-and-spoke DMVPN topology.
-  - Default behavior: `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
+  - Default behavior: `nodes` is the number of **spokes** (R1 is hub; R2.. are spokes). So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers).
   - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
     - When `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (`R1..R<nodes>`).
     - **Important:** `--dmvpn-hubs` is a comma-separated *list of router numbers*, not a hub count. For example, `--dmvpn-hubs 3` means **R3 is the (only) hub**, not "3 hubs".
@@ -331,6 +332,11 @@ There are three modes available right now:
     - Requires `--dmvpn-psk <key>`.
     - Uses IPsec transport mode with `tunnel protection ipsec profile ...` on `Tunnel0`.
     - **Important:** if you set `--dmvpn-security ikev2-psk` but omit `--dmvpn-psk`, TopoGen exits with an error.
+  - Optional: set `--dmvpn-security ikev2-pki` to protect DMVPN with IKEv2 and certificate-based auth (PKI).
+    - Requires `--pki` (adds CA-ROOT and injects trustpoint CA-ROOT-SELF on non-CA routers).
+    - IKEv2 profile uses `authentication local rsa-sig` / `authentication remote rsa-sig` and `pki trustpoint CA-ROOT-SELF`.
+    - **Important:** if you set `--dmvpn-security ikev2-pki` but omit `--pki`, TopoGen exits with an error.
+    - **Note:** DMVPN with IKEv2 PKI is not yet validated; tunnels may not come up (IKEv2 SA / enrollment troubleshooting in progress).
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)
@@ -393,6 +399,32 @@ topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --
 
 ```powershell
 topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-hubs 1,3,5 --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-psk --dmvpn-psk "topogen123" --mgmt --mgmt-bridge --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-3H-P3-EIGRP-MGMT-BRIDGE-N20.yaml --overwrite 20
+```
+
+- Offline YAML (DMVPN with IKEv2 PKI): 4 routers (1 hub + 3 spokes), cert-based auth; requires `--pki` (CA-ROOT + client trustpoints).
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-security ikev2-pki --pki --offline-yaml out\IOSXE-DMVPN-IKEV2-PKI-N4.yaml --overwrite 4
+```
+
+- Offline YAML (DMVPN Phase 3, IKEv2 PKI, 1 hub + 10 spokes): Flat underlay, lab name matches filename. Bring up CA-ROOT first, then R1 (hub), then R2..R11 (see **DMVPN with IKEv2 PKI: bring-up order** above).
+
+```powershell
+# IOSv (lab title = DMVPN-P3-IOSv-11)
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-IOSv-11" --offline-yaml out/DMVPN-P3-IOSv-11.yaml --overwrite 11
+
+# CSR (lab title = DMVPN-P3-CSR-11)
+topogen -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-CSR-11" --offline-yaml out/DMVPN-P3-CSR-11.yaml --overwrite 11
+```
+
+- Offline YAML (DMVPN Phase 3, IKEv2 PKI, flat-pair underlay, 10 total routers): odd routers (R1,R3,R5,R7,R9) are DMVPN endpoints; even routers (R2,R4,R6,R8,R10) are pair partners with no DMVPN. R1 is hub. CA-ROOT added automatically by `--pki`.
+
+```powershell
+# IOSv flat-pair PKI
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --mgmt-bridge --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-PKI-FP-10-OOB-EXT-IOSv-v1" --offline-yaml "out/DMVPN-P3-PKI-FP-10-OOB-EXT-IOSv-v1.yaml" --overwrite 10
+
+# CSR flat-pair PKI
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --device-template csr1000v --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --mgmt-bridge --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-PKI-FP-10-OOB-EXT-CSR-v1" --offline-yaml "out/DMVPN-P3-PKI-FP-10-OOB-EXT-CSR-v1.yaml" --overwrite 10
 ```
 
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
@@ -544,15 +576,23 @@ Generated by topogen v0.2.4 (offline YAML) | args: nodes=3 -m flat -T iosv-eigrp
 
 Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are recorded even when not passed explicitly, making the string self-contained for regeneration.
 
-**PKI:** PKI (CA-ROOT / feat/pki-ca) is currently broken. Do not rely on it until fixed.
+**PKI:** PKI (CA-ROOT) is validated. DMVPN with `--dmvpn-security ikev2-pki` and `--pki` brings up tunnels with IKEv2 certificate-based authentication. Manual certificate enrollment is required on first boot (see **PKI client EEM** below).
 
 **CA server boot order:** When using `--pki`, bring the CA-ROOT node online first. Once the root CA is available (certificate server enabled), start the rest of the lab (R1..R*n*). Clients need the CA to be up for SCEP enrollment and authentication.
+
+**DMVPN with IKEv2 PKI: bring-up order** — For DMVPN labs using `--dmvpn-security ikev2-pki` and `--pki`, start nodes in this order so crypto and NHRP come up cleanly:
+
+1. **CA-ROOT** — Start the CA node and wait until the PKI server is enabled (e.g. "Certificate server now enabled" or CA self-enrollment complete). The CA must be reachable (e.g. at 10.10.255.254) for SCEP before any router enrolls.
+2. **R1 (hub)** — Start the hub. EEM auto-enrollment fires at 300 s; if CA-ROOT is not ready in time, authenticate manually: `configure terminal` → `authc` → `yes` → `end` → `write memory`. (See **PKI client EEM** below.)
+3. **Spokes (R2, R3, …)** — Start spokes in any order. Get the CA fingerprint from R1 (or CA-ROOT) after R1 has authenticated. On each spoke, from exec run `crypto pki authenticate CA-ROOT-SELF fingerprint <fingerprint>`, then `write memory` — no interactive yes required.
+
+Use `--mgmt` for OOB SSH; use `--mgmt-vrf global` to keep management in the global routing table. For step-by-step troubleshooting (clock, certificates, IKEv2), see [docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md](docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md).
 
 **PKI and clock:** PKI uses the `do` command to set the clock (e.g. `do clock set ...`) in the generated config so the device clock is authoritative before the CA starts and clients enroll. That speeds up PKI by avoiding certificate validity failures due to an unsynced or default clock. For labs where you prefer to rely on NTP or external automation for time, a future `--clock-set` option may allow disabling this behavior (see TODO.md).
 
 **PKI and DMVPN flat-pair:** In DMVPN with `--dmvpn-underlay flat-pair`, even routers (R2, R4, …) have no link to the NBMA/10.10.0.0 network; they are only connected to their odd partner. The CA-ROOT is on the NBMA network. So **even routers cannot reach the CA and do not get certificates**; only odd routers (DMVPN endpoints) can enroll. This is by design. Use OOB management (e.g. `--mgmt`) if even routers need to reach NTP or other services.
 
-**PKI client EEM:** The client EEM applet that is intended to run NTP sync check then `crypto pki authenticate` and `write memory` (see `examples/eem-client-pki-authenticate-ntp.txt`) does not work reliably. Client enrollment is not automated; use manual `crypto pki authenticate` and `write memory` on clients, or other automation.
+**PKI client EEM:** Both EEM applets are structurally fixed and registered at boot. `CLIENT-PKI-SET-CLOCK` fires at 300 s; `CLIENT-PKI-AUTHENTICATE` fires at 305 s. If CA-ROOT is not reachable when the timer fires (e.g. still booting), automated enrollment is skipped for that boot and manual authentication is required. On any router, run `configure terminal` → `authc` → `yes` → `end` → `write memory`. To skip the interactive prompt, run from exec: `crypto pki authenticate CA-ROOT-SELF fingerprint <fingerprint>` then `write memory`.
 
 ### VRF support (flat-pair)
 

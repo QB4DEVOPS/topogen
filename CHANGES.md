@@ -1,6 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.7
+Doc Version: v1.2.4
+Date Modified: 2026-02-18
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -19,6 +20,23 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(dmvpn): EEM CLIENT-PKI-SET-CLOCK and CLIENT-PKI-AUTHENTICATE timers increased from 90 s/95 s to 300 s/305 s to give CA-ROOT sufficient time to boot and start its PKI server before spoke enrollment attempts; if CA-ROOT is not reachable when the timer fires, manual `authc` is the workaround
+    - Files: src/topogen/render.py (rev v1.0.9 → v1.0.10), CHANGES.md (rev v1.2.3 → v1.2.4)
+  - fix(dmvpn): EEM applets now injected LAST in startup config (before final `end`), after all interface/routing/crypto sections — previously EEM applets were placed before the IKEv2/interface/routing sections, and each applet's closing `end` exits IOS-XE global config mode, causing everything after the first EEM `end` to be silently ignored at boot (interfaces never came up, no IPs assigned, no EIGRP/DMVPN)
+    - Root cause: `_inject_pki_client_trustpoint` built one combined block (trustpoint definition + EEM applets) and injected it before `crypto ikev2 proposal`; EEM applet `end` closes the applet submode and exits global config, so all subsequent config (IKEv2, interfaces, routing) was lost
+    - Fix: split into two injection points — trustpoint definition still injected before `crypto ikev2 proposal` (forward-reference fix from v1.0.8), EEM applets now injected in a separate pass before the final `end`
+    - Files: src/topogen/render.py (rev v1.0.8 → v1.0.9), CHANGES.md (rev v1.2.2 → v1.2.3)
+  - fix(dmvpn): IKEv2 PKI trustpoint injection order — `crypto pki trustpoint CA-ROOT-SELF` now injected BEFORE `crypto ikev2 proposal` so IOS-XE does not reject the forward reference to the undefined trustpoint at boot; fixes `pki trustpoint CA-ROOT-SELF` being silently dropped from the IKEv2 profile in running-config on all routers
+    - Root cause: `_inject_pki_client_trustpoint` was injecting before `end` (end of config), placing the trustpoint definition after the IKEv2 profile that referenced it; IOS-XE processes startup config sequentially and silently drops `pki trustpoint` references to trustpoints not yet defined
+    - Fix: injection point changed to before `crypto ikev2 proposal` when present, falling back to before `end`
+    - Files: src/topogen/render.py (rev v1.0.7 → v1.0.8), CHANGES.md (rev v1.2.1 → v1.2.2)
+  - feat(dmvpn): add DMVPN IKEv2 PKI (certificate-based auth)
+    - `--dmvpn-security ikev2-pki`: IKEv2 with RSA-sig auth using trustpoint CA-ROOT-SELF (requires `--pki`)
+    - CLI: add `ikev2-pki` to `--dmvpn-security` choices; validate `ikev2-pki` requires `--pki`
+    - Templates: iosv-dmvpn and csr-dmvpn emit IKEv2 profile with `authentication local rsa-sig`, `authentication remote rsa-sig`, `pki trustpoint CA-ROOT-SELF`; no keyring
+    - Online DMVPN: inject PKI client trustpoint on non-CA routers when `--pki` (flat and flat-pair)
+    - Offline DMVPN: args_bits include `--pki` when pki_enabled for lab description
+    - Files: src/topogen/main.py, src/topogen/render.py, src/topogen/templates/csr-dmvpn.jinja2 (rev v1.1.0), src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.1.0), README.md (rev v1.4.0), CHANGES.md (rev v1.1.8), TODO.md (rev v1.5.3), DEVELOPER.md (rev v1.4.3)
   - feat(import): add offline-to-CML import workflow
     - `--import-yaml FILE`: path to existing offline YAML (skip generation); use with `--import`
     - `--import`: import the generated or specified YAML into CML via virl2_client (requires `--offline-yaml` or `--import-yaml`)

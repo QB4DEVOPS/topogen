@@ -1,5 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.1.2
+# Date Modified: 2026-02-18
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, dmvpn settings, feature flags: mgmt, ntp)
@@ -56,6 +57,54 @@ crypto ipsec profile TOPGEN-IPSEC
  set transform-set TOPGEN-TS
  set ikev2-profile TOPGEN-IKEV2
 !
+{%- elif dmvpn_security == "ikev2-pki" %}
+!
+crypto ikev2 proposal TOPGEN-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy TOPGEN-POL
+ proposal TOPGEN-PROP
+!
+crypto ikev2 profile TOPGEN-IKEV2
+ match identity remote fqdn domain {{ config.domainname }}
+ identity local fqdn {{ node.hostname }}.{{ config.domainname }}
+ authentication remote rsa-sig
+ authentication local rsa-sig
+ pki trustpoint {{ dmvpn_trustpoint }}
+!
+crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile TOPGEN-IPSEC
+ set transform-set TOPGEN-TS
+ set ikev2-profile TOPGEN-IKEV2
+!
+{%- elif dmvpn_security == "ikev2-rsa" %}
+!
+crypto ikev2 proposal TOPGEN-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy TOPGEN-POL
+ proposal TOPGEN-PROP
+!
+crypto ikev2 profile TOPGEN-IKEV2
+ match identity remote fqdn domain {{ config.domainname }}
+ identity local fqdn {{ node.hostname }}.{{ config.domainname }}
+ authentication remote rsa-sig
+ authentication local rsa-sig
+ pki trustpoint {{ dmvpn_trustpoint }}
+!
+crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile TOPGEN-IPSEC
+ set transform-set TOPGEN-TS
+ set ikev2-profile TOPGEN-IKEV2
+!
 {%- endif %}
 !
 {%- set ns = namespace(nbma=None, tun=None, pair=None) %}
@@ -100,11 +149,12 @@ interface Tunnel0
   tunnel key {{ dmvpn_tunnel_key }}
   tunnel mode gre multipoint
  ip nhrp network-id 10
-{%- if dmvpn_security == "ikev2-psk" %}
+{%- if dmvpn_security == "ikev2-psk" or dmvpn_security == "ikev2-pki" or dmvpn_security == "ikev2-rsa" %}
  tunnel protection ipsec profile TOPGEN-IPSEC
 {%- endif %}
 {%- if is_hub %}
-{%- if (dmvpn_phase|default(2)) == 3 %}
+ ip nhrp map multicast dynamic
+{%- if ((dmvpn_phase|default(2))|int) == 3 %}
  ip nhrp redirect
 {%- endif %}
  {%- if not dmvpn_vrf %}
@@ -115,7 +165,7 @@ interface Tunnel0
  ip nhrp map multicast {{ hub.hub_nbma_ip }}
 {%- endfor %}
 {%- else %}
-{%- if (dmvpn_phase|default(2)) == 3 %}
+{%- if ((dmvpn_phase|default(2))|int) == 3 %}
  ip nhrp shortcut
 {%- endif %}
 {%- for hub in hub_info %}

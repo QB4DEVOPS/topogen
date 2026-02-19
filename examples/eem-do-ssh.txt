@@ -1,5 +1,6 @@
 ! File Chain (see DEVELOPER.md):
-! Doc Version: v1.0.0
+! Doc Version: v1.0.1
+! Date Modified: 2026-02-16
 !
 ! - Called by: Operators pasting config onto routers (e.g. CSR1000v)
 ! - Reads from: CLI (show run | inc crypto pki trustpoint TP-self-signed), interactive prompts (zeroize, remove trustpoint)
