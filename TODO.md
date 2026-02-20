@@ -274,6 +274,12 @@ Recent completions:
   - Example: generate `topogen ... --offline-yaml out/lab.yaml --print-up-cmd`, then deploy with `topogen --up out/lab.yaml`.
   - Blast radius: main.py (argparse + dispatch).
 
+- [ ] Add `--blank` flag: topology only, no/minimal node config (medium effort).
+  - Why: Generated lab has nodes with empty/default config so that after import to CML, CML's **Bootstrap Lab** (Workbench → Lab → Bootstrap Lab) can run and generate stub configs (hostname, interface up, default users). Without --blank, TopoGen injects full configs and Bootstrap Lab will not run.
+  - Behavior: When `--blank`, emit topology (nodes, links) but omit or minimalize node configuration (routers, CA, etc.) so CML treats nodes as "blank" and Bootstrap Lab is eligible.
+  - Blast radius: main.py (argparse), render.py (~18 sites where node config is set: online flat/flat-pair/dmvpn, offline YAML for same modes).
+  - LoE note: AI implementation ~45–60 min (add flag, thread through renderer, gate each config assignment); user testing required (import to CML, run Bootstrap Lab) to validate.
+
 - [ ] Trim and reorganize README.md for readability (low effort).
   - Why: README has grown large with inline help output, detailed examples, and mixed audiences (end-users vs contributors). Makes it harder to scan and find what you need.
   - Options: (a) Move contributor/developer content to DEVELOPER.md, (b) Collapse verbose sections behind summary headings, (c) Replace inline `--help` block with a link (pairs with the help-drift item above).
