@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.11
+# Doc Version: v1.0.12
 # Date Modified: 2026-02-19
 #
 # - Called by: src/topogen/main.py
@@ -196,8 +196,21 @@ def _init_client_from_args(args: Namespace) -> ClientLibrary:
         os.stat(args.cafile)
     except (FileNotFoundError, TypeError):
         cainfo = not args.insecure
+    url = os.environ.get("VIRL2_URL")
+    username = os.environ.get("VIRL2_USER")
+    password = os.environ.get("VIRL2_PASS")
+    if not url or not username or not password:
+        raise TopogenError(
+            "Online mode requires VIRL2_URL, VIRL2_USER, VIRL2_PASS set in this shell. "
+            "Example (PowerShell): $env:VIRL2_URL='https://192.168.1.164'; $env:VIRL2_USER='admin'; $env:VIRL2_PASS='yourpass'; topogen ..."
+        )
     try:
-        client = ClientLibrary(ssl_verify=cainfo)
+        client = ClientLibrary(
+            url=url,
+            username=username,
+            password=password,
+            ssl_verify=cainfo,
+        )
         if not client.is_system_ready():
             raise TopogenError("system is not ready")
         return client
@@ -205,7 +218,7 @@ def _init_client_from_args(args: Namespace) -> ClientLibrary:
         raise TopogenError("no connection: " + str(exc)) from None
     except InitializationError as exc:
         raise TopogenError(
-            "no env provided, need VIRL2_URL, VIRL2_USER and VIRL2_PASS"
+            "CML client init failed. Check VIRL2_URL, VIRL2_USER, VIRL2_PASS are set in this shell. Details: " + str(exc)
         ) from exc
 
 
@@ -681,8 +694,21 @@ class Renderer:
             # cafile to None when args.insecure is set.
             cainfo = not self.args.insecure
 
+        url = os.environ.get("VIRL2_URL")
+        username = os.environ.get("VIRL2_USER")
+        password = os.environ.get("VIRL2_PASS")
+        if not url or not username or not password:
+            raise TopogenError(
+                "Online mode requires VIRL2_URL, VIRL2_USER, VIRL2_PASS set in this shell. "
+                "Example (PowerShell): $env:VIRL2_URL='https://192.168.1.164'; $env:VIRL2_USER='admin'; $env:VIRL2_PASS='yourpass'; topogen ..."
+            )
         try:
-            client = ClientLibrary(ssl_verify=cainfo)
+            client = ClientLibrary(
+                url=url,
+                username=username,
+                password=password,
+                ssl_verify=cainfo,
+            )
             if not client.is_system_ready():
                 raise TopogenError("system is not ready")
             return client
@@ -690,7 +716,7 @@ class Renderer:
             raise TopogenError("no connection: " + str(exc)) from None
         except InitializationError as exc:
             raise TopogenError(
-                "no env provided, need VIRL2_URL, VIRL2_USER and VIRL2_PASS"
+                "CML client init failed. Check VIRL2_URL, VIRL2_USER, VIRL2_PASS are set in this shell. Details: " + str(exc)
             ) from exc
 
     @staticmethod
@@ -1039,6 +1065,7 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             if cmlnode is None:
                 continue
@@ -1276,6 +1303,7 @@ class Renderer:
                     dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                     dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                    archive=getattr(self.args, "archive", False),
                 )
                 if getattr(self.args, "pki_enabled", False):
                     ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -1289,6 +1317,7 @@ class Renderer:
                     date=datetime.now(timezone.utc),
                     origin="",
                     eigrp_stub=stub_evens,
+                    archive=getattr(self.args, "archive", False),
                 )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
@@ -1478,6 +1507,7 @@ class Renderer:
                 dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                 dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                archive=getattr(self.args, "archive", False),
             )
             if getattr(self.args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -1651,6 +1681,7 @@ class Renderer:
                 node=node,
                 date=datetime.now(timezone.utc),
                 origin="",
+                archive=getattr(self.args, "archive", False),
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
@@ -2075,6 +2106,7 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -2163,6 +2195,7 @@ class Renderer:
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
                 ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
             pki_config_lines = [
                 "ntp master 6",
@@ -2707,6 +2740,7 @@ class Renderer:
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
                     ntp_oob=ntp_oob_ctx,
+                    archive=getattr(args, "archive", False),
                 )
             else:
                 pair_ip = pair_ips.get(rnum - 1, (None, None))[1]
@@ -2724,6 +2758,7 @@ class Renderer:
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
                     ntp_oob=ntp_oob_ctx,
+                    archive=getattr(args, "archive", False),
                 )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
@@ -2824,6 +2859,7 @@ class Renderer:
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
                 ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # Append PKI-specific config
@@ -3102,6 +3138,10 @@ class Renderer:
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
         if getattr(args, "ntp_oob_server", None):
             args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -3297,6 +3337,7 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{g_base}.255.254:80"
@@ -3400,6 +3441,7 @@ class Renderer:
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
                 ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # CA clock EEM: one-shot 90s to set clock + ntp master if NTP not synced (so PKI server can start)
@@ -3871,6 +3913,7 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{g_base}.255.254:80"
@@ -3986,6 +4029,7 @@ class Renderer:
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
                 ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
 
             # Append PKI-specific config
@@ -4312,6 +4356,7 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
@@ -4542,6 +4587,7 @@ class Renderer:
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             node_def = getattr(self.args, "dev_template", self.args.template)
             cml2_node = self.create_node(

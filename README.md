@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.3
-Date Modified: 2026-02-18
+Doc Version: v1.4.5
+Date Modified: 2026-02-19
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -237,6 +237,8 @@ VIRL2_PASS="somepass"
 export VIRL2_URL VIRL2_USER VIRL2_PASS
 ```
 
+TopoGen reads these variables and passes them explicitly to the CML client, so setting them in the same shell session (e.g. PowerShell `$env:VIRL2_URL="https://controller"`) before running `topogen` is sufficient for online mode.
+
 In addition, a CA file in PEM format can be provided which can be used to verify
 the cert presented by the controller... The default CA file of the controller is
 included in the repo.
@@ -247,7 +249,7 @@ IP** into your hosts file).
 
 ### Tool
 
-Run the CLI with `topogen` (after install) or `python -m topogen`. The tool accepts a variety of command line switches... they are all listed by providing `-h` or `--help`:
+Run the CLI with `topogen` (after install) or `python -m topogen`. The tool accepts a variety of command line switches. Run `topogen --help` (or `python -m topogen --help`) for the full, current list of flags; the excerpt below may be outdated.
 
 ```plain
 $ topogen --help
@@ -337,6 +339,7 @@ There are three modes available right now:
     - IKEv2 profile uses `authentication local rsa-sig` / `authentication remote rsa-sig` and `pki trustpoint CA-ROOT-SELF`.
     - **Important:** if you set `--dmvpn-security ikev2-pki` but omit `--pki`, TopoGen exits with an error.
     - **Note:** DMVPN with IKEv2 PKI is not yet validated; tunnels may not come up (IKEv2 SA / enrollment troubleshooting in progress).
+  - Optional: `--archive` — enable config archive and `rundiff` alias on all IOS/IOS-XE routers in flat, flat-pair, and dmvpn modes (`archive` with `log config`, `path flash:`, `write-memory`). Omit to leave archive config out of generated configs.
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)
@@ -363,6 +366,19 @@ Examples:
 
 ```powershell
 topogen -m dmvpn -T iosv-dmvpn --device-template iosv --offline-yaml out\dmvpn-iosv.yaml 2
+```
+
+- Offline YAML (flat with PKI and archive): 4 routers + CA-ROOT; config archive and `rundiff` alias on all IOS/IOS-XE nodes.
+
+```powershell
+topogen -m flat 4 -T iosv --pki --archive --offline-yaml out\flat-pki-archive.yaml --overwrite
+```
+
+- Online (flat with PKI and archive): set `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` in the same shell, then create the lab. Use `-i` if the controller uses a self-signed cert.
+
+```powershell
+$env:VIRL2_URL = "https://192.168.1.164"; $env:VIRL2_USER = "admin"; $env:VIRL2_PASS = "yourpass"
+python -m topogen -m flat 4 -T iosv --pki --archive -i
 ```
 
 - Offline YAML (multi-hub): 60 spokes + 3 hubs (`R1,R21,R41`) = 63 routers total.
