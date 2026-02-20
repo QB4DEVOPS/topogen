@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.6
+Doc Version: v1.4.7
 Date Modified: 2026-02-19
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -19,6 +19,8 @@ Blast Radius: None (documentation only, does not affect code execution)
 This package provides a `topogen` command which can create CML2 topologies.
 It does this by using the PCL (VIRL Python Client Library) to talk to a live
 controller, creating the lab, nodes and links on the fly.
+
+**Why TopoGen:** TopoGen bridges the gap from design to a lab that [Ansible](https://www.ansible.com/), [Terraform](https://www.terraform.io/), and [pyATS](https://developer.cisco.com/docs/pyats/) can consume and take to the next step — config management, infra-as-code, or test automation.
 
 ![Demo](.images/demo.gif)
 
