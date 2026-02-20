@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.4
-Date Modified: 2026-02-19
+Doc Version: v1.6.5
+Date Modified: 2026-02-20
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -58,6 +58,18 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 | AUTO-AUTH | `examples/eem-auto-auth.txt` | [ ] |
 | CLIENT-PKI-ENROLL | `examples/eem-client-pki-enroll.txt` | [ ] |
 | do-ssh | `examples/eem-do-ssh.txt` | [ ] |
+
+### Feature: Auto-deploy PKI/certs (fix)
+
+**Goal:** CA and client certificates deploy and enroll automatically after lab start — no manual `crypto pki authenticate` and no reliance on CA-ROOT timing. Current state: manual `authc` is a workaround when CA-ROOT misses the auto-enrollment window; CA-ROOT boot has EEM and CVAC ordering issues; online flat lacks CA clock EEM.
+
+**Work items** (details in Promote to Issues):
+
+- [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block** — indent `end` actions in CA-ROOT-SET-CLOCK and CLIENT-PKI-SET-CLOCK so parser associates them with the correct if block (`_pki_ca_clock_eem_lines`, `_pki_client_clock_eem_lines` in render.py).
+- [ ] **Fix CA-ROOT boot: CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`** — reorder config so trustpoint (and key/self-enroll) exist before `ip http secure-server` / `ip http secure-server trustpoint` in all CA and client PKI blocks; remove duplicates from inline pki_config_lines.
+- [ ] **Fix next: CA-ROOT time EEM missing when lab created online** — offline flat/DMVPN/flat-pair get `_pki_ca_clock_eem_lines()`; online flat builds CA from csr-pki-ca.jinja2 only. Add CA clock EEM to online flat CA build in `render_flat_network()` (e.g. append `_pki_ca_clock_eem_lines()` before assigning `ca_router.configuration`).
+
+**Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
 
 ## Promote to Issues
 
