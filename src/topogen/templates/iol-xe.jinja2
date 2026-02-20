@@ -81,8 +81,20 @@ interface Ethernet{{ loop.index0 // 4 }}/{{ loop.index0 % 4 }}
     {%- endif %}
 !
 {%- endfor %}
+!
+{%- if archive %}
+archive
+ log config
+  logging enable
+  notify syslog contenttype plaintext
+  hidekeys
+ path flash:
+ maximum 5
+ write-memory
+!
 alias exec rundiff show archive config differences system:running-config
 !
+{%- endif %}
 line vty 0 4
     transport input ssh telnet
     exec-timeout 0 0

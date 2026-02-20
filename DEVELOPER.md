@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.2
-Date Modified: 2026-02-16
+Doc Version: v1.7.3
+Date Modified: 2026-02-19
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -913,7 +913,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.0.0
+- **Doc Version:** v1.1.3
 
 - **Called by**
 
@@ -947,7 +947,7 @@ Jinja2:
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.0.4
+- **Doc Version:** v1.0.12
 
 - **Called by**
 
@@ -959,7 +959,7 @@ Jinja2:
 
   - `Config` values (IP pools, credentials, domain)
 
-  - Online controller auth (indirectly via `virl2-client` / environment): `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS`
+  - Online controller auth: `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` from `os.environ`, passed explicitly to `ClientLibrary()`
 
 - **Writes to**
 

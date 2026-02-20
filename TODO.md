@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.2
-Date Modified: 2026-02-18
+Doc Version: v1.6.3
+Date Modified: 2026-02-19
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -78,6 +78,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] Archive config in all IOS/IOS-XE templates (feat/archive branch): archive + log config + path flash: + maximum 5 + write-memory; rundiff alias unchanged.
 - [x] DMVPN IKEv2 PKI validated (`--dmvpn-security ikev2-pki` + `--pki`): IKEv2 rsa-sig tunnels come up; flat, flat-pair underlays confirmed; EEM applets structurally fixed (injected last, before final `end`); timers 300 s/305 s; manual `authc` is workaround when CA-ROOT timing misses auto-enrollment window (see CHANGES.md v1.2.2–v1.2.4)
 - [x] DMVPN with PKI authentication: `--dmvpn-security ikev2-pki` (requires `--pki`); IKEv2 rsa-sig + pki trustpoint CA-ROOT-SELF in iosv-dmvpn/csr-dmvpn; online DMVPN injects PKI client when --pki (see CHANGES.md)
 - [x] feat/pki-ca: single root CA router for DMVPN PKI (merged; see CHANGES.md)
@@ -135,7 +136,7 @@ Recent completions:
   - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
   - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
 - [ ] (add ideas here)
-- [ ] Add archive config to all templates. Use this block:
+- [x] Add archive config to all IOS/IOS-XE templates (feat/archive). Block added to: csr-dmvpn, csr-eigrp, csr-ospf, csr-pki-ca, iosv, iosv-dmvpn, iosv-eigrp, iosv-eigrp-stub, iosv-eigrp-nonflat, iol-xe. LXC (FRR) skipped. Block:
   ```
   archive
    log config

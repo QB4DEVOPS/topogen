@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.2
-# Date Modified: 2026-02-18
+# Doc Version: v1.1.3
+# Date Modified: 2026-02-19
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -402,6 +402,12 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         action="store_true",
         default=False,
         help="Enable PKI Root CA (adds CA-ROOT router for certificate services)",
+    )
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        default=False,
+        help="Enable config archive and rundiff alias on routers (archive log config, path flash:, write-memory)",
     )
     parser.add_argument(
         "--pki-enroll",
