@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.3
+Doc Version: v1.6.4
 Date Modified: 2026-02-19
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -250,11 +250,9 @@ Recent completions:
   - When: Implement when a CI/CD pipeline or automation script needs to consume the output programmatically.
   - Blast radius: render.py (4 offline write paths), no behavior change to existing log lines.
 
-- [ ] Add `--quiet` flag to suppress non-essential output (low effort).
-  - Why: When running in scripts or CI/CD, users may only want errors or the final artifact path, not progress/config warnings.
-  - Behavior: Suppress INFO and WARNING logs, only show ERROR and the final output line.
-  - Pairs well with: Machine-parsable artifact summary (above) for clean scripted workflows.
-  - Blast radius: main.py (argparse + log level config), no changes to render logic.
+- [x] Add `--quiet` flag to suppress non-essential output (low effort) (feat/quiet).
+  - Implemented: `-q` / `--quiet` forces log level to ERROR so only errors and final result are shown; useful for scripts and CI/CD.
+  - Blast radius: main.py (argparse + log level override), no changes to render logic.
 
 - [x] Add `--import` and `--import-yaml` flags for offline-to-CML workflow (medium effort).
   - Why: Currently there's no way to take an offline YAML and push it into CML without switching to online mode.
