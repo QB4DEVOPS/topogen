@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.3
+# Doc Version: v1.1.4
 # Date Modified: 2026-02-19
 #
 """
@@ -97,6 +97,12 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "--progress",
         action="store_true",
         help="show a progress bar",
+    )
+    config_settings.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress non-essential output (INFO/WARN); only errors and final result",
     )
 
     parser.add_argument(
@@ -563,6 +569,8 @@ def main():
     # Default lab name: when generating offline YAML and user did not pass -L, use filename (no path, no extension); otherwise "topogen lab" (e.g. online).
     if getattr(args, "offline_yaml", None) and getattr(args, "labname", None) == "topogen lab":
         args.labname = os.path.splitext(os.path.basename(args.offline_yaml))[0]
+    if getattr(args, "quiet", False):
+        args.loglevel = "ERROR"
     setup_logging(args.loglevel)
 
     def parse_dmvpn_hubs(value: str | None) -> list[int] | None:

@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.5
+Doc Version: v1.4.6
 Date Modified: 2026-02-19
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -340,6 +340,7 @@ There are three modes available right now:
     - **Important:** if you set `--dmvpn-security ikev2-pki` but omit `--pki`, TopoGen exits with an error.
     - **Note:** DMVPN with IKEv2 PKI is not yet validated; tunnels may not come up (IKEv2 SA / enrollment troubleshooting in progress).
   - Optional: `--archive` — enable config archive and `rundiff` alias on all IOS/IOS-XE routers in flat, flat-pair, and dmvpn modes (`archive` with `log config`, `path flash:`, `write-memory`). Omit to leave archive config out of generated configs.
+  - Optional: `-q` / `--quiet` — suppress INFO and WARNING; only errors and final result (useful for scripts and CI/CD).
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)

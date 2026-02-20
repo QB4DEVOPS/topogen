@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.6
+Doc Version: v1.2.7
 Date Modified: 2026-02-19
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(quiet): add `-q` / `--quiet` flag to suppress non-essential output
+    - When set, log level is forced to ERROR so only errors and final result are shown; useful for scripts and CI/CD
+    - Files: src/topogen/main.py (rev v1.1.3 → v1.1.4), CHANGES.md (rev v1.2.6 → v1.2.7), README.md (rev v1.4.5 → v1.4.6), DEVELOPER.md (rev v1.7.3 → v1.7.4), TODO.md (rev v1.6.3 → v1.6.4)
   - fix(online): pass VIRL2_URL, VIRL2_USER, VIRL2_PASS explicitly into ClientLibrary
     - TopoGen now reads env vars and passes url/username/password to virl2_client.ClientLibrary(); fixes "no env provided" when vars are set in PowerShell/shell before running topogen
     - Files: src/topogen/render.py (rev v1.0.11 → v1.0.12), CHANGES.md (rev v1.2.5 → v1.2.6)

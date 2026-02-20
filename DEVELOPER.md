@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.3
+Doc Version: v1.7.4
 Date Modified: 2026-02-19
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -913,7 +913,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.1.3
+- **Doc Version:** v1.1.4
 
 - **Called by**
 
