@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.7
-Date Modified: 2026-02-19
+Doc Version: v1.4.8
+Date Modified: 2026-02-21
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -300,6 +300,8 @@ configuration:
   -p, --progress        show a progress bar
 $
 ```
+
+Note: Generated offline YAML includes `smart_annotations: []`, a field introduced in CML 2.8. TopoGen has not been tested on CML versions earlier than 2.9. Import on CML 2.7 or older may fail if the parser rejects unknown fields.
 
 At a minimum, the amount of nodes to be created must be provided.
 

@@ -2,8 +2,8 @@
 
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.1
-Date Modified: 2026-02-16
+Doc Version: v1.1.2
+Date Modified: 2026-02-21
 
 - Called by: Developers via DEVELOPER.md link, CI/CD systems for platform validation
 - Reads from: Manual observations from development/testing (AI-first documentation)
@@ -66,6 +66,9 @@ types-networkx >= 3.5.0.20250531
   - Note: PKI server requires IOS-XE 17.x+
 - **IOSv 15.9** - OSPF, EIGRP, DMVPN Phase 2
 - **ASAv 9.x** - IKEv2 VPN endpoints (observed in user labs)
+
+### smart_annotations (CML 2.8+)
+TopoGen offline YAML includes `smart_annotations: []` in all generated files (added with the intent/annotation feature). This field was introduced in CML 2.8. Behavior on CML versions earlier than 2.8 is unknown — older parsers may silently ignore the field or reject the import. Not tested on any version earlier than 2.9. Tested on CML 2.10 (not yet publicly available at time of writing). If you are running CML 2.7 or earlier and import fails, the `smart_annotations: []` line is the likely cause.
 
 ## Operating System
 
