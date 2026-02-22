@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.1
-# Date Modified: 2026-02-16
+# Doc Version: v1.0.3
+# Date Modified: 2026-02-21
 #
 # - Called by: Git (status, add, commit, etc.)
 # - Reads from: (none)

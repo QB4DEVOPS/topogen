@@ -1,6 +1,6 @@
 # Generate PKI for IOSv routers using OpenSSL (PowerShell).
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.0.1
 # Date Modified: 2026-02-21
 #
 # - Called by: Users (CLI); docs/MANUAL-PKI-IMPORT-TEST.md
@@ -30,7 +30,7 @@ Push-Location $Out
 try {
     Write-Host "Generating Root CA..."
     & $openssl genrsa -out rootCA.key 2048
-    & $openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 -out rootCA.pem -subj "/CN=TopoGen-Root-CA"
+    & $openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 7300 -out rootCA.pem -subj "/CN=CA-ROOT.virl.lab"
 
     @("R1:10.10.0.1", "R2:10.10.0.2") | ForEach-Object {
         $name = $_; $r = $name.Split(":")[0]; $ip = $name.Split(":")[1]
@@ -39,7 +39,7 @@ try {
         & $openssl genrsa -out "$rLower.key" 2048
         & $openssl rsa -in "$rLower.key" -pubout -out "$rLower.pub"
         & $openssl req -new -key "$rLower.key" -out "$rLower.csr" -subj "/CN=$r" -addext "subjectAltName = IP:$ip, DNS:${rLower}.virl.lab"
-        & $openssl x509 -req -in "$rLower.csr" -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out "$rLower.pem" -days 3650 -sha256 -copy_extensions copyall
+        & $openssl x509 -req -in "$rLower.csr" -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out "$rLower.pem" -days 7300 -sha256 -copy_extensions copyall
         & $openssl pkcs8 -topk8 -v1 PBE-SHA1-3DES -in "$rLower.key" -out "${rLower}_encrypted.key" -passout "pass:$Pass"
         # Traditional PEM: 3DES and single DES (some IOS-XE only accept DES).
         & $openssl rsa -in "$rLower.key" -des3 -out "${rLower}_traditional.key" -passout "pass:$Pass"

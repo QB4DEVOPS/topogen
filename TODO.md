@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.5
-Date Modified: 2026-02-20
+Doc Version: v1.6.7
+Date Modified: 2026-02-22
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -117,6 +117,14 @@ Recent completions:
   - CA IP (`ca_g_addr.ip`) is already computed; pass it to router Jinja context as SCEP enrollment URL
   - Also fix CA name inconsistency: DMVPN render path uses `ROOT-CA`; flat-pair render paths use `CA-ROOT` — standardize all to `CA-ROOT`
   - Blast radius: main.py (remove `--pki-enroll`, add `--pki-scep`), render.py (fix CA name + pass ca_ip to router templates), router templates (add trustpoint block)
+- [ ] **New feature: CSR (IOS-XE) EEM link-up script** — bring up wiped router interfaces if configured
+  - Why: CSRs can boot with interfaces in shutdown or inconsistent state; after CML/node bring-up, interfaces may need to be explicitly brought up. EEM applet on interface link-up can run `no shutdown` on configured interfaces so the router recovers without manual intervention.
+  - Scope: CSR templates (csr-dmvpn, csr-eigrp, csr-ospf, csr-pki-ca, etc.); inject EEM applet that triggers on link-up and brings up any configured interfaces that are currently down.
+  - Blast radius: render.py (EEM block for CSR), examples/ (new eem-csr-link-up.txt or similar), possibly a shared helper for “interface bring-up” EEM.
+- [ ] **New feature: Route leak into TENANT VRF — host route to CA server (10.10.255.254)** so CEs can get a cert
+  - Why: In flat-pair (and similar) with VRF, even routers / CEs have no path to the NBMA network where the CA lives; they cannot reach 10.10.255.254 for SCEP enrollment. Leaking a host route for the CA (e.g. 10.10.255.254/32) into the TENANT VRF (or the pair-link VRF) allows CEs to reach the CA and enroll.
+  - Scope: When `--pki` and VRF (e.g. `--vrf` / `--pair-vrf` / TENANT) are in use, inject a static route (or route-leak) in the tenant/pair VRF to 10.10.255.254 (CA) via the appropriate next-hop (e.g. odd router's NBMA-facing interface or a shared link). Exact mechanism depends on topology (flat-pair: odd router has NBMA; CE reaches odd; odd needs to advertise or leak CA host route into VRF).
+  - Blast radius: render.py (routing/VRF config for flat-pair and any mode with VRF + PKI), templates (iosv-dmvpn, csr-dmvpn, iosv-eigrp, csr-eigrp, etc. when VRF + pki enabled).
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)

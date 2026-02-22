@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.0.2
 # Date Modified: 2026-02-21
 #
 # - Called by: Users (CLI); docs/MANUAL-PKI-IMPORT-TEST.md
@@ -11,6 +11,12 @@
 Generate CA + one router cert for manual PKI import testing on IOS-XE.
 Run once: pip install cryptography && python tools/gen_pki_manual_test.py
 Writes PEMs to out/ and prints IOS-XE import steps.
+
+Note: This script creates a new Root CA on every run (random serial, not_valid_before=now),
+so the CA fingerprint changes each time. For a stable fingerprint (e.g. one CA across
+hundreds of labs / thousands of routers), generate the Root CA once with the OpenSSL
+scripts (tools/gen_pki_openssl.sh or .ps1) or the one-time OpenSSL commands in
+docs/MANUAL-PKI-IMPORT-TEST.md, then keep rootCA.key/rootCA.pem and never regenerate.
 """
 from __future__ import annotations
 
@@ -116,8 +122,10 @@ def _get_domain() -> str:
 def generate_ca() -> tuple[bytes, bytes]:
     """Self-signed Root CA, RSA 2048. Returns (ca_private_key_pem, ca_cert_pem)."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    domain = _get_domain()
+    fqdn = f"CA-ROOT.{domain}"
     name = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, "CA-ROOT"),
+        x509.NameAttribute(NameOID.COMMON_NAME, fqdn),
         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "TopoGen"),
     ])
     cert = (
@@ -127,7 +135,7 @@ def generate_ca() -> tuple[bytes, bytes]:
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(_UTC_NOW())
-        .not_valid_after(_UTC_NOW() + timedelta(days=3650))
+        .not_valid_after(_UTC_NOW() + timedelta(days=7300))
         .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
         .sign(key, hashes.SHA256(), default_backend())
     )
@@ -167,7 +175,7 @@ def generate_router_cert(
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(_UTC_NOW())
-        .not_valid_after(_UTC_NOW() + timedelta(days=3650))
+        .not_valid_after(_UTC_NOW() + timedelta(days=7300))
         .add_extension(san, critical=False)
         .sign(ca_key, hashes.SHA256(), default_backend())
     )

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Generate PKI for IOSv routers using OpenSSL only.
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.0.1
 # Date Modified: 2026-02-21
 #
 # - Called by: Users (CLI); docs/MANUAL-PKI-IMPORT-TEST.md
@@ -23,8 +23,8 @@ PASS=TopoGenPKI2025
 
 echo "Generating Root CA..."
 openssl genrsa -out rootCA.key 2048
-openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 -out rootCA.pem \
-  -subj "/CN=TopoGen-Root-CA"
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 7300 -out rootCA.pem \
+  -subj "/CN=CA-ROOT.virl.lab"
 
 for name in R1:10.10.0.1 R2:10.10.0.2; do
   r="${name%%:*}"
@@ -35,7 +35,7 @@ for name in R1:10.10.0.1 R2:10.10.0.2; do
     -subj "/CN=$r" \
     -addext "subjectAltName = IP:$ip, DNS:${r,,}.virl.lab"
   openssl x509 -req -in "${r,,}.csr" -CA rootCA.pem -CAkey rootCA.key -CAcreateserial \
-    -out "${r,,}.pem" -days 3650 -sha256 -copy_extensions copyall
+    -out "${r,,}.pem" -days 7300 -sha256 -copy_extensions copyall
   openssl pkcs8 -topk8 -v1 PBE-SHA1-3DES -in "${r,,}.key" -out "${r,,}_encrypted.key" -passout "pass:$PASS"
   rm -f "${r,,}.csr"
 done
