@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.9
-Date Modified: 2026-02-22
+Doc Version: v1.6.10
+Date Modified: 2026-02-23
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -71,6 +71,8 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 **Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
 
+**Note — Clock and cert validity lag:** PKI config injects the same `do clock set` time on CA and clients (e.g. 00:01:00 or generation-time). The CA issues certs with `notBefore` at the CA’s current time when the cert is created. Because nodes boot and set clock at different moments, a client can validate a cert *before* that cert’s validity period has started, resulting in `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID: ... The certificate (SN: 3E) is not yet valid   Validity period starts on 00:51:51 UTC Feb 23 2026` (validation at 00:50:58, validity starts 00:51:51). The same can happen for other serials (e.g. SN: 40 validity starts 00:52:24 while validation at 00:51:02). The lag is typically under a minute; WAIT-FOR-CA retries (e.g. 60 s) and later validation usually succeed once the client clock is at or past the cert’s `notBefore`, and EIGRP adjacencies (e.g. `%DUAL-5-NBRCHANGE: Neighbor 172.20.0.209 (Tunnel0) is up`) come up after that. Document this in README/PKI.md so users expect possible transient “not yet valid” until clocks align.
+
 ## Promote to Issues
 
 - [ ] (add issue-worthy items here)
@@ -131,6 +133,37 @@ Recent completions:
   - Scope: DMVPN mode with `--pki`; inject these routes and `redistribute static metric 1 1 255 1 1480` in EIGRP 100 on CA-ROOT and R1 when PKI is enabled.
   - **When using VRF:** leak the CA host route (10.10.255.254/32) and any needed tunnel or NBMA routes into the TENANT (or pair-link) VRF so CEs and VRF-aware interfaces can reach the CA; align with the existing "Route leak into TENANT VRF" future idea.
   - Blast radius: render.py (DMVPN + PKI CA and hub config), templates (csr-pki-ca.jinja2, iosv-dmvpn, csr-dmvpn for R1/hub).
+  - **Reference (working config)** — when implementing, use these exact patterns:
+    - **On R1 (hub, named EIGRP TOPGEN + VRF TENANT):** `show run | sec router|ip route`:
+      ```
+      router eigrp TOPGEN
+       !
+       address-family ipv4 unicast vrf TENANT autonomous-system 100
+        !
+        af-interface default
+         passive-interface
+        exit-af-interface
+        !
+        af-interface Tunnel0
+         no passive-interface
+         no split-horizon
+        exit-af-interface
+        !
+        af-interface GigabitEthernet0/1
+         no passive-interface
+        exit-af-interface
+        !
+        topology base
+         redistribute static metric 10000 100 255 1 1500
+        exit-af-topology
+        network 10.20.0.1 0.0.0.0
+        network 172.16.0.1 0.0.0.0
+        network 172.20.0.1 0.0.0.0
+       exit-address-family
+      router eigrp 100
+      ip route vrf TENANT 10.10.255.254 255.255.255.255 GigabitEthernet0/0 10.10.255.254 global
+      ```
+    - **On CA-ROOT:** `ip route 172.20.0.0 255.255.0.0 10.10.0.1` (tunnel network via hub).
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)
