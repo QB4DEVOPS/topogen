@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.4
-Date Modified: 2026-02-19
+Doc Version: v1.6.10
+Date Modified: 2026-02-23
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -59,6 +59,20 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 | CLIENT-PKI-ENROLL | `examples/eem-client-pki-enroll.txt` | [ ] |
 | do-ssh | `examples/eem-do-ssh.txt` | [ ] |
 
+### Feature: Auto-deploy PKI/certs (fix)
+
+**Goal:** CA and client certificates deploy and enroll automatically after lab start — no manual `crypto pki authenticate` and no reliance on CA-ROOT timing. Current state: manual `authc` is a workaround when CA-ROOT misses the auto-enrollment window; CA-ROOT boot has EEM and CVAC ordering issues; online flat lacks CA clock EEM.
+
+**Work items** (details in Promote to Issues):
+
+- [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block** — indent `end` actions in CA-ROOT-SET-CLOCK and CLIENT-PKI-SET-CLOCK so parser associates them with the correct if block (`_pki_ca_clock_eem_lines`, `_pki_client_clock_eem_lines` in render.py).
+- [ ] **Fix CA-ROOT boot: CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`** — reorder config so trustpoint (and key/self-enroll) exist before `ip http secure-server` / `ip http secure-server trustpoint` in all CA and client PKI blocks; remove duplicates from inline pki_config_lines.
+- [ ] **Fix next: CA-ROOT time EEM missing when lab created online** — offline flat/DMVPN/flat-pair get `_pki_ca_clock_eem_lines()`; online flat builds CA from csr-pki-ca.jinja2 only. Add CA clock EEM to online flat CA build in `render_flat_network()` (e.g. append `_pki_ca_clock_eem_lines()` before assigning `ca_router.configuration`).
+
+**Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
+
+**Note — Clock and cert validity lag:** PKI config injects the same `do clock set` time on CA and clients (e.g. 00:01:00 or generation-time). The CA issues certs with `notBefore` at the CA’s current time when the cert is created. Because nodes boot and set clock at different moments, a client can validate a cert *before* that cert’s validity period has started, resulting in `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID: ... The certificate (SN: 3E) is not yet valid   Validity period starts on 00:51:51 UTC Feb 23 2026` (validation at 00:50:58, validity starts 00:51:51). The same can happen for other serials (e.g. SN: 40 validity starts 00:52:24 while validation at 00:51:02). The lag is typically under a minute; WAIT-FOR-CA retries (e.g. 60 s) and later validation usually succeed once the client clock is at or past the cert’s `notBefore`, and EIGRP adjacencies (e.g. `%DUAL-5-NBRCHANGE: Neighbor 172.20.0.209 (Tunnel0) is up`) come up after that. Document this in README/PKI.md so users expect possible transient “not yet valid” until clocks align.
+
 ## Promote to Issues
 
 - [ ] (add issue-worthy items here)
@@ -105,6 +119,51 @@ Recent completions:
   - CA IP (`ca_g_addr.ip`) is already computed; pass it to router Jinja context as SCEP enrollment URL
   - Also fix CA name inconsistency: DMVPN render path uses `ROOT-CA`; flat-pair render paths use `CA-ROOT` — standardize all to `CA-ROOT`
   - Blast radius: main.py (remove `--pki-enroll`, add `--pki-scep`), render.py (fix CA name + pass ca_ip to router templates), router templates (add trustpoint block)
+- [ ] **New feature: CSR (IOS-XE) EEM link-up script** — bring up wiped router interfaces if configured
+  - Why: CSRs can boot with interfaces in shutdown or inconsistent state; after CML/node bring-up, interfaces may need to be explicitly brought up. EEM applet on interface link-up can run `no shutdown` on configured interfaces so the router recovers without manual intervention.
+  - Scope: CSR templates (csr-dmvpn, csr-eigrp, csr-ospf, csr-pki-ca, etc.); inject EEM applet that triggers on link-up and brings up any configured interfaces that are currently down.
+  - Blast radius: render.py (EEM block for CSR), examples/ (new eem-csr-link-up.txt or similar), possibly a shared helper for “interface bring-up” EEM.
+- [ ] **New feature: Route leak into TENANT VRF — host route to CA server (10.10.255.254)** so CEs can get a cert
+  - Why: In flat-pair (and similar) with VRF, even routers / CEs have no path to the NBMA network where the CA lives; they cannot reach 10.10.255.254 for SCEP enrollment. Leaking a host route for the CA (e.g. 10.10.255.254/32) into the TENANT VRF (or the pair-link VRF) allows CEs to reach the CA and enroll.
+  - Scope: When `--pki` and VRF (e.g. `--vrf` / `--pair-vrf` / TENANT) are in use, inject a static route (or route-leak) in the tenant/pair VRF to 10.10.255.254 (CA) via the appropriate next-hop (e.g. odd router's NBMA-facing interface or a shared link). Exact mechanism depends on topology (flat-pair: odd router has NBMA; CE reaches odd; odd needs to advertise or leak CA host route into VRF).
+  - Blast radius: render.py (routing/VRF config for flat-pair and any mode with VRF + PKI), templates (iosv-dmvpn, csr-dmvpn, iosv-eigrp, csr-eigrp, etc. when VRF + pki enabled).
+- [ ] **New feature: DMVPN + PKI — static routes for CA and tunnel reachability**
+  - **On CA-ROOT (root CA):** add `ip route 172.16.0.0 255.255.0.0 10.10.0.1` so the CA can reach the DMVPN tunnel network (172.16.0.0/16) via R1 (hub) at 10.10.0.1.
+  - **On R1 (hub):** add `ip route 10.10.255.254 255.255.255.255 10.20.0.1` (host route to CA 10.10.255.254 via next-hop 10.20.0.1) so the hub can reach the CA for SCEP; and **redistribute static** into EIGRP 100 with metric `1 1 255 1 1480` (bandwidth delay reliability load MTU) so spokes learn the CA route. Exact next-hops (10.10.0.1, 10.20.0.1) may need to be derived from topology (NBMA/tunnel addressing).
+  - Scope: DMVPN mode with `--pki`; inject these routes and `redistribute static metric 1 1 255 1 1480` in EIGRP 100 on CA-ROOT and R1 when PKI is enabled.
+  - **When using VRF:** leak the CA host route (10.10.255.254/32) and any needed tunnel or NBMA routes into the TENANT (or pair-link) VRF so CEs and VRF-aware interfaces can reach the CA; align with the existing "Route leak into TENANT VRF" future idea.
+  - Blast radius: render.py (DMVPN + PKI CA and hub config), templates (csr-pki-ca.jinja2, iosv-dmvpn, csr-dmvpn for R1/hub).
+  - **Reference (working config)** — when implementing, use these exact patterns:
+    - **On R1 (hub, named EIGRP TOPGEN + VRF TENANT):** `show run | sec router|ip route`:
+      ```
+      router eigrp TOPGEN
+       !
+       address-family ipv4 unicast vrf TENANT autonomous-system 100
+        !
+        af-interface default
+         passive-interface
+        exit-af-interface
+        !
+        af-interface Tunnel0
+         no passive-interface
+         no split-horizon
+        exit-af-interface
+        !
+        af-interface GigabitEthernet0/1
+         no passive-interface
+        exit-af-interface
+        !
+        topology base
+         redistribute static metric 10000 100 255 1 1500
+        exit-af-topology
+        network 10.20.0.1 0.0.0.0
+        network 172.16.0.1 0.0.0.0
+        network 172.20.0.1 0.0.0.0
+       exit-address-family
+      router eigrp 100
+      ip route vrf TENANT 10.10.255.254 255.255.255.255 GigabitEthernet0/0 10.10.255.254 global
+      ```
+    - **On CA-ROOT:** `ip route 172.20.0.0 255.255.0.0 10.10.0.1` (tunnel network via hub).
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)

@@ -50,6 +50,7 @@ controller, creating the lab, nodes and links on the fly.
 | TESTED.md | CI/CD | Platform and dependency validation |
 | CHANGES.md | All | Release history |
 | TODO.md | Developers | Roadmap and planned work |
+| PKI.md | Users, developers | PKI flags, CA-ROOT, EEM, auto-deploy certs, troubleshooting |
 
 ## Code structure and dependencies
 
