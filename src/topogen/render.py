@@ -482,6 +482,7 @@ def _pki_client_authenticate_eem_lines() -> list[str]:
 def _pki_client_wait_for_ca_eem_lines() -> list[str]:
     """EEM applets for PKI clients: WAIT-FOR-CA (ping CA until reachable, then send syslog)
     and CA-ROOT-AUTHENTICATE (triggered by that syslog; runs crypto pki authenticate).
+    On ping success WAIT-FOR-CA removes itself and writes memory so it does not keep running.
     Must be injected at the end of config (before final 'end')."""
     return [
         "!",
@@ -494,6 +495,10 @@ def _pki_client_wait_for_ca_eem_lines() -> list[str]:
         " action 1.1 regexp \"10/10\" \"$_cli_result\" match",
         " action 1.2 if $_regexp_result eq \"1\"",
         " action 1.3  cli command \"send log Certificate server now enabled\"",
+        " action 1.31 cli command \"configure terminal\"",
+        " action 1.32 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 1.33 cli command \"end\"",
+        " action 1.34 cli command \"write memory\"",
         " action 1.4  exit",
         " action 1.5 end",
         " action 2.0 wait 60",
@@ -501,13 +506,21 @@ def _pki_client_wait_for_ca_eem_lines() -> list[str]:
         " action 2.2 regexp \"10/10\" \"$_cli_result\" match",
         " action 2.3 if $_regexp_result eq \"1\"",
         " action 2.4  cli command \"send log Certificate server now enabled\"",
+        " action 2.41 cli command \"configure terminal\"",
+        " action 2.42 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 2.43 cli command \"end\"",
+        " action 2.44 cli command \"write memory\"",
         " action 2.5  exit",
         " action 2.6 end",
         " action 3.0 wait 60",
         " action 3.1 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
         " action 3.2 regexp \"10/10\" \"$_cli_result\" match",
         " action 3.3 if $_regexp_result eq \"1\"",
-        " action 3.4 cli command \"send log Certificate server now enabled\"",
+        " action 3.4  cli command \"send log Certificate server now enabled\"",
+        " action 3.41 cli command \"configure terminal\"",
+        " action 3.42 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 3.43 cli command \"end\"",
+        " action 3.44 cli command \"write memory\"",
         " action 3.5  exit",
         " action 3.6 end",
         "event manager applet CA-ROOT-AUTHENTICATE authorization bypass",
