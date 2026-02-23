@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.2
+Doc Version: v1.0.3
 Date Modified: 2026-02-22
 
 - Called by: Users documenting the on-box CA-ROOT (IOS-XE PKI server) state
@@ -32,6 +32,48 @@ Certificate Server CA-ROOT:
     Current primary storage dir: flash:
     Database Level: Complete - all issued certs written as <serialnum>.cer
 ```
+
+## show crypto pki certificates verbose CA-ROOT
+
+```
+CA-ROOT#show crypto pki certificates verbose CA-ROOT
+CA Certificate
+  Status: Available
+  Version: 3
+  Certificate Serial Number (hex): 01
+  Certificate Usage: Signature
+  Issuer:
+    cn=CA-ROOT
+  Subject:
+    cn=CA-ROOT
+  Validity Date:
+    start date: 00:08:38 UTC Feb 22 2026
+    end   date: 00:08:38 UTC Feb 17 2046
+  Subject Key Info:
+    Public Key Algorithm: rsaEncryption
+    RSA Public Key: (2048 bit)
+  Signature Algorithm: MD5 with RSA Encryption
+  Fingerprint MD5: 796D8F17 F3E22A2E DADC2587 211ABA9A
+  Fingerprint SHA1: 481A6986 4DEEE366 883F1E48 6BE3451D D037CF70
+  X509v3 extensions:
+    X509v3 Key Usage: 86000000
+      Digital Signature
+      Key Cert Sign
+      CRL Signature
+    X509v3 Subject Key ID: 9E5BA777 18286333 F7D8A36A 6C99633E 26560D07
+    X509v3 Basic Constraints:
+        CA: TRUE
+    X509v3 Authority Key ID: 9E5BA777 18286333 F7D8A36A 6C99633E 26560D07
+    Authority Info Access:
+Cert install time: 00:08:38 UTC Feb 22 2026
+  Associated Trustpoints: CA-ROOT-SELF CA-ROOT
+  Storage: nvram:CA-ROOT#1CA.cer
+CA-ROOT#
+```
+
+Use this to see full CA cert details and **Fingerprint MD5/SHA1** for the cert this CA-ROOT is using (e.g. for `enrollment fingerprint` in client configs). Serial 01 and install time indicate a fresh self-enrolled CA; fingerprint will differ from another lab’s CA.
+
+**Validity vs. original exported cert (6FE17753):** The **end** date is the same (Feb 17 2046) because both use the same lifetime. The **start** date differs: the original was created ~22:07 UTC Feb 22 2026 (see "CA certificate expiration timer" and key generation time in this doc); the cert above was created 00:08:38 UTC Feb 22 2026. Different creation time → different notBefore → different fingerprint even with the same CN and end date.
 
 ## crypto key export rsa CA-ROOT pem terminal 3des cisco123
 

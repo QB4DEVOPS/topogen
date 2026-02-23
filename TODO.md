@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.7
+Doc Version: v1.6.9
 Date Modified: 2026-02-22
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -125,6 +125,12 @@ Recent completions:
   - Why: In flat-pair (and similar) with VRF, even routers / CEs have no path to the NBMA network where the CA lives; they cannot reach 10.10.255.254 for SCEP enrollment. Leaking a host route for the CA (e.g. 10.10.255.254/32) into the TENANT VRF (or the pair-link VRF) allows CEs to reach the CA and enroll.
   - Scope: When `--pki` and VRF (e.g. `--vrf` / `--pair-vrf` / TENANT) are in use, inject a static route (or route-leak) in the tenant/pair VRF to 10.10.255.254 (CA) via the appropriate next-hop (e.g. odd router's NBMA-facing interface or a shared link). Exact mechanism depends on topology (flat-pair: odd router has NBMA; CE reaches odd; odd needs to advertise or leak CA host route into VRF).
   - Blast radius: render.py (routing/VRF config for flat-pair and any mode with VRF + PKI), templates (iosv-dmvpn, csr-dmvpn, iosv-eigrp, csr-eigrp, etc. when VRF + pki enabled).
+- [ ] **New feature: DMVPN + PKI — static routes for CA and tunnel reachability**
+  - **On CA-ROOT (root CA):** add `ip route 172.16.0.0 255.255.0.0 10.10.0.1` so the CA can reach the DMVPN tunnel network (172.16.0.0/16) via R1 (hub) at 10.10.0.1.
+  - **On R1 (hub):** add `ip route 10.10.255.254 255.255.255.255 10.20.0.1` (host route to CA 10.10.255.254 via next-hop 10.20.0.1) so the hub can reach the CA for SCEP; and **redistribute static** into EIGRP 100 with metric `1 1 255 1 1480` (bandwidth delay reliability load MTU) so spokes learn the CA route. Exact next-hops (10.10.0.1, 10.20.0.1) may need to be derived from topology (NBMA/tunnel addressing).
+  - Scope: DMVPN mode with `--pki`; inject these routes and `redistribute static metric 1 1 255 1 1480` in EIGRP 100 on CA-ROOT and R1 when PKI is enabled.
+  - **When using VRF:** leak the CA host route (10.10.255.254/32) and any needed tunnel or NBMA routes into the TENANT (or pair-link) VRF so CEs and VRF-aware interfaces can reach the CA; align with the existing "Route leak into TENANT VRF" future idea.
+  - Blast radius: render.py (DMVPN + PKI CA and hub config), templates (csr-pki-ca.jinja2, iosv-dmvpn, csr-dmvpn for R1/hub).
 - [ ] Support IOSv for PKI CA-ROOT (currently CSR1000v only)
   - Why: CA-ROOT is currently hardcoded to csr1000v node definition (see render.py ca_dev_def)
   - Current: csr-pki-ca.jinja2 template uses CSR interface names (GigabitEthernet1, Gi5)
