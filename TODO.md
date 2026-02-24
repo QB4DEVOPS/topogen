@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.10
-Date Modified: 2026-02-23
+Doc Version: v1.6.12
+Date Modified: 2026-02-24
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -76,6 +76,12 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 ## Promote to Issues
 
 - [ ] (add issue-worthy items here)
+
+- [x] **Bug: `offline_flat_yaml` missing coordinate scaling — x > 15000 for large labs.** `offline_flat_yaml` computes switch x as `(i+1) * distance * 3` with no upper bound; at 26 access switches (520 nodes, group=20, distance=200) the last switch lands at x=15600, exceeding CML's 15000 limit. The DMVPN renderer has this fix (`sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_access + 1))))`). Apply the same scaling to `offline_flat_yaml` and `offline_flat_pair_yaml`. Workaround: increase `--flat-group-size` to reduce switch count (e.g., group=26 → 20 switches → max x=12000).
+  - Blast radius: `src/topogen/render.py` (`offline_flat_yaml`, `offline_flat_pair_yaml` coordinate blocks only).
+
+- [ ] **Bug: `iosv.jinja2` missing NTP support — PKI requires NTP.** `iosv.jinja2` has no `ntp server` block; `--ntp` / `--ntp-inband` flags are silently ignored for all IOSv routers. Only the CA-ROOT (CSR1000v, csr-ospf.jinja2) gets NTP config. Since PKI enrollment depends on correct time, IOSv routers using `--pki` will have clock issues at enrollment. Fix: add NTP block to `iosv.jinja2` matching the pattern in `csr-ospf.jinja2` (`ntp server [vrf <vrf>] <ip>`). Also audit all other templates (iosv-eigrp, iosv-eigrp-stub, iosv-eigrp-nonflat, iosv-dmvpn) for the same gap.
+  - Blast radius: `src/topogen/templates/iosv.jinja2` and related iosv templates; render.py (verify ntp context is passed for flat mode).
 
 - [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block.** Observed: `%HA_EM-6-FMPD_EEM_CONFIG: CA-ROOT-SET-CLOCK: "end" action found outside of conditional block`. EEM applet CA-ROOT-SET-CLOCK (and client CLIENT-PKI-SET-CLOCK) use `action X.Y end` to close if blocks; on some IOS-XE versions the parser reports "end" outside conditional. Fix: ensure `end` actions are indented so the parser associates them with the correct if block (e.g. ` action 1.10 end` → `  action 1.10 end` for CA-ROOT; client has ` action 1.99 end`). See render.py `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()`.
 

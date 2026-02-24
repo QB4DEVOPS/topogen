@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.13
+# Doc Version: v1.0.14
 # Date Modified: 2026-02-23
 #
 # - Called by: src/topogen/main.py
@@ -3153,6 +3153,14 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
 
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # Scale spacing so any node count and group size produces importable coordinates.
+        max_coord = 15000
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_sw + 1))))
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
+
         # Warn about custom device templates/images which may affect interface behavior
         dev_def = getattr(args, "dev_template", args.template)
         if dev_def != "iosv":
@@ -3260,7 +3268,7 @@ class Renderer:
         for i in range(num_sw):
             label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
-            x = (i + 1) * args.distance * 3
+            x = min(max_coord, (i + 1) * sw_step_x)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
@@ -3415,8 +3423,8 @@ class Renderer:
                     rendered, label, cfg.domainname, ca_url
                 )
 
-            rx = (idx // group + 1) * args.distance * 3
-            ry = (idx % group + 1) * args.distance
+            rx = min(max_coord, (idx // group + 1) * sw_step_x)
+            ry = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
@@ -3711,6 +3719,14 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
 
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # Scale spacing so any node count and group size produces importable coordinates.
+        max_coord = 15000
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_sw + 1))))
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
+
         # helper to compute addressing
         def addr_parts(n: int) -> tuple[int, int]:
             ridx = n
@@ -3799,7 +3815,7 @@ class Renderer:
         for i in range(num_sw):
             label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
-            x = (i + 1) * args.distance * 3
+            x = min(max_coord, (i + 1) * sw_step_x)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
@@ -3991,8 +4007,8 @@ class Renderer:
                     rendered, label, cfg.domainname, ca_url
                 )
 
-            rx = (idx // group + 1) * args.distance * 3
-            ry = (idx % group + 1) * args.distance
+            rx = min(max_coord, (idx // group + 1) * sw_step_x)
+            ry = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")

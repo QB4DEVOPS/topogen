@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.8
-Date Modified: 2026-02-20
+Doc Version: v1.2.9
+Date Modified: 2026-02-24
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,11 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(flat): auto-scale x/y coordinates in `offline_flat_yaml` and `offline_flat_pair_yaml` so any node count and group size produces importable YAML without exceeding CML's 15000-coordinate limit
+    - Previously, switch x was computed as `(i+1) * distance * 3` with no upper bound; at 26 access switches (520 nodes, group=20) the last switch landed at x=15600 and CML rejected the import with a validation error
+    - Fix: compute `sw_step_x` and `router_step_y` scaled to `max_coord=15000` (same approach as the existing DMVPN renderer); all node placements are clamped with `min(max_coord, ...)`
+    - Users no longer need to manually tune `--flat-group-size` to avoid coordinate overflow; the layout adapts automatically
+    - Files: src/topogen/render.py (rev v1.0.13 → v1.0.14), CHANGES.md (rev v1.2.8 → v1.2.9), README.md (rev v1.4.8 → v1.4.9)
   - docs(pki): add PKI.md — single reference for TopoGen PKI (flags, CA-ROOT, clients, EEM applets, known issues, auto-deploy certs, troubleshooting); add PKI.md to README documentation map
     - Files: PKI.md (new, rev v1.0.0), README.md (rev v1.4.7 → v1.4.8), CHANGES.md (rev v1.2.7 → v1.2.8)
   - feat(quiet): add `-q` / `--quiet` flag to suppress non-essential output

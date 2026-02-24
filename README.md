@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.8
-Date Modified: 2026-02-21
+Doc Version: v1.4.9
+Date Modified: 2026-02-24
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -515,6 +515,7 @@ Defaults are safe for large labs (e.g., 300 nodes with `--flat-group-size 20` â†
 
 Assumptions and caveats:
 
+- **Coordinate layout is automatic.** TopoGen scales node x/y positions to always stay within CML's 15,000-coordinate limit, regardless of node count or `--flat-group-size`. You do not need to manually adjust group size to avoid import errors.
 - The guardrails assume the `unmanaged_switch` node definition has roughly 32 usable ports.
 - Custom node definitions/images (including customized unmanaged switch or different router images) may change interface counts, labels, or slot allocation. The guardrails do not auto-detect such customizations.
 - In generated offline YAML, unmanaged switch interfaces are labeled `portN`; the CML UI may present different labels.
