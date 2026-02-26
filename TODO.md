@@ -128,6 +128,11 @@ Recent completions:
   - `--strong`: RSA 2048, AES-256, SHA-256 (NIST current)
   - `--stronger`: RSA 4096, AES-256-GCM, SHA-384 (NIST future-proof)
   - Blast radius: main.py (argparse), templates (crypto profile conditionals)
+- [ ] Enable RESTCONF and NETCONF on CSR1000v templates (low effort)
+  - Why: With OOB management IPs reachable via external-connector, enabling `netconf-yang`, `restconf`, and `ip http secure-server` unlocks Ansible, Terraform, and pyATS automation against lab nodes
+  - Blast radius: csr-dmvpn.jinja2, csr-eigrp.jinja2, csr-ospf.jinja2, csr-pki-ca.jinja2 (add config block before `line vty`)
+  - Consider: gate behind `--netconf` / `--restconf` flags or enable unconditionally since lab routers benefit from programmability by default
+
 - [ ] Add NAT mode support for external-connector (in addition to current System Bridge mode)
   - Why: Enable outbound-only connectivity for OOB management networks where devices need to reach external resources but don't need to be reachable from outside
   - Current implementation uses "System Bridge" mode (bidirectional connectivity)
