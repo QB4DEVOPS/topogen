@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.8
-Date Modified: 2026-02-24
+Doc Version: v1.2.9
+Date Modified: 2026-02-25
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -21,10 +21,17 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
 
 - Unreleased
   - fix(csr): add TOPOGEN-NOSHUT EEM applet to all CSR1000v templates — works around CML bug where CSR interfaces enter `shutdown` after first boot or wipe despite `no shutdown` in startup config
-    - EEM fires at `@reboot`, checks `NOSHUT_DONE` sentinel; if absent, applies `no shutdown` to all configured interfaces, sets sentinel, and saves; on subsequent reboots the sentinel is present so user-intended shutdowns are preserved; after a CML wipe the sentinel is gone (config reset to bootstrap) so EEM re-applies
+    - EEM fires unconditionally at `@reboot`, applies `no shutdown` to all configured physical and management interfaces
     - Interface list is data-driven from the same `node.interfaces` + `mgmt` context the templates already use — no hardcoded interface range
-    - Templates: csr-dmvpn (rev v1.1.2 → v1.2.0), csr-eigrp (rev v1.1.1 → v1.2.0), csr-ospf (rev v1.1.1 → v1.2.0), csr-pki-ca (rev v1.1.1 → v1.2.0)
-    - Files: CHANGES.md (rev v1.2.7 → v1.2.8)
+    - EEM applet placed after `line vty` / `line con` sections (IOS-XE requires event manager blocks last before `end`)
+    - Action labels kept within `.0`–`.9` to avoid EEM lexicographic sorting issues
+    - Templates: csr-dmvpn (rev v1.1.2 → v1.3.0), csr-eigrp (rev v1.1.1 → v1.3.0), csr-ospf (rev v1.1.1 → v1.3.0), csr-pki-ca (rev v1.1.1 → v1.3.0)
+    - Files: CHANGES.md (rev v1.2.7 → v1.2.9)
+  - docs(developer): add EEM placement and action label numbering rules
+    - EEM applets must appear after `line vty`/`line con` sections; action labels must stay within `.0`–`.9`
+    - Files: DEVELOPER.md
+  - docs(todo): add RESTCONF/NETCONF future feature for CSR1000v templates
+    - Files: TODO.md
   - feat(quiet): add `-q` / `--quiet` flag to suppress non-essential output
     - When set, log level is forced to ERROR so only errors and final result are shown; useful for scripts and CI/CD
     - Files: src/topogen/main.py (rev v1.1.3 → v1.1.4), CHANGES.md (rev v1.2.6 → v1.2.7), README.md (rev v1.4.5 → v1.4.6), DEVELOPER.md (rev v1.7.3 → v1.7.4), TODO.md (rev v1.6.3 → v1.6.4)
