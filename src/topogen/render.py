@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.12
-# Date Modified: 2026-02-19
+# Doc Version: v1.0.14
+# Date Modified: 2026-02-23
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -479,6 +479,76 @@ def _pki_client_authenticate_eem_lines() -> list[str]:
     ]
 
 
+def _pki_client_wait_for_ca_eem_lines() -> list[str]:
+    """EEM applets for PKI clients: WAIT-FOR-CA (ping CA until reachable, then send syslog)
+    and CA-ROOT-AUTHENTICATE (triggered by that syslog; runs crypto pki authenticate).
+    On ping success WAIT-FOR-CA removes itself and writes memory so it does not keep running.
+    Must be injected at the end of config (before final 'end')."""
+    return [
+        "!",
+        "event manager environment TIME_DONE 0",
+        "event manager applet WAIT-FOR-CA",
+        " event timer watchdog time 300",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 cli command \"terminal length 0\"",
+        " action 1.0 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
+        " action 1.1 regexp \"10/10\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        " action 1.3  cli command \"send log Certificate server now enabled\"",
+        " action 1.31 cli command \"configure terminal\"",
+        " action 1.32 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 1.33 cli command \"end\"",
+        " action 1.34 cli command \"write memory\"",
+        " action 1.4  exit",
+        " action 1.5 end",
+        " action 2.0 wait 60",
+        " action 2.1 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
+        " action 2.2 regexp \"10/10\" \"$_cli_result\" match",
+        " action 2.3 if $_regexp_result eq \"1\"",
+        " action 2.4  cli command \"send log Certificate server now enabled\"",
+        " action 2.41 cli command \"configure terminal\"",
+        " action 2.42 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 2.43 cli command \"end\"",
+        " action 2.44 cli command \"write memory\"",
+        " action 2.5  exit",
+        " action 2.6 end",
+        " action 3.0 wait 60",
+        " action 3.1 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
+        " action 3.2 regexp \"10/10\" \"$_cli_result\" match",
+        " action 3.3 if $_regexp_result eq \"1\"",
+        " action 3.4  cli command \"send log Certificate server now enabled\"",
+        " action 3.41 cli command \"configure terminal\"",
+        " action 3.42 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 3.43 cli command \"end\"",
+        " action 3.44 cli command \"write memory\"",
+        " action 3.5  exit",
+        " action 3.6 end",
+        "event manager applet CA-ROOT-AUTHENTICATE authorization bypass",
+        " event syslog pattern \"Certificate server now enabled\"",
+        " action 0.1  cli command \"enable\"",
+        " action 0.2  cli command \"terminal length 0\"",
+        " action 0.3  cli command \"show crypto pki certificates CA-ROOT-SELF\"",
+        " action 0.4  regexp \"CA Certificate\" \"$_cli_result\" match",
+        " action 0.5  if $_regexp_result eq \"1\"",
+        " action 0.6   exit",
+        " action 0.7  end",
+        " action 0.8  cli command \"configure terminal\"",
+        " action 0.9  cli command \"crypto pki authenticate CA-ROOT-SELF\" pattern \"yes/no\"",
+        " action 0.91 wait 2",
+        " action 0.92 cli command \"yes\" pattern \".*\"",
+        " action 0.93 cli command \" \"",
+        " action 0.94 cli command \"end\"",
+        " action 0.95 cli command \"write memory\"",
+        " action 0.96 cli command \"configure terminal\"",
+        " action 0.97 cli command \"no event manager applet CA-ROOT-AUTHENTICATE\"",
+        " action 0.98 cli command \"end\"",
+        " action 0.99 cli command \"write memory\"",
+        "!",
+        "end",
+        "!",
+    ]
+
+
 def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url: str) -> list[str]:
     """Return CA self-enrollment block lines (do clock set, then ip http secure-server, trustpoint CA-ROOT-SELF).
     do clock set placed after crypto pki server CA-ROOT block and before CA-ROOT-SELF key/trustpoint (working order)."""
@@ -569,7 +639,7 @@ def _inject_pki_client_trustpoint(
     # Inject EEM applets LAST (before final 'end') so their closing 'end' lines
     # do not exit global config mode before interfaces/routing/crypto are applied.
     if inject_clock_eem:
-        eem_block = _pki_client_clock_eem_lines() + _pki_client_authenticate_eem_lines()
+        eem_block = _pki_client_wait_for_ca_eem_lines()
         try:
             end_idx = next(
                 i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
@@ -3083,6 +3153,14 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
 
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # Scale spacing so any node count and group size produces importable coordinates.
+        max_coord = 15000
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_sw + 1))))
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
+
         # Warn about custom device templates/images which may affect interface behavior
         dev_def = getattr(args, "dev_template", args.template)
         if dev_def != "iosv":
@@ -3190,7 +3268,7 @@ class Renderer:
         for i in range(num_sw):
             label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
-            x = (i + 1) * args.distance * 3
+            x = min(max_coord, (i + 1) * sw_step_x)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
@@ -3345,8 +3423,8 @@ class Renderer:
                     rendered, label, cfg.domainname, ca_url
                 )
 
-            rx = (idx // group + 1) * args.distance * 3
-            ry = (idx % group + 1) * args.distance
+            rx = min(max_coord, (idx // group + 1) * sw_step_x)
+            ry = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
@@ -3641,6 +3719,14 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
 
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # Scale spacing so any node count and group size produces importable coordinates.
+        max_coord = 15000
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_sw + 1))))
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
+
         # helper to compute addressing
         def addr_parts(n: int) -> tuple[int, int]:
             ridx = n
@@ -3729,7 +3815,7 @@ class Renderer:
         for i in range(num_sw):
             label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
-            x = (i + 1) * args.distance * 3
+            x = min(max_coord, (i + 1) * sw_step_x)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
@@ -3921,8 +4007,8 @@ class Renderer:
                     rendered, label, cfg.domainname, ca_url
                 )
 
-            rx = (idx // group + 1) * args.distance * 3
-            ry = (idx % group + 1) * args.distance
+            rx = min(max_coord, (idx // group + 1) * sw_step_x)
+            ry = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")

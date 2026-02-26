@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.7
-Date Modified: 2026-02-19
+Doc Version: v1.4.9
+Date Modified: 2026-02-24
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -50,6 +50,7 @@ controller, creating the lab, nodes and links on the fly.
 | TESTED.md | CI/CD | Platform and dependency validation |
 | CHANGES.md | All | Release history |
 | TODO.md | Developers | Roadmap and planned work |
+| PKI.md | Users, developers | PKI flags, CA-ROOT, EEM, auto-deploy certs, troubleshooting |
 
 ## Code structure and dependencies
 
@@ -301,6 +302,8 @@ configuration:
 $
 ```
 
+Note: Generated offline YAML includes `smart_annotations: []`, a field introduced in CML 2.8. TopoGen has not been tested on CML versions earlier than 2.9. Import on CML 2.7 or older may fail if the parser rejects unknown fields.
+
 At a minimum, the amount of nodes to be created must be provided.
 
 #### Modes
@@ -512,6 +515,7 @@ Defaults are safe for large labs (e.g., 300 nodes with `--flat-group-size 20` â†
 
 Assumptions and caveats:
 
+- **Coordinate layout is automatic.** TopoGen scales node x/y positions to always stay within CML's 15,000-coordinate limit, regardless of node count or `--flat-group-size`. You do not need to manually adjust group size to avoid import errors.
 - The guardrails assume the `unmanaged_switch` node definition has roughly 32 usable ports.
 - Custom node definitions/images (including customized unmanaged switch or different router images) may change interface counts, labels, or slot allocation. The guardrails do not auto-detect such customizations.
 - In generated offline YAML, unmanaged switch interfaces are labeled `portN`; the CML UI may present different labels.

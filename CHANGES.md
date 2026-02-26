@@ -20,6 +20,7 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+<<<<<<< HEAD
   - fix(csr): add TOPOGEN-NOSHUT EEM applet to all CSR1000v templates — works around CML bug where CSR interfaces enter `shutdown` after first boot or wipe despite `no shutdown` in startup config
     - EEM fires unconditionally at `@reboot`, applies `no shutdown` to all configured physical and management interfaces
     - Interface list is data-driven from the same `node.interfaces` + `mgmt` context the templates already use — no hardcoded interface range
@@ -32,6 +33,13 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - Files: DEVELOPER.md
   - docs(todo): add RESTCONF/NETCONF future feature for CSR1000v templates
     - Files: TODO.md
+  - fix(flat): auto-scale x/y coordinates in `offline_flat_yaml` and `offline_flat_pair_yaml` so any node count and group size produces importable YAML without exceeding CML's 15000-coordinate limit
+    - Previously, switch x was computed as `(i+1) * distance * 3` with no upper bound; at 26 access switches (520 nodes, group=20) the last switch landed at x=15600 and CML rejected the import with a validation error
+    - Fix: compute `sw_step_x` and `router_step_y` scaled to `max_coord=15000` (same approach as the existing DMVPN renderer); all node placements are clamped with `min(max_coord, ...)`
+    - Users no longer need to manually tune `--flat-group-size` to avoid coordinate overflow; the layout adapts automatically
+    - Files: src/topogen/render.py (rev v1.0.13 → v1.0.14), CHANGES.md (rev v1.2.8 → v1.2.9), README.md (rev v1.4.8 → v1.4.9)
+  - docs(pki): add PKI.md — single reference for TopoGen PKI (flags, CA-ROOT, clients, EEM applets, known issues, auto-deploy certs, troubleshooting); add PKI.md to README documentation map
+    - Files: PKI.md (new, rev v1.0.0), README.md (rev v1.4.7 → v1.4.8), CHANGES.md (rev v1.2.7 → v1.2.8)
   - feat(quiet): add `-q` / `--quiet` flag to suppress non-essential output
     - When set, log level is forced to ERROR so only errors and final result are shown; useful for scripts and CI/CD
     - Files: src/topogen/main.py (rev v1.1.3 → v1.1.4), CHANGES.md (rev v1.2.6 → v1.2.7), README.md (rev v1.4.5 → v1.4.6), DEVELOPER.md (rev v1.7.3 → v1.7.4), TODO.md (rev v1.6.3 → v1.6.4)
