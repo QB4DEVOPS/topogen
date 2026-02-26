@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.13
-Date Modified: 2026-02-24
+Doc Version: v1.6.14
+Date Modified: 2026-02-26
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -37,11 +37,7 @@ This file tracks in-progress work and future ideas for TopoGen.
 
 ## Feature roadmap (ordered)
 
-1. ~~OOB management network for flat, flat-pair, and DMVPN modes~~ (completed)
-2. DMVPN IPsec protection (IKEv2 + PSK) (completed)
-3. ~~DMVPN security roadmap (PKI) — single root CA~~ (completed)
-4. ~~DMVPN with PKI authentication~~ (completed)
-5. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
+1. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
 
@@ -71,14 +67,9 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 **Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
 
-**Note — Clock and cert validity lag:** PKI config injects the same `do clock set` time on CA and clients (e.g. 00:01:00 or generation-time). The CA issues certs with `notBefore` at the CA’s current time when the cert is created. Because nodes boot and set clock at different moments, a client can validate a cert *before* that cert’s validity period has started, resulting in `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID: ... The certificate (SN: 3E) is not yet valid   Validity period starts on 00:51:51 UTC Feb 23 2026` (validation at 00:50:58, validity starts 00:51:51). The same can happen for other serials (e.g. SN: 40 validity starts 00:52:24 while validation at 00:51:02). The lag is typically under a minute; WAIT-FOR-CA retries (e.g. 60 s) and later validation usually succeed once the client clock is at or past the cert’s `notBefore`, and EIGRP adjacencies (e.g. `%DUAL-5-NBRCHANGE: Neighbor 172.20.0.209 (Tunnel0) is up`) come up after that. Document this in README/PKI.md so users expect possible transient “not yet valid” until clocks align.
+**Note — Clock and cert validity lag:** PKI config injects the same `do clock set` time on CA and clients (e.g. 00:01:00 or generation-time). The CA issues certs with `notBefore` at the CA's current time when the cert is created. Because nodes boot and set clock at different moments, a client can validate a cert *before* that cert's validity period has started, resulting in `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID: ... The certificate (SN: 3E) is not yet valid   Validity period starts on 00:51:51 UTC Feb 23 2026` (validation at 00:50:58, validity starts 00:51:51). The same can happen for other serials (e.g. SN: 40 validity starts 00:52:24 while validation at 00:51:02). The lag is typically under a minute; WAIT-FOR-CA retries (e.g. 60 s) and later validation usually succeed once the client clock is at or past the cert's `notBefore`, and EIGRP adjacencies (e.g. `%DUAL-5-NBRCHANGE: Neighbor 172.20.0.209 (Tunnel0) is up`) come up after that. Document this in README/PKI.md so users expect possible transient "not yet valid" until clocks align.
 
 ## Promote to Issues
-
-- [ ] (add issue-worthy items here)
-
-- [x] **Bug: `offline_flat_yaml` missing coordinate scaling — x > 15000 for large labs.** `offline_flat_yaml` computes switch x as `(i+1) * distance * 3` with no upper bound; at 26 access switches (520 nodes, group=20, distance=200) the last switch lands at x=15600, exceeding CML's 15000 limit. The DMVPN renderer has this fix (`sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_access + 1))))`). Apply the same scaling to `offline_flat_yaml` and `offline_flat_pair_yaml`. Workaround: increase `--flat-group-size` to reduce switch count (e.g., group=26 → 20 switches → max x=12000).
-  - Blast radius: `src/topogen/render.py` (`offline_flat_yaml`, `offline_flat_pair_yaml` coordinate blocks only).
 
 - [ ] **Task: Determine CML 2.10 lab schema version and add to `--cml-version` choices.** CML 2.10 (beta) currently accepts `0.3.0` YAML (backward-compatible), but may introduce a new schema version. Check an exported lab from a CML 2.10 controller for the `version:` field at the top of the YAML. If a new version (e.g. `0.4.0`) is introduced: add it to `--cml-version` choices in the arg parser, update the README default note, and make it the new default. Blast radius: arg parser choices list, README `--cml-version` docs.
 
@@ -100,11 +91,15 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] TOPOGEN-NOSHUT EEM applet on all CSR1000v templates (supersedes "CSR EEM link-up script" future idea). See CHANGES.md `fix(csr)` entry.
 - [x] Archive config in all IOS/IOS-XE templates (feat/archive branch): archive + log config + path flash: + maximum 5 + write-memory; rundiff alias unchanged.
 - [x] DMVPN IKEv2 PKI validated (`--dmvpn-security ikev2-pki` + `--pki`): IKEv2 rsa-sig tunnels come up; flat, flat-pair underlays confirmed; EEM applets structurally fixed (injected last, before final `end`); timers 300 s/305 s; manual `authc` is workaround when CA-ROOT timing misses auto-enrollment window (see CHANGES.md v1.2.2–v1.2.4)
 - [x] DMVPN with PKI authentication: `--dmvpn-security ikev2-pki` (requires `--pki`); IKEv2 rsa-sig + pki trustpoint CA-ROOT-SELF in iosv-dmvpn/csr-dmvpn; online DMVPN injects PKI client when --pki (see CHANGES.md)
+- [x] DMVPN Phase 3 support: `--dmvpn-phase 3` with NHRP redirect on hubs, NHRP shortcut on spokes (see CHANGES.md)
+- [x] DMVPN security: IKEv2 + PSK (`--dmvpn-security ikev2-psk`) and IKEv2 + PKI (`--dmvpn-security ikev2-pki`) (see CHANGES.md)
 - [x] feat/pki-ca: single root CA router for DMVPN PKI (merged; see CHANGES.md)
 - [x] Offline-to-CML import: `--import-yaml`, `--import`, `--up`, `--print-up-cmd`, non-blocking `--start` (see CHANGES.md)
+- [x] `--quiet` flag: `-q` / `--quiet` forces log level to ERROR (see CHANGES.md)
 - [x] Allow `python -m topogen` via `src/topogen/__main__.py` (see CHANGES.md)
 - [x] Add `--mgmt-bridge` support for online NX and simple modes (see CHANGES.md)
 - [x] Add `--start` flag for auto-starting labs after creation (see CHANGES.md)
@@ -112,6 +107,7 @@ Recent completions:
 - [x] Include all CLI args in lab description for repeatability (see CHANGES.md)
 - [x] Add external-connector bridge support for OOB management (offline modes) (see CHANGES.md)
 - [x] OOB management network for flat, flat-pair, and DMVPN modes (see CHANGES.md)
+- [x] Coordinate scaling bug fix: `offline_flat_yaml` / `offline_flat_pair_yaml` auto-scale x/y to stay within CML's 15000-coordinate limit (see CHANGES.md)
 
 ## Future ideas
 
@@ -127,10 +123,6 @@ Recent completions:
   - CA IP (`ca_g_addr.ip`) is already computed; pass it to router Jinja context as SCEP enrollment URL
   - Also fix CA name inconsistency: DMVPN render path uses `ROOT-CA`; flat-pair render paths use `CA-ROOT` — standardize all to `CA-ROOT`
   - Blast radius: main.py (remove `--pki-enroll`, add `--pki-scep`), render.py (fix CA name + pass ca_ip to router templates), router templates (add trustpoint block)
-- [ ] **New feature: CSR (IOS-XE) EEM link-up script** — bring up wiped router interfaces if configured
-  - Why: CSRs can boot with interfaces in shutdown or inconsistent state; after CML/node bring-up, interfaces may need to be explicitly brought up. EEM applet on interface link-up can run `no shutdown` on configured interfaces so the router recovers without manual intervention.
-  - Scope: CSR templates (csr-dmvpn, csr-eigrp, csr-ospf, csr-pki-ca, etc.); inject EEM applet that triggers on link-up and brings up any configured interfaces that are currently down.
-  - Blast radius: render.py (EEM block for CSR), examples/ (new eem-csr-link-up.txt or similar), possibly a shared helper for “interface bring-up” EEM.
 - [ ] **New feature: Route leak into TENANT VRF — host route to CA server (10.10.255.254)** so CEs can get a cert
   - Why: In flat-pair (and similar) with VRF, even routers / CEs have no path to the NBMA network where the CA lives; they cannot reach 10.10.255.254 for SCEP enrollment. Leaking a host route for the CA (e.g. 10.10.255.254/32) into the TENANT VRF (or the pair-link VRF) allows CEs to reach the CA and enroll.
   - Scope: When `--pki` and VRF (e.g. `--vrf` / `--pair-vrf` / TENANT) are in use, inject a static route (or route-leak) in the tenant/pair VRF to 10.10.255.254 (CA) via the appropriate next-hop (e.g. odd router's NBMA-facing interface or a shared link). Exact mechanism depends on topology (flat-pair: odd router has NBMA; CE reaches odd; odd needs to advertise or leak CA host route into VRF).
@@ -207,18 +199,6 @@ Recent completions:
 - [ ] Refactor: deduplicate offline YAML emission for `--mgmt-bridge` (external_connector + SWoob0 port offset + links)
   - Today this logic is repeated across multiple offline renderers in `src/topogen/render.py`
   - Goal: centralize into a shared helper to reduce risk of fixing one mode and missing others
-- [ ] (add ideas here)
-- [x] Add archive config to all IOS/IOS-XE templates (feat/archive). Block added to: csr-dmvpn, csr-eigrp, csr-ospf, csr-pki-ca, iosv, iosv-dmvpn, iosv-eigrp, iosv-eigrp-stub, iosv-eigrp-nonflat, iol-xe. LXC (FRR) skipped. Block:
-  ```
-  archive
-   log config
-    logging enable
-    notify syslog contenttype plaintext
-    hidekeys
-   path flash:
-   maximum 5
-   write-memory
-  ```
 - [ ] Optional: interactive dependency graph / call graph visualization
   - Goal: visualize code relationships (imports/calls) as a movable graph (nodes/edges)
   - Possible outputs: Mermaid graph in Markdown, Graphviz DOT/SVG, or JSON for a web viewer
@@ -233,11 +213,6 @@ Recent completions:
 - [ ] Add CLI to select routing protocol configuration model (named EIGRP / named OSPF vs classic/numeric)
   - Why: avoid mixed-mode confusion; make the chosen model explicit
 
-- [ ] DMVPN Phase 3 support
-  - NHRP redirect on hubs
-  - NHRP shortcut on spokes
-  - EIGRP next-hop / split-horizon handling for Phase 3
-
 - [ ] Validate runtime behavior in CML for DMVPN underlay `flat-pair`
   - odd routers are DMVPN endpoints (Tunnel0/NHRP)
   - even routers are EIGRP-only
@@ -247,13 +222,9 @@ Recent completions:
   - whether `N` should mean total routers vs DMVPN endpoints
   - or document the doubling behavior clearly
 
-- [ ] DMVPN security roadmap
-  - IKEv2 with PSK
-  - PKI support
-
 - [ ] Front Door VRF (FVRF) for DMVPN
 
-- [ ] Explore shareable, self-describing lab intents (example lab collection / “marketplace” concept)
+- [ ] Explore shareable, self-describing lab intents (example lab collection / "marketplace" concept)
 - [ ] Formalize serialized intent model (versioned `topogen:` schema embedded in lab YAML)
 - [ ] Support regenerating a lab from its embedded intent (`topogen regenerate lab.yaml`)
 - [ ] Make management plane a first-class intent (mgmt VRF, reserved interface, IPv4/IPv6 mode)
@@ -321,30 +292,6 @@ Recent completions:
   - Format: `ARTIFACT_YAML=out/lab.yaml bytes=862312 kind=flat-pair nodes=520`
   - When: Implement when a CI/CD pipeline or automation script needs to consume the output programmatically.
   - Blast radius: render.py (4 offline write paths), no behavior change to existing log lines.
-
-- [x] Add `--quiet` flag to suppress non-essential output (low effort) (feat/quiet).
-  - Implemented: `-q` / `--quiet` forces log level to ERROR so only errors and final result are shown; useful for scripts and CI/CD.
-  - Blast radius: main.py (argparse + log level override), no changes to render logic.
-
-- [x] Add `--import` and `--import-yaml` flags for offline-to-CML workflow (medium effort).
-  - Why: Currently there's no way to take an offline YAML and push it into CML without switching to online mode.
-    This bridges the gap: generate offline → inspect/edit → import → start.
-  - Implemented:
-    - `--import-yaml <file>`: Read an existing offline YAML (skip generation); use with `--import`
-    - `--import`: Import the generated/read YAML into CML via `virl2_client` (requires `--offline-yaml` or `--import-yaml`)
-    - Print file size (KB) before import and lab URL after import (same as online mode)
-    - `--start` works after import; start runs in background so CLI returns immediately (check CML UI for status)
-  - Examples:
-    - Generate + import + start: `topogen ... --offline-yaml out/lab.yaml --import --start`
-    - Read existing + import: `topogen --import-yaml out/lab.yaml --import`
-    - Read + import + start: `topogen --import-yaml out/lab.yaml --import --start`
-  - Blast radius: main.py (argparse dispatch), render.py (import path via virl2_client), no changes to offline generation.
-
-- [x] Add `--up <file>` shorthand and `--print-up-cmd` flag (low effort, sugar).
-  - Implemented: `--up FILE` is sugar for `--import-yaml FILE --import --start`.
-  - `--print-up-cmd`: with `--offline-yaml`, after generation prints "When you're ready: topogen --up <file>" (only when `--up` not used on this run).
-  - Example: generate `topogen ... --offline-yaml out/lab.yaml --print-up-cmd`, then deploy with `topogen --up out/lab.yaml`.
-  - Blast radius: main.py (argparse + dispatch).
 
 - [ ] Add `--blank` flag: topology only, no/minimal node config (medium effort).
   - Why: Generated lab has nodes with empty/default config so that after import to CML, CML's **Bootstrap Lab** (Workbench → Lab → Bootstrap Lab) can run and generate stub configs (hostname, interface up, default users). Without --blank, TopoGen injects full configs and Bootstrap Lab will not run.

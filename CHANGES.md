@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.9
-Date Modified: 2026-02-25
+Doc Version: v1.2.10
+Date Modified: 2026-02-26
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,7 +20,8 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
-<<<<<<< HEAD
+  - docs(cleanup): remove stray merge conflict marker from CHANGES.md; clean up TODO.md — remove completed roadmap items (OOB mgmt, DMVPN IPsec PSK, DMVPN PKI, DMVPN Phase 3, DMVPN security roadmap, CSR EEM link-up superseded by TOPOGEN-NOSHUT), remove duplicate done items from Future ideas, move coordinate scaling bug to Done, remove placeholders
+    - Files: CHANGES.md (rev v1.2.9 → v1.2.10), TODO.md (rev v1.6.13 → v1.6.14)
   - fix(csr): add TOPOGEN-NOSHUT EEM applet to all CSR1000v templates — works around CML bug where CSR interfaces enter `shutdown` after first boot or wipe despite `no shutdown` in startup config
     - EEM fires unconditionally at `@reboot`, applies `no shutdown` to all configured physical and management interfaces
     - Interface list is data-driven from the same `node.interfaces` + `mgmt` context the templates already use — no hardcoded interface range
