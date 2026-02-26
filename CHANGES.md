@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
 Doc Version: v1.2.9
-Date Modified: 2026-02-24
+Date Modified: 2026-02-25
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,19 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+<<<<<<< HEAD
+  - fix(csr): add TOPOGEN-NOSHUT EEM applet to all CSR1000v templates — works around CML bug where CSR interfaces enter `shutdown` after first boot or wipe despite `no shutdown` in startup config
+    - EEM fires unconditionally at `@reboot`, applies `no shutdown` to all configured physical and management interfaces
+    - Interface list is data-driven from the same `node.interfaces` + `mgmt` context the templates already use — no hardcoded interface range
+    - EEM applet placed after `line vty` / `line con` sections (IOS-XE requires event manager blocks last before `end`)
+    - Action labels kept within `.0`–`.9` to avoid EEM lexicographic sorting issues
+    - Templates: csr-dmvpn (rev v1.1.2 → v1.3.0), csr-eigrp (rev v1.1.1 → v1.3.0), csr-ospf (rev v1.1.1 → v1.3.0), csr-pki-ca (rev v1.1.1 → v1.3.0)
+    - Files: CHANGES.md (rev v1.2.7 → v1.2.9)
+  - docs(developer): add EEM placement and action label numbering rules
+    - EEM applets must appear after `line vty`/`line con` sections; action labels must stay within `.0`–`.9`
+    - Files: DEVELOPER.md
+  - docs(todo): add RESTCONF/NETCONF future feature for CSR1000v templates
+    - Files: TODO.md
   - fix(flat): auto-scale x/y coordinates in `offline_flat_yaml` and `offline_flat_pair_yaml` so any node count and group size produces importable YAML without exceeding CML's 15000-coordinate limit
     - Previously, switch x was computed as `(i+1) * distance * 3` with no upper bound; at 26 access switches (520 nodes, group=20) the last switch landed at x=15600 and CML rejected the import with a validation error
     - Fix: compute `sw_step_x` and `router_step_y` scaled to `max_coord=15000` (same approach as the existing DMVPN renderer); all node placements are clamped with `min(max_coord, ...)`

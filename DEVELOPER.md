@@ -726,6 +726,29 @@ When writing EEM applets that drive **interactive** IOS-XE CLI prompts (e.g. `cr
 
 See `examples/eem-client-pki-authenticate.txt` and `examples/eem-test-pki-authenticate.txt` for the working pattern (`pattern "yes/no"` plus `cli command " "` after `yes`). Use `debug event manager action cli` on the device to confirm IN/OUT timing if troubleshooting.
 
+### EEM placement in IOS-XE configs
+
+`event manager applet` blocks **must appear after** `line vty` / `line con` sections in the generated configuration. IOS-XE parses the config top-down and `end` inside an EEM conditional (`action X.Y end`) can collide with the global config parser if it appears before `line` stanzas. Place all EEM applets as the **last configuration section** before the final `end` statement.
+
+Correct ordering:
+
+```
+line vty 0 4
+ ...
+line con 0
+ ...
+!
+event manager applet TOPOGEN-NOSHUT authorization bypass
+ event timer cron cron-entry "@reboot"
+ action 1.0 cli command "enable"
+ ...
+!
+end
+```
+
+### EEM action label numbering
+
+EEM sorts action labels **lexicographically**, not numerically. Labels like `1.10` sort before `1.2` because the string `"1.10"` < `"1.2"`. Keep the minor number (after the dot) within `0`–`9` to avoid misordering. Use additional major groups (`2.0`, `3.0`, `4.0`, ...) instead of extending a single group past `.9`.
 
 
 ### AI Onboarding: Doc Version & Commit Rules (Mandatory)

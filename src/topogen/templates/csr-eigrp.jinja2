@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.1
-# Date Modified: 2026-02-16
+# Doc Version: v1.3.0
+# Date Modified: 2026-02-25
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp)
@@ -152,6 +152,7 @@ archive
 alias exec rundiff show archive config differences system:running-config
 !
 {%- endif %}
+!
 line vty 0 4
     transport input ssh telnet
     exec-timeout 0 0
@@ -159,5 +160,25 @@ line vty 0 4
 line con 0
     password {{ config.password }}
     exec-timeout 0 0
+!
+event manager applet TOPOGEN-NOSHUT authorization bypass
+ event timer cron cron-entry "@reboot"
+ action 1.0 cli command "enable"
+ action 1.1 cli command "terminal length 0"
+ action 1.2 cli command "config t"
+{%- set ns_eem = namespace(n=2) %}
+{%- for iface in node.interfaces %}
+ action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ loop.index0 + 1 }}"
+ action {{ ns_eem.n }}.1 cli command "no shutdown"
+{%- set ns_eem.n = ns_eem.n + 1 %}
+{%- endfor %}
+{%- if mgmt and mgmt.enabled %}
+ action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ mgmt.slot }}"
+ action {{ ns_eem.n }}.1 cli command "no shutdown"
+{%- set ns_eem.n = ns_eem.n + 1 %}
+{%- endif %}
+ action {{ ns_eem.n }}.0 cli command "end"
+{%- set ns_eem.n = ns_eem.n + 1 %}
+ action {{ ns_eem.n }}.0 syslog msg "TOPOGEN-NOSHUT: interfaces initialized"
 !
 end
