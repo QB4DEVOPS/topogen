@@ -333,6 +333,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help='VRF name to apply to the flat-pair odd-router Gi0/1 (pair link), default "%(default)s"',
     )
     parser.add_argument(
+        "--dmvpn-fvrf",
+        dest="dmvpn_fvrf",
+        type=str,
+        default=None,
+        help='Enable Front Door VRF: place the NBMA interface into the named transport VRF (e.g. INTERNET). Adds tunnel vrf, match fvrf to IKEv2, and ip tcp adjust-mss 1360 on Tunnel0.',
+    )
+    parser.add_argument(
         "--mgmt",
         dest="enable_mgmt",
         action="store_true",

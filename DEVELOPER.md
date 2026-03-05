@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.4
-Date Modified: 2026-02-19
+Doc Version: v1.7.5
+Date Modified: 2026-02-26
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -1257,6 +1257,19 @@ Rule of thumb:
 - **Config.toml default / parsing**: `src/topogen/config.py`
 
 
+
+## Feature development workflow
+
+The standard workflow for implementing a new feature or config change:
+
+1. **Test** — manually configure and validate the commands on a live device in CML. Confirm the feature works as expected before touching any code.
+2. **Implement** — add the working config to templates/code (templates, render.py, main.py as needed).
+3. **Gen** — generate an offline YAML (`--offline-yaml out\<lab>.yaml`).
+4. **Grep** — search the generated YAML to verify the change is present (`Select-String -Path out\<lab>.yaml -Pattern "<expected line>"`).
+5. **Test** — import the YAML to CML (`--import-yaml <file> --import`), boot the lab, and validate on device.
+6. **Document** — update README.md, CHANGES.md, TODO.md, and DEVELOPER.md per the Doc Versioning rules.
+
+**Important:** Do not skip step 1. Manual device testing catches IOS parser issues, ordering dependencies, and behavioral surprises that offline generation cannot reveal.
 
 ## How to validate changes
 

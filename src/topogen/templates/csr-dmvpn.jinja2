@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
-# Date Modified: 2026-02-25
+# Doc Version: v1.4.0
+# Date Modified: 2026-02-26
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, dmvpn settings, feature flags: mgmt, ntp, pki)
@@ -24,6 +24,13 @@ ip ssh version 2
 ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
+{%- if dmvpn_fvrf %}
+vrf definition {{ dmvpn_fvrf }}
+ rd 100:100
+ address-family ipv4
+ exit-address-family
+!
+{%- endif %}
 {%- if dmvpn_vrf %}
 vrf definition {{ dmvpn_vrf }}
  rd 1:1
@@ -39,6 +46,9 @@ crypto ikev2 proposal TOPGEN-PROP
  group 14
 !
 crypto ikev2 policy TOPGEN-POL
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  proposal TOPGEN-PROP
 !
 crypto ikev2 keyring TOPGEN-KR
@@ -48,6 +58,9 @@ crypto ikev2 keyring TOPGEN-KR
   pre-shared-key remote {{ dmvpn_psk }}
 !
 crypto ikev2 profile TOPGEN-IKEV2
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  match identity remote address 0.0.0.0 0.0.0.0
  authentication remote pre-share
  authentication local pre-share
@@ -68,9 +81,15 @@ crypto ikev2 proposal TOPGEN-PROP
  group 14
 !
 crypto ikev2 policy TOPGEN-POL
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  proposal TOPGEN-PROP
 !
 crypto ikev2 profile TOPGEN-IKEV2
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  match identity remote fqdn domain {{ config.domainname }}
  identity local fqdn {{ node.hostname }}.{{ config.domainname }}
  authentication remote rsa-sig
@@ -92,9 +111,15 @@ crypto ikev2 proposal TOPGEN-PROP
  group 14
 !
 crypto ikev2 policy TOPGEN-POL
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  proposal TOPGEN-PROP
 !
 crypto ikev2 profile TOPGEN-IKEV2
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  match identity remote fqdn domain {{ config.domainname }}
  identity local fqdn {{ node.hostname }}.{{ config.domainname }}
  authentication remote rsa-sig
@@ -124,6 +149,9 @@ crypto ipsec profile TOPGEN-IPSEC
 {%- endfor %}
 !
 interface GigabitEthernet1
+{%- if dmvpn_fvrf %}
+ vrf forwarding {{ dmvpn_fvrf }}
+{%- endif %}
  ip address {{ ns.nbma.ip }} {{ ns.nbma.netmask }}
  no shutdown
 !
@@ -149,9 +177,14 @@ interface Tunnel0
  ip address {{ ns.tun.ip }} {{ ns.tun.netmask }}
  no ip redirects
  tunnel source GigabitEthernet1
+{%- if dmvpn_fvrf %}
+ tunnel vrf {{ dmvpn_fvrf }}
+ ip tcp adjust-mss 1360
+{%- endif %}
  tunnel key {{ dmvpn_tunnel_key }}
  tunnel mode gre multipoint
  ip nhrp network-id 10
+ ip nhrp authentication DMVPNKEY
 {%- if dmvpn_security == "ikev2-psk" or dmvpn_security == "ikev2-pki" or dmvpn_security == "ikev2-rsa" %}
  tunnel protection ipsec profile TOPGEN-IPSEC
 {%- endif %}

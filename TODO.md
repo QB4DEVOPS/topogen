@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.14
+Doc Version: v1.6.19
 Date Modified: 2026-02-26
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -40,6 +40,19 @@ This file tracks in-progress work and future ideas for TopoGen.
 1. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
+
+### NHRP authentication
+
+- [ ] Add `ip nhrp authentication DMVPN-AUTH` to DMVPN tunnel interface config (hub and spoke, all phases, all security modes)
+  - Scope: iosv-dmvpn.jinja2, csr-dmvpn.jinja2 (under `interface Tunnel0`)
+  - Needs: new Jinja context variable (e.g. `dmvpn_nhrp_auth`) or hardcoded string; decide if CLI flag controls the auth string or if it is always emitted
+  - Blast radius: templates (iosv-dmvpn, csr-dmvpn), render.py (pass context), optionally main.py (new flag)
+
+### CA-ROOT alias
+
+- [ ] Add `alias exec servcerts sh crypto pki server CA-ROOT cer` to CA-ROOT config
+  - Scope: csr-pki-ca.jinja2 (alias section)
+  - Why: convenience shortcut to inspect CA-issued certificates on the root CA
 
 ### EEM scripts (PKI) — working status
 
@@ -223,6 +236,14 @@ Recent completions:
   - or document the doubling behavior clearly
 
 - [ ] Front Door VRF (FVRF) for DMVPN
+  - FVRF places Gi0/0 (NBMA) into a transport VRF (e.g. `INTERNET`); Tunnel0, Loopback0, pair link stay in GRT
+  - Tunnel0 gets `tunnel vrf INTERNET` to source from the transport VRF
+  - **Fix required:** EEM scripts (WAIT-FOR-CA, CLIENT-PKI-AUTHENTICATE, etc.) that ping the CA at 10.10.255.254 must use `ping vrf INTERNET 10.10.255.254` instead of `ping 10.10.255.254` — the CA is on the NBMA network which is in the FVRF, not the GRT
+  - Same applies to any SCEP enrollment URL or other config that assumes GRT reachability to the NBMA network
+  - `enrollment vrf INTERNET` on trustpoint rejected on IOSv — IOS-XE only (CSR template only)
+  - NHRP auth string max 8 characters on IOS/IOSv (tested: `DMVPN-AUTHC` rejected, `DMVPNKEY` accepted)
+  - IKEv2 policy needs `match fvrf INTERNET` so IKEv2 matches traffic from the transport VRF; without it, IKEv2 SAs won't form over the FVRF tunnel
+  - IKEv2 profile also needs `match fvrf INTERNET` (`crypto ikev2 profile TOPGEN-IKEV2` → `match fvrf INTERNET`)
 
 - [ ] Explore shareable, self-describing lab intents (example lab collection / "marketplace" concept)
 - [ ] Formalize serialized intent model (versioned `topogen:` schema embedded in lab YAML)

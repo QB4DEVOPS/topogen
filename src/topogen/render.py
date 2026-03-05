@@ -1211,6 +1211,7 @@ class Renderer:
         ).lower() == "eigrp"
 
         dmvpn_vrf = self.args.pair_vrf if getattr(self.args, "enable_vrf", False) else None
+        dmvpn_fvrf = getattr(self.args, "dmvpn_fvrf", None)
 
         hubs_list = getattr(self.args, "dmvpn_hubs_list", None)
         if hubs_list:
@@ -1370,6 +1371,7 @@ class Renderer:
                     dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
                     dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
+                    dmvpn_fvrf=dmvpn_fvrf,
                     dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                     dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
@@ -1574,6 +1576,7 @@ class Renderer:
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
                 dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
+                dmvpn_fvrf=getattr(self.args, "dmvpn_fvrf", None),
                 dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                 dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
@@ -2170,6 +2173,7 @@ class Renderer:
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
                 dmvpn_phase=getattr(args, "dmvpn_phase", 2),
+                dmvpn_fvrf=getattr(args, "dmvpn_fvrf", None),
                 dmvpn_security=getattr(args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(args, "dmvpn_psk", None),
                 dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
@@ -2455,6 +2459,7 @@ class Renderer:
         ).lower() == "eigrp"
 
         dmvpn_vrf = args.pair_vrf if getattr(args, "enable_vrf", False) else None
+        dmvpn_fvrf = getattr(args, "dmvpn_fvrf", None)
 
         base = str(getattr(args, "template", ""))
         if not base.endswith("-dmvpn"):
@@ -2804,6 +2809,7 @@ class Renderer:
                     dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
                     dmvpn_phase=getattr(args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
+                    dmvpn_fvrf=dmvpn_fvrf,
                     dmvpn_security=getattr(args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(args, "dmvpn_psk", None),
                     dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
