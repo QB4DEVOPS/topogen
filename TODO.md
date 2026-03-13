@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.19
-Date Modified: 2026-02-26
+Doc Version: v1.6.20
+Date Modified: 2026-03-13
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -80,9 +80,11 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 **Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
 
-**Note — Clock and cert validity lag:** PKI config injects the same `do clock set` time on CA and clients (e.g. 00:01:00 or generation-time). The CA issues certs with `notBefore` at the CA's current time when the cert is created. Because nodes boot and set clock at different moments, a client can validate a cert *before* that cert's validity period has started, resulting in `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID: ... The certificate (SN: 3E) is not yet valid   Validity period starts on 00:51:51 UTC Feb 23 2026` (validation at 00:50:58, validity starts 00:51:51). The same can happen for other serials (e.g. SN: 40 validity starts 00:52:24 while validation at 00:51:02). The lag is typically under a minute; WAIT-FOR-CA retries (e.g. 60 s) and later validation usually succeed once the client clock is at or past the cert's `notBefore`, and EIGRP adjacencies (e.g. `%DUAL-5-NBRCHANGE: Neighbor 172.20.0.209 (Tunnel0) is up`) come up after that. Document this in README/PKI.md so users expect possible transient "not yet valid" until clocks align.
+**Note — Clock and cert validity lag (fixed):** Previously, CA and clients used the same `do clock set` date, causing `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors when clients validated certs before the CA's `notBefore`. Fixed by backdating the CA-ROOT clock by 1 day (`_pki_clock_set_today(backdate_days=1)`). Clients keep today's date. See DEVELOPER.md "PKI CA clock backdate" for the tiered offset design (supports future 3-level PKI hierarchy). Closes GitHub issue #31.
 
 ## Promote to Issues
+
+- [ ] **Enhancement: `--import-yaml` should read `title:` from YAML when `-L` is not provided.** Currently, `--import-yaml` only sets the lab title if `-L` is passed on the import command line. If `-L` is omitted, the lab defaults to "topogen lab" even though the YAML contains a `title:` field set during generation. A user who generated with `-L MyLab` expects the title to carry through on import without repeating it (principle of least astonishment). Fix: after `import_lab()`, read the `title:` from the YAML and set `lab.title` if `-L` was not provided. `-L` on import should act as an override, enabling use cases like importing the same YAML multiple times with different lab names for tracking (e.g. `-L "regression-test-42"`, `-L "nightly-build-2026-03-13"`). Blast radius: render.py (import path), main.py (pass `-L` value or None to import logic).
 
 - [ ] **Task: Determine CML 2.10 lab schema version and add to `--cml-version` choices.** CML 2.10 (beta) currently accepts `0.3.0` YAML (backward-compatible), but may introduce a new schema version. Check an exported lab from a CML 2.10 controller for the `version:` field at the top of the YAML. If a new version (e.g. `0.4.0`) is introduced: add it to `--cml-version` choices in the arg parser, update the README default note, and make it the new default. Blast radius: arg parser choices list, README `--cml-version` docs.
 

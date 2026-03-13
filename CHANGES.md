@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.10
-Date Modified: 2026-02-26
+Doc Version: v1.2.11
+Date Modified: 2026-03-13
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,11 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(pki): backdate CA-ROOT clock by 1 day so CA certificate `notBefore` precedes client clocks — prevents `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors on node boot (closes #31)
+    - `_pki_clock_set_today()` now accepts `backdate_days` parameter; CA uses `backdate_days=1`, clients use default `0`
+    - Design supports future 3-level PKI hierarchy with tiered offsets (see DEVELOPER.md)
+    - Files: src/topogen/render.py (rev v1.0.14 → v1.0.15), DEVELOPER.md (rev v1.7.5 → v1.7.6), TODO.md (rev v1.6.19 → v1.6.20), CHANGES.md (rev v1.2.10 → v1.2.11), README.md (rev v1.4.9 → v1.4.10)
+  - docs(todo): add enhancement — `--import-yaml` should read `title:` from YAML when `-L` is not provided (PLA)
   - docs(cleanup): remove stray merge conflict marker from CHANGES.md; clean up TODO.md — remove completed roadmap items (OOB mgmt, DMVPN IPsec PSK, DMVPN PKI, DMVPN Phase 3, DMVPN security roadmap, CSR EEM link-up superseded by TOPOGEN-NOSHUT), remove duplicate done items from Future ideas, move coordinate scaling bug to Done, remove placeholders
     - Files: CHANGES.md (rev v1.2.9 → v1.2.10), TODO.md (rev v1.6.13 → v1.6.14)
   - fix(csr): add TOPOGEN-NOSHUT EEM applet to all CSR1000v templates — works around CML bug where CSR interfaces enter `shutdown` after first boot or wipe despite `no shutdown` in startup config

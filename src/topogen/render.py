@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.14
-# Date Modified: 2026-02-23
+# Doc Version: v1.0.15
+# Date Modified: 2026-03-13
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -89,7 +89,7 @@ import os
 import threading
 from pathlib import Path
 from argparse import Namespace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ipaddress import IPV4LENGTH, IPv4Address, IPv4Interface, IPv4Network
 from typing import Any, Set, Tuple, Union
 
@@ -298,9 +298,10 @@ def format_interface_description(iface_pair: dict, this: int) -> str:
 
 # Hardcoded clock set value: "today" at lab generation time (00:01:00 UTC).
 # Must be after CA cert notBefore (often 00:00:21) so IKEv2 cert validation succeeds; NTP takes over later.
-def _pki_clock_set_today() -> str:
-    """Return IOS clock set string: 00:01:00 Month Day Year (UTC at generation time)."""
-    dt = datetime.now(timezone.utc)
+def _pki_clock_set_today(backdate_days: int = 0) -> str:
+    """Return IOS clock set string: 00:01:00 Month Day Year (UTC at generation time).
+    backdate_days > 0 shifts the date earlier (CA uses 1 so notBefore precedes client clocks)."""
+    dt = datetime.now(timezone.utc) - timedelta(days=backdate_days)
     return f"00:01:00 {dt.strftime('%B %d %Y')}"
 
 
@@ -555,7 +556,7 @@ def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url:
     fqdn = f"{hostname}.{domainname}"
     return [
         "!",
-        f"do clock set {_pki_clock_set_today()}",
+        f"do clock set {_pki_clock_set_today(backdate_days=1)}",
         "!",
         "ip http secure-server",
         "ip http secure-server trustpoint CA-ROOT-SELF",
