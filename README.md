@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.9
-Date Modified: 2026-02-24
+Doc Version: v1.4.10
+Date Modified: 2026-03-13
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -611,7 +611,7 @@ Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are r
 
 Use `--mgmt` for OOB SSH; use `--mgmt-vrf global` to keep management in the global routing table. For step-by-step troubleshooting (clock, certificates, IKEv2), see [docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md](docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md).
 
-**PKI and clock:** PKI uses the `do` command to set the clock (e.g. `do clock set ...`) in the generated config so the device clock is authoritative before the CA starts and clients enroll. That speeds up PKI by avoiding certificate validity failures due to an unsynced or default clock. For labs where you prefer to rely on NTP or external automation for time, a future `--clock-set` option may allow disabling this behavior (see TODO.md).
+**PKI and clock:** PKI uses the `do` command to set the clock (e.g. `do clock set ...`) in the generated config so the device clock is authoritative before the CA starts and clients enroll. The CA-ROOT clock is backdated by 1 day so its certificate's `notBefore` is always earlier than any client's clock, preventing `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors on first boot. Clients use today's date. For labs where you prefer to rely on NTP or external automation for time, a future `--clock-set` option may allow disabling this behavior (see TODO.md).
 
 **PKI and DMVPN flat-pair:** In DMVPN with `--dmvpn-underlay flat-pair`, even routers (R2, R4, …) have no link to the NBMA/10.10.0.0 network; they are only connected to their odd partner. The CA-ROOT is on the NBMA network. So **even routers cannot reach the CA and do not get certificates**; only odd routers (DMVPN endpoints) can enroll. This is by design. Use OOB management (e.g. `--mgmt`) if even routers need to reach NTP or other services.
 

@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.5
-Date Modified: 2026-02-26
+Doc Version: v1.7.6
+Date Modified: 2026-03-13
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -750,6 +750,27 @@ end
 
 EEM sorts action labels **lexicographically**, not numerically. Labels like `1.10` sort before `1.2` because the string `"1.10"` < `"1.2"`. Keep the minor number (after the dot) within `0`–`9` to avoid misordering. Use additional major groups (`2.0`, `3.0`, `4.0`, ...) instead of extending a single group past `.9`.
 
+
+### PKI CA clock backdate (notBefore grace window)
+
+The CA-ROOT's `do clock set` is backdated by 1 day so the CA certificate's `notBefore` is always earlier than any client's clock. This prevents `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors on node boot.
+
+Implementation in `render.py`:
+
+- `_pki_clock_set_today(backdate_days=0)` — single function with an optional offset. `backdate_days > 0` shifts the date earlier.
+- **CA-ROOT** call site (`_pki_ca_self_enroll_block_lines`): `_pki_clock_set_today(backdate_days=1)` → yesterday.
+- **Client** call sites (`_inject_pki_client_trustpoint`, EEM applets): `_pki_clock_set_today()` → today (default).
+
+For a future 3-level PKI hierarchy (`CA-ROOT → CA-POLICY → CA-ISSUING → clients`), use tiered offsets so every signer's `notBefore` is strictly older than anything it signs:
+
+| PKI role | `backdate_days` | Example date (if today = Mar 13) |
+|---|---|---|
+| CA-ROOT (offline root) | `3` | Mar 10 |
+| CA-POLICY (intermediate) | `2` | Mar 11 |
+| CA-ISSUING (issuing) | `1` | Mar 12 |
+| Clients (routers) | `0` | Mar 13 |
+
+The function already accepts any integer, so adding new CA tiers only requires wiring the right value at each new call site.
 
 ### AI Onboarding: Doc Version & Commit Rules (Mandatory)
 
