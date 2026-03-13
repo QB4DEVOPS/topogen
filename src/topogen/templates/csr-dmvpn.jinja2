@@ -1,3 +1,12 @@
+{# File Chain (see DEVELOPER.md):
+# Doc Version: v1.4.0
+# Date Modified: 2026-02-26
+#
+# - Called by: src/topogen/render.py (Jinja render step)
+# - Reads from: Jinja context (config, node, dmvpn settings, feature flags: mgmt, ntp, pki)
+# - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
+# - Calls into: None (template-only)
+#}
 hostname {{ node.hostname }}
 !
 service timestamps debug datetime msec
@@ -15,6 +24,13 @@ ip ssh version 2
 ip ssh server algorithm authentication password
 username {{ config.username }} privilege 15 secret {{ config.password }}
 cdp run
+{%- if dmvpn_fvrf %}
+vrf definition {{ dmvpn_fvrf }}
+ rd 100:100
+ address-family ipv4
+ exit-address-family
+!
+{%- endif %}
 {%- if dmvpn_vrf %}
 vrf definition {{ dmvpn_vrf }}
  rd 1:1
@@ -30,6 +46,9 @@ crypto ikev2 proposal TOPGEN-PROP
  group 14
 !
 crypto ikev2 policy TOPGEN-POL
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  proposal TOPGEN-PROP
 !
 crypto ikev2 keyring TOPGEN-KR
@@ -39,10 +58,73 @@ crypto ikev2 keyring TOPGEN-KR
   pre-shared-key remote {{ dmvpn_psk }}
 !
 crypto ikev2 profile TOPGEN-IKEV2
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
  match identity remote address 0.0.0.0 0.0.0.0
  authentication remote pre-share
  authentication local pre-share
  keyring local TOPGEN-KR
+!
+crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile TOPGEN-IPSEC
+ set transform-set TOPGEN-TS
+ set ikev2-profile TOPGEN-IKEV2
+!
+{%- elif dmvpn_security == "ikev2-pki" %}
+!
+crypto ikev2 proposal TOPGEN-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy TOPGEN-POL
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
+ proposal TOPGEN-PROP
+!
+crypto ikev2 profile TOPGEN-IKEV2
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
+ match identity remote fqdn domain {{ config.domainname }}
+ identity local fqdn {{ node.hostname }}.{{ config.domainname }}
+ authentication remote rsa-sig
+ authentication local rsa-sig
+ pki trustpoint {{ dmvpn_trustpoint }}
+!
+crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
+ mode transport
+!
+crypto ipsec profile TOPGEN-IPSEC
+ set transform-set TOPGEN-TS
+ set ikev2-profile TOPGEN-IKEV2
+!
+{%- elif dmvpn_security == "ikev2-rsa" %}
+!
+crypto ikev2 proposal TOPGEN-PROP
+ encryption aes-cbc-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy TOPGEN-POL
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
+ proposal TOPGEN-PROP
+!
+crypto ikev2 profile TOPGEN-IKEV2
+{%- if dmvpn_fvrf %}
+ match fvrf {{ dmvpn_fvrf }}
+{%- endif %}
+ match identity remote fqdn domain {{ config.domainname }}
+ identity local fqdn {{ node.hostname }}.{{ config.domainname }}
+ authentication remote rsa-sig
+ authentication local rsa-sig
+ pki trustpoint {{ dmvpn_trustpoint }}
 !
 crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
  mode transport
@@ -67,6 +149,9 @@ crypto ipsec profile TOPGEN-IPSEC
 {%- endfor %}
 !
 interface GigabitEthernet1
+{%- if dmvpn_fvrf %}
+ vrf forwarding {{ dmvpn_fvrf }}
+{%- endif %}
  ip address {{ ns.nbma.ip }} {{ ns.nbma.netmask }}
  no shutdown
 !
@@ -92,14 +177,20 @@ interface Tunnel0
  ip address {{ ns.tun.ip }} {{ ns.tun.netmask }}
  no ip redirects
  tunnel source GigabitEthernet1
+{%- if dmvpn_fvrf %}
+ tunnel vrf {{ dmvpn_fvrf }}
+ ip tcp adjust-mss 1360
+{%- endif %}
  tunnel key {{ dmvpn_tunnel_key }}
  tunnel mode gre multipoint
  ip nhrp network-id 10
-{%- if dmvpn_security == "ikev2-psk" %}
+ ip nhrp authentication DMVPNKEY
+{%- if dmvpn_security == "ikev2-psk" or dmvpn_security == "ikev2-pki" or dmvpn_security == "ikev2-rsa" %}
  tunnel protection ipsec profile TOPGEN-IPSEC
 {%- endif %}
 {%- if is_hub %}
-{%- if (dmvpn_phase|default(2)) == 3 %}
+ ip nhrp map multicast dynamic
+{%- if ((dmvpn_phase|default(2))|int) == 3 %}
  ip nhrp redirect
 {%- endif %}
  {%- if not dmvpn_vrf %}
@@ -110,7 +201,7 @@ interface Tunnel0
  ip nhrp map multicast {{ hub.hub_nbma_ip }}
 {%- endfor %}
 {%- else %}
-{%- if (dmvpn_phase|default(2)) == 3 %}
+{%- if ((dmvpn_phase|default(2))|int) == 3 %}
  ip nhrp shortcut
 {%- endif %}
 {%- for hub in hub_info %}
@@ -163,6 +254,55 @@ router eigrp 100
 {%- endif %}
 !
 {%- endif %}
+{%- if mgmt and mgmt.enabled %}
+{%- if mgmt.vrf %}
+vrf definition {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+ address-family ipv4
+ exit-address-family
+!
+{%- endif %}
+interface GigabitEthernet{{ mgmt.slot }}
+ description OOB Management
+{%- if mgmt.vrf %}
+ vrf forwarding {{ mgmt.vrf }}
+{%- endif %}
+ ip address dhcp
+ no shutdown
+!
+{%- if mgmt.gw %}
+{%- if mgmt.vrf %}
+ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- else %}
+ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- endif %}
+{%- endif %}
+{%- endif %}
+{%- if ntp and ntp.server %}
+{%- if ntp.vrf %}
+ntp server vrf {{ ntp.vrf }} {{ ntp.server }}
+{%- else %}
+ntp server {{ ntp.server }}
+{%- endif %}
+{%- endif %}
+{%- if ntp_oob and ntp_oob.server and ntp_oob.vrf %}
+ntp server vrf {{ ntp_oob.vrf }} {{ ntp_oob.server }}
+{%- endif %}
+!
+{%- if archive %}
+archive
+ log config
+  logging enable
+  notify syslog contenttype plaintext
+  hidekeys
+ path flash:
+ maximum 5
+ write-memory
+!
+alias exec rundiff show archive config differences system:running-config
+!
+{%- endif %}
+!
 line vty 0 4
  transport input ssh telnet
  exec-timeout 0 0
@@ -170,5 +310,27 @@ line vty 0 4
 line con 0
  password {{ config.password }}
  exec-timeout 0 0
+!
+event manager applet TOPOGEN-NOSHUT authorization bypass
+ event timer cron cron-entry "@reboot"
+ action 1.0 cli command "enable"
+ action 1.1 cli command "terminal length 0"
+ action 1.2 cli command "config t"
+ action 2.0 cli command "interface GigabitEthernet1"
+ action 2.1 cli command "no shutdown"
+{%- set ns_eem = namespace(n=3) %}
+{%- if ns.pair %}
+ action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet2"
+ action {{ ns_eem.n }}.1 cli command "no shutdown"
+{%- set ns_eem.n = ns_eem.n + 1 %}
+{%- endif %}
+{%- if mgmt and mgmt.enabled %}
+ action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ mgmt.slot }}"
+ action {{ ns_eem.n }}.1 cli command "no shutdown"
+{%- set ns_eem.n = ns_eem.n + 1 %}
+{%- endif %}
+ action {{ ns_eem.n }}.0 cli command "end"
+{%- set ns_eem.n = ns_eem.n + 1 %}
+ action {{ ns_eem.n }}.0 syslog msg "TOPOGEN-NOSHUT: interfaces initialized"
 !
 end

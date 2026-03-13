@@ -1,8 +1,26 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.4.10
+Date Modified: 2026-03-13
+
+- Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
+- Reads from: None (documentation only)
+- Writes to: None (documentation only)
+- Calls into: References DEVELOPER.md, CONTRIBUTING.md, CHANGES.md, TESTED.md
+
+Purpose: User-facing documentation for TopoGen features, installation, usage, and examples.
+         Primary entry point for understanding what TopoGen does and how to use it.
+
+Blast Radius: None (documentation only, does not affect code execution)
+-->
+
 # TopoGen for CML2
 
 This package provides a `topogen` command which can create CML2 topologies.
 It does this by using the PCL (VIRL Python Client Library) to talk to a live
 controller, creating the lab, nodes and links on the fly.
+
+**Why TopoGen:** TopoGen bridges the gap from design to a lab that [Ansible](https://www.ansible.com/), [Terraform](https://www.terraform.io/), and [pyATS](https://developer.cisco.com/docs/pyats/) can consume and take to the next step — config management, infra-as-code, or test automation.
 
 ![Demo](.images/demo.gif)
 
@@ -20,10 +38,41 @@ controller, creating the lab, nodes and links on the fly.
 - flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
 - YAML export of generated labs via controller API
 - offline YAML generation for CML (no controller needed) with `--offline-yaml`
+- offline-to-CML import: `--import-yaml FILE` and `--import` to push YAML into CML (file size and lab URL printed; `--start` runs in background)
+
+## Documentation map
+
+| File | Audience | Purpose |
+|------|----------|---------|
+| README.md | Users | CLI usage, features, examples |
+| DEVELOPER.md | Developers | Architecture, file chains, workflows |
+| CONTRIBUTING.md | Contributors | Branching, commits, PR conventions |
+| TESTED.md | CI/CD | Platform and dependency validation |
+| CHANGES.md | All | Release history |
+| TODO.md | Developers | Roadmap and planned work |
+| PKI.md | Users, developers | PKI flags, CA-ROOT, EEM, auto-deploy certs, troubleshooting |
 
 ## Code structure and dependencies
 
-For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [developer.md](developer.md).
+```
+topogen CLI
+    ↓
+main.py (args + config)
+    ↓
+render.py (core engine)
+    ↓
+templates (*.jinja2)
+    ↓
++--------------------+
+| Offline: YAML file |
+| Online: CML API    |
++--------------------+
+```
+
+For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [DEVELOPER.md](DEVELOPER.md).
+
+- **src/topogen/__main__.py**
+  - Enables `python -m topogen` (calls `main.main()` and exits with its return code). The console script `topogen` still resolves via `topogen:main` in `__init__.py`.
 
 - **src/topogen/main.py**
   - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.
@@ -191,6 +240,8 @@ VIRL2_PASS="somepass"
 export VIRL2_URL VIRL2_USER VIRL2_PASS
 ```
 
+TopoGen reads these variables and passes them explicitly to the CML client, so setting them in the same shell session (e.g. PowerShell `$env:VIRL2_URL="https://controller"`) before running `topogen` is sufficient for online mode.
+
 In addition, a CA file in PEM format can be provided which can be used to verify
 the cert presented by the controller... The default CA file of the controller is
 included in the repo.
@@ -201,8 +252,7 @@ IP** into your hosts file).
 
 ### Tool
 
-The tool accepts a variety of command line switches... they are all listed by
-providing `-h` or `--help`:
+Run the CLI with `topogen` (after install) or `python -m topogen`. The tool accepts a variety of command line switches. Run `topogen --help` (or `python -m topogen --help`) for the full, current list of flags; the excerpt below may be outdated.
 
 ```plain
 $ topogen --help
@@ -252,6 +302,8 @@ configuration:
 $
 ```
 
+Note: Generated offline YAML includes `smart_annotations: []`, a field introduced in CML 2.8. TopoGen has not been tested on CML versions earlier than 2.9. Import on CML 2.7 or older may fail if the parser rejects unknown fields.
+
 At a minimum, the amount of nodes to be created must be provided.
 
 #### Modes
@@ -272,7 +324,7 @@ There are three modes available right now:
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
 - `dmvpn`: hub-and-spoke DMVPN topology.
-  - Default behavior: `nodes` is the number of spokes (R1 is hub; R2.. are spokes).
+  - Default behavior: `nodes` is the number of **spokes** (R1 is hub; R2.. are spokes). So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers).
   - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
     - When `--dmvpn-hubs` is set, `nodes` is interpreted as total routers (`R1..R<nodes>`).
     - **Important:** `--dmvpn-hubs` is a comma-separated *list of router numbers*, not a hub count. For example, `--dmvpn-hubs 3` means **R3 is the (only) hub**, not "3 hubs".
@@ -287,6 +339,13 @@ There are three modes available right now:
     - Requires `--dmvpn-psk <key>`.
     - Uses IPsec transport mode with `tunnel protection ipsec profile ...` on `Tunnel0`.
     - **Important:** if you set `--dmvpn-security ikev2-psk` but omit `--dmvpn-psk`, TopoGen exits with an error.
+  - Optional: set `--dmvpn-security ikev2-pki` to protect DMVPN with IKEv2 and certificate-based auth (PKI).
+    - Requires `--pki` (adds CA-ROOT and injects trustpoint CA-ROOT-SELF on non-CA routers).
+    - IKEv2 profile uses `authentication local rsa-sig` / `authentication remote rsa-sig` and `pki trustpoint CA-ROOT-SELF`.
+    - **Important:** if you set `--dmvpn-security ikev2-pki` but omit `--pki`, TopoGen exits with an error.
+    - **Note:** DMVPN with IKEv2 PKI is not yet validated; tunnels may not come up (IKEv2 SA / enrollment troubleshooting in progress).
+  - Optional: `--archive` — enable config archive and `rundiff` alias on all IOS/IOS-XE routers in flat, flat-pair, and dmvpn modes (`archive` with `log config`, `path flash:`, `write-memory`). Omit to leave archive config out of generated configs.
+  - Optional: `-q` / `--quiet` — suppress INFO and WARNING; only errors and final result (useful for scripts and CI/CD).
   - Defaults:
     - NBMA: `10.10.0.0/16` (router WAN on slot 0)
     - Tunnel: `172.20.0.0/16` (Tunnel0)
@@ -313,6 +372,19 @@ Examples:
 
 ```powershell
 topogen -m dmvpn -T iosv-dmvpn --device-template iosv --offline-yaml out\dmvpn-iosv.yaml 2
+```
+
+- Offline YAML (flat with PKI and archive): 4 routers + CA-ROOT; config archive and `rundiff` alias on all IOS/IOS-XE nodes.
+
+```powershell
+topogen -m flat 4 -T iosv --pki --archive --offline-yaml out\flat-pki-archive.yaml --overwrite
+```
+
+- Online (flat with PKI and archive): set `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` in the same shell, then create the lab. Use `-i` if the controller uses a self-signed cert.
+
+```powershell
+$env:VIRL2_URL = "https://192.168.1.164"; $env:VIRL2_USER = "admin"; $env:VIRL2_PASS = "yourpass"
+python -m topogen -m flat 4 -T iosv --pki --archive -i
 ```
 
 - Offline YAML (multi-hub): 60 spokes + 3 hubs (`R1,R21,R41`) = 63 routers total.
@@ -349,6 +421,32 @@ topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --
 
 ```powershell
 topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-hubs 1,3,5 --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-psk --dmvpn-psk "topogen123" --mgmt --mgmt-bridge --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --offline-yaml out\IOSV-DMVPN-FLAT-PAIR-3H-P3-EIGRP-MGMT-BRIDGE-N20.yaml --overwrite 20
+```
+
+- Offline YAML (DMVPN with IKEv2 PKI): 4 routers (1 hub + 3 spokes), cert-based auth; requires `--pki` (CA-ROOT + client trustpoints).
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-security ikev2-pki --pki --offline-yaml out\IOSXE-DMVPN-IKEV2-PKI-N4.yaml --overwrite 4
+```
+
+- Offline YAML (DMVPN Phase 3, IKEv2 PKI, 1 hub + 10 spokes): Flat underlay, lab name matches filename. Bring up CA-ROOT first, then R1 (hub), then R2..R11 (see **DMVPN with IKEv2 PKI: bring-up order** above).
+
+```powershell
+# IOSv (lab title = DMVPN-P3-IOSv-11)
+topogen -m dmvpn -T iosv-dmvpn --device-template iosv --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-IOSv-11" --offline-yaml out/DMVPN-P3-IOSv-11.yaml --overwrite 11
+
+# CSR (lab title = DMVPN-P3-CSR-11)
+topogen -m dmvpn -T csr-dmvpn --device-template csr1000v --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-CSR-11" --offline-yaml out/DMVPN-P3-CSR-11.yaml --overwrite 11
+```
+
+- Offline YAML (DMVPN Phase 3, IKEv2 PKI, flat-pair underlay, 10 total routers): odd routers (R1,R3,R5,R7,R9) are DMVPN endpoints; even routers (R2,R4,R6,R8,R10) are pair partners with no DMVPN. R1 is hub. CA-ROOT added automatically by `--pki`.
+
+```powershell
+# IOSv flat-pair PKI
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --mgmt-bridge --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-PKI-FP-10-OOB-EXT-IOSv-v1" --offline-yaml "out/DMVPN-P3-PKI-FP-10-OOB-EXT-IOSv-v1.yaml" --overwrite 10
+
+# CSR flat-pair PKI
+topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --device-template csr1000v --dmvpn-phase 3 --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-nbma-cidr 10.10.0.0/16 --dmvpn-tunnel-cidr 172.20.0.0/16 --dmvpn-hubs 1 --pki --cml-version 0.3.0 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --mgmt-bridge --ntp 10.10.255.254 --ntp-inband -L "DMVPN-P3-PKI-FP-10-OOB-EXT-CSR-v1" --offline-yaml "out/DMVPN-P3-PKI-FP-10-OOB-EXT-CSR-v1.yaml" --overwrite 10
 ```
 
 - Offline YAML (DMVPN flat-pair, IOS-XE): 314 routers total (`R1..R314`). Odd routers participate in the DMVPN overlay (hubs + spokes).
@@ -417,6 +515,7 @@ Defaults are safe for large labs (e.g., 300 nodes with `--flat-group-size 20` �
 
 Assumptions and caveats:
 
+- **Coordinate layout is automatic.** TopoGen scales node x/y positions to always stay within CML's 15,000-coordinate limit, regardless of node count or `--flat-group-size`. You do not need to manually adjust group size to avoid import errors.
 - The guardrails assume the `unmanaged_switch` node definition has roughly 32 usable ports.
 - Custom node definitions/images (including customized unmanaged switch or different router images) may change interface counts, labels, or slot allocation. The guardrails do not auto-detect such customizations.
 - In generated offline YAML, unmanaged switch interfaces are labeled `portN`; the CML UI may present different labels.
@@ -465,6 +564,58 @@ TopoGen does not pick an output filename automatically; you must provide one. We
 - Topology: star fabric with one core `SWmgt0`, N access `SWmgt1..N`, and routers `R1..R${nodes}`.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
 - Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
+
+### Offline-to-CML import (CLI)
+
+You can import an offline YAML into CML from the CLI so you don't have to use the CML UI.
+
+- **`--import-yaml FILE`**: path to an existing offline YAML (skip generation). Use with `--import`.
+- **`--import`**: import the generated or specified YAML into CML via virl2_client. Requires `--offline-yaml` or `--import-yaml`. Prints file size (KB) before import and lab URL after import (clickable).
+- **`--start`**: after import (or online creation), start the lab in the background so the CLI returns immediately; check the CML UI for when the lab has started.
+- **`--up FILE`**: shorthand for `--import-yaml FILE --import --start` (import YAML to CML and start lab in one flag).
+- **`--print-up-cmd`**: with `--offline-yaml`, after generating prints the exact `topogen --up <file>` command to run later (when you're ready to deploy).
+
+Workflows:
+
+- Generate, then import: `topogen -T iosv-eigrp -m flat --offline-yaml out\lab.yaml 10` then `topogen --import-yaml out\lab.yaml --import`
+- Generate, import, and start: `topogen -T iosv-eigrp -m flat --offline-yaml out\lab.yaml --import --start 10`
+- Import existing (e.g. after editing) and start: `topogen --import-yaml out\lab.yaml --import --start` or **`topogen --up out\lab.yaml`**
+- Generate, then deploy when ready: `topogen ... --offline-yaml out\lab.yaml --print-up-cmd` (prints "When you're ready: topogen --up out/lab.yaml"), then later run `topogen --up out\lab.yaml`
+
+**Intent/metadata:** Lab description, notes (hidden span), and an off-canvas annotation with the full CLI args (including `-L` and `--offline-yaml`) are embedded only when generating **offline YAML** (`--offline-yaml`). This metadata is not added when creating labs online (no `--offline-yaml`). Intended for CI/CD to grep the generated YAML.
+
+Example — generate and grep (PowerShell):
+
+```powershell
+topogen -T iosv-eigrp -m flat -L my-lab --offline-yaml out\my-lab.yaml 3
+Select-String -Path out\my-lab.yaml -Pattern "Generated by topogen"
+```
+
+The embedded string (identical in all three locations — `description`, `notes`, and off-canvas annotation) looks like:
+
+```
+Generated by topogen v0.2.4 (offline YAML) | args: nodes=3 -m flat -T iosv-eigrp --device-template iosv --flat-group-size 20 --cml-version 0.3.0 -L my-lab --offline-yaml out\my-lab.yaml
+```
+
+Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are recorded even when not passed explicitly, making the string self-contained for regeneration.
+
+**PKI:** PKI (CA-ROOT) is validated. DMVPN with `--dmvpn-security ikev2-pki` and `--pki` brings up tunnels with IKEv2 certificate-based authentication. Manual certificate enrollment is required on first boot (see **PKI client EEM** below).
+
+**CA server boot order:** When using `--pki`, bring the CA-ROOT node online first. Once the root CA is available (certificate server enabled), start the rest of the lab (R1..R*n*). Clients need the CA to be up for SCEP enrollment and authentication.
+
+**DMVPN with IKEv2 PKI: bring-up order** — For DMVPN labs using `--dmvpn-security ikev2-pki` and `--pki`, start nodes in this order so crypto and NHRP come up cleanly:
+
+1. **CA-ROOT** — Start the CA node and wait until the PKI server is enabled (e.g. "Certificate server now enabled" or CA self-enrollment complete). The CA must be reachable (e.g. at 10.10.255.254) for SCEP before any router enrolls.
+2. **R1 (hub)** — Start the hub. EEM auto-enrollment fires at 300 s; if CA-ROOT is not ready in time, authenticate manually: `configure terminal` → `authc` → `yes` → `end` → `write memory`. (See **PKI client EEM** below.)
+3. **Spokes (R2, R3, …)** — Start spokes in any order. Get the CA fingerprint from R1 (or CA-ROOT) after R1 has authenticated. On each spoke, from exec run `crypto pki authenticate CA-ROOT-SELF fingerprint <fingerprint>`, then `write memory` — no interactive yes required.
+
+Use `--mgmt` for OOB SSH; use `--mgmt-vrf global` to keep management in the global routing table. For step-by-step troubleshooting (clock, certificates, IKEv2), see [docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md](docs/VPN-DEBUG-DMVPN-IKEv2-PKI.md).
+
+**PKI and clock:** PKI uses the `do` command to set the clock (e.g. `do clock set ...`) in the generated config so the device clock is authoritative before the CA starts and clients enroll. The CA-ROOT clock is backdated by 1 day so its certificate's `notBefore` is always earlier than any client's clock, preventing `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors on first boot. Clients use today's date. For labs where you prefer to rely on NTP or external automation for time, a future `--clock-set` option may allow disabling this behavior (see TODO.md).
+
+**PKI and DMVPN flat-pair:** In DMVPN with `--dmvpn-underlay flat-pair`, even routers (R2, R4, …) have no link to the NBMA/10.10.0.0 network; they are only connected to their odd partner. The CA-ROOT is on the NBMA network. So **even routers cannot reach the CA and do not get certificates**; only odd routers (DMVPN endpoints) can enroll. This is by design. Use OOB management (e.g. `--mgmt`) if even routers need to reach NTP or other services.
+
+**PKI client EEM:** Both EEM applets are structurally fixed and registered at boot. `CLIENT-PKI-SET-CLOCK` fires at 300 s; `CLIENT-PKI-AUTHENTICATE` fires at 305 s. If CA-ROOT is not reachable when the timer fires (e.g. still booting), automated enrollment is skipped for that boot and manual authentication is required. On any router, run `configure terminal` → `authc` → `yes` → `end` → `write memory`. To skip the interactive prompt, run from exec: `crypto pki authenticate CA-ROOT-SELF fingerprint <fingerprint>` then `write memory`.
 
 ### VRF support (flat-pair)
 

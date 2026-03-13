@@ -1,4 +1,11 @@
 """
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.1
+Date Modified: 2026-02-16
+
+- Called by: main.py, render.py, dnshost.py, lxcfrr.py, gui.py
+- Purpose: Core data models for topology generation
+
 TopoGen Data Models - Core Data Structures for Topology Generation
 
 PURPOSE:

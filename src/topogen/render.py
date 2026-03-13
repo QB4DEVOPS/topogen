@@ -1,3 +1,11 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.15
+# Date Modified: 2026-03-13
+#
+# - Called by: src/topogen/main.py
+# - Reads from: Packaged templates, Config, env (VIRL2_*), models
+# - Writes to: Offline YAML (--offline-yaml), CML controller via virl2_client
+# - Calls into: jinja2, virl2_client, dnshost.py, lxcfrr.py, models.py
 """
 TopoGen Topology Renderer - Core Topology Generation and Rendering Logic
 
@@ -73,13 +81,15 @@ OOB MANAGEMENT:
     - ext-conn-mgmt: Optional external-connector for bridge mode (--mgmt-bridge)
 """
 
+import html as html_module
 import importlib.resources as pkg_resources
 import logging
 import math
 import os
+import threading
 from pathlib import Path
 from argparse import Namespace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ipaddress import IPV4LENGTH, IPv4Address, IPv4Interface, IPv4Network
 from typing import Any, Set, Tuple, Union
 
@@ -128,6 +138,48 @@ except Exception:  # pragma: no cover - best effort
     TOPGEN_VERSION = "unknown"
 
 
+def _intent_annotation_lines(intent: str) -> list[str]:
+    """Return YAML lines for annotations + smart_annotations with one hidden intent annotation.
+
+    Embeds intent at x=-9999, y=-9999 (off-canvas) for CI/CD to grep. Same intent is also
+    in lab.notes inside a hidden HTML span (visible in YAML/grep, not in CML guide).
+    """
+    # YAML single-quoted: escape single quote as ''
+    content = intent.replace("'", "''")
+    return [
+        "annotations:",
+        "  - border_color: '#FFFFFF'",
+        "    border_style: ''",
+        "    color: '#FFFFFF'",
+        "    rotation: 0",
+        "    text_bold: false",
+        f"    text_content: '{content}'",
+        "    text_font: monospace",
+        "    text_italic: false",
+        "    text_size: 1",
+        "    text_unit: pt",
+        "    thickness: 1",
+        "    type: text",
+        "    x1: -9999",
+        "    y1: -9999",
+        "    z_index: 0",
+        "smart_annotations: []",
+    ]
+
+
+def _intent_notes_lines(intent: str) -> list[str]:
+    """Return YAML lines for lab.notes: all content in white/hidden span so GUIDE shows nothing.
+
+    Entire notes are invisible (color: white; opacity: 0). CI/CD can grep the YAML for the intent.
+    """
+    hidden_content = html_module.escape(intent)
+    hidden_span = f'<span style="color: white; font-size: 1pt; opacity: 0;">{hidden_content}</span>'
+    return [
+        "  notes: |-",
+        f"    {hidden_span}",
+    ]
+
+
 def get_templates() -> list[str]:
     """get all available templates in the package"""
     return [
@@ -135,6 +187,58 @@ def get_templates() -> list[str]:
         for t in pkg_resources.contents(templates)
         if t.endswith(Renderer.J2SUFFIX)
     ]
+
+
+def _init_client_from_args(args: Namespace) -> ClientLibrary:
+    """Initialize virl2_client from CLI args (for import path; no Renderer instance)."""
+    cainfo: Union[bool, str] = args.cafile
+    try:
+        os.stat(args.cafile)
+    except (FileNotFoundError, TypeError):
+        cainfo = not args.insecure
+    url = os.environ.get("VIRL2_URL")
+    username = os.environ.get("VIRL2_USER")
+    password = os.environ.get("VIRL2_PASS")
+    if not url or not username or not password:
+        raise TopogenError(
+            "Online mode requires VIRL2_URL, VIRL2_USER, VIRL2_PASS set in this shell. "
+            "Example (PowerShell): $env:VIRL2_URL='https://192.168.1.164'; $env:VIRL2_USER='admin'; $env:VIRL2_PASS='yourpass'; topogen ..."
+        )
+    try:
+        client = ClientLibrary(
+            url=url,
+            username=username,
+            password=password,
+            ssl_verify=cainfo,
+        )
+        if not client.is_system_ready():
+            raise TopogenError("system is not ready")
+        return client
+    except ConnectTimeout as exc:
+        raise TopogenError("no connection: " + str(exc)) from None
+    except InitializationError as exc:
+        raise TopogenError(
+            "CML client init failed. Check VIRL2_URL, VIRL2_USER, VIRL2_PASS are set in this shell. Details: " + str(exc)
+        ) from exc
+
+
+def _start_lab_in_background(lab: Lab, args: Namespace) -> None:
+    """Start the lab in a background thread; brief delay so the start request reaches CML before process exits."""
+    if not getattr(args, "start_lab", False):
+        return
+    _LOGGER.warning("Starting lab... (running in background; check CML UI for status)")
+
+    def _start() -> None:
+        try:
+            lab.start()
+        except Exception as exc:  # pragma: no cover
+            _LOGGER.error("Start failed: %s", exc)
+
+    t = threading.Thread(target=_start, daemon=True)
+    t.start()
+    # Let the thread send the start request before we exit (daemon dies on process exit)
+    import time
+    time.sleep(3)
 
 
 def disable_pcl_loggers():
@@ -190,6 +294,361 @@ def format_interface_description(iface_pair: dict, this: int) -> str:
     _, dst = order_iface_pair(iface_pair, this)
     # return f"from {src.node.label} {src.label} to {dst.node.label} {dst.label}"
     return f"to {dst.node.label} {dst.label}"
+
+
+# Hardcoded clock set value: "today" at lab generation time (00:01:00 UTC).
+# Must be after CA cert notBefore (often 00:00:21) so IKEv2 cert validation succeeds; NTP takes over later.
+def _pki_clock_set_today(backdate_days: int = 0) -> str:
+    """Return IOS clock set string: 00:01:00 Month Day Year (UTC at generation time).
+    backdate_days > 0 shifts the date earlier (CA uses 1 so notBefore precedes client clocks)."""
+    dt = datetime.now(timezone.utc) - timedelta(days=backdate_days)
+    return f"00:01:00 {dt.strftime('%B %d %Y')}"
+
+
+def _pki_client_clock_eem_lines() -> list[str]:
+    """EEM applet CLIENT-PKI-SET-CLOCK: one-shot 90s after boot.
+    If NTP synced, set TIME_DONE and exit. Else: clock set <hardcoded today>, then TIME_DONE.
+    On completion (either path), runs 'event manager run CLIENT-PKI-AUTHENTICATE' so PKI
+    enrollment runs after clock is set, avoiding the 95s-vs-90s timer race.
+    No show clock / regexp (CVAC rejects it); NTP takes over later.
+    Environment variable TIME_DONE set to 0 first so run-once guard works."""
+    clock_val = _pki_clock_set_today()
+    lines = [
+        "!",
+        "event manager environment TIME_DONE 0",
+        "!",
+        "event manager applet CLIENT-PKI-SET-CLOCK authorization bypass",
+        " event timer countdown time 300",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: executed [step 0.2]\"",
+        " action 0.3 cli command \"terminal length 0\"",
+        " action 0.4 cli command \"show event manager environment | include TIME_DONE\"",
+        " action 0.5 regexp \"TIME_DONE 1\" \"$_cli_result\" match",
+        " action 0.6 if $_regexp_result eq \"1\"",
+        "  action 0.7  exit",
+        "  action 0.8 end",
+        " action 1.0 cli command \"show ntp status\"",
+        " action 1.1 regexp \"Clock is synchronized\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        "  action 1.3  cli command \"configure terminal\"",
+        "  action 1.4  cli command \"event manager environment TIME_DONE 1\"",
+        "  action 1.5  cli command \"no event manager applet CLIENT-PKI-SET-CLOCK\"",
+        "  action 1.6  cli command \"end\"",
+        "  action 1.7  cli command \"write memory\"",
+        "  action 1.8  syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (NTP synced) [step 1.8]\"",
+        "  action 1.9  cli command \"event manager run CLIENT-PKI-AUTHENTICATE\"",
+        "  action 1.10 exit",
+        "  action 1.11 end",
+        "! Hardcoded clock set (no regexp) so CVAC applies; NTP takes over later.",
+        " action 2.0 cli command \"configure terminal\"",
+        f" action 2.1 cli command \"do clock set {clock_val}\"",
+        " action 2.2 cli command \"end\"",
+        " action 3.0 cli command \"configure terminal\"",
+        " action 3.1 cli command \"event manager environment TIME_DONE 1\"",
+        " action 3.2 cli command \"no event manager applet CLIENT-PKI-SET-CLOCK\"",
+        " action 3.3 cli command \"end\"",
+        " action 3.4 cli command \"write memory\"",
+        " action 3.5 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (clock authoritative) [step 3.5]\"",
+        " action 3.6 cli command \"event manager run CLIENT-PKI-AUTHENTICATE\"",
+        "end",
+        "!",
+    ]
+    return lines
+
+
+def _pki_ca_clock_eem_lines() -> list[str]:
+    """EEM applet CA-ROOT-SET-CLOCK: one-shot 90s after boot on CA-ROOT.
+    If NTP synced, set TIME_DONE and exit. Else: clock set <hardcoded today>, ntp master 6, TIME_DONE.
+    No show clock / regexp (CVAC rejects it); NTP takes over later.
+    Environment variable TIME_DONE set to 0 first so run-once guard works."""
+    clock_val = _pki_clock_set_today()
+    return [
+        "!",
+        "event manager environment TIME_DONE 0",
+        "!",
+        "event manager applet CA-ROOT-SET-CLOCK authorization bypass",
+        " event timer countdown time 90",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 syslog msg \"EEM CA-ROOT-SET-CLOCK: executed [step 0.2]\"",
+        " action 0.3 cli command \"terminal length 0\"",
+        " action 0.4 cli command \"show event manager environment | include TIME_DONE\"",
+        " action 0.5 regexp \"TIME_DONE 1\" \"$_cli_result\" match",
+        " action 0.6 if $_regexp_result eq \"1\"",
+        "  action 0.7  exit",
+        "  action 0.8 end",
+        " action 1.0 cli command \"show ntp status\"",
+        " action 1.1 regexp \"Clock is synchronized\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        "  action 1.3  cli command \"configure terminal\"",
+        "  action 1.4  cli command \"event manager environment TIME_DONE 1\"",
+        "  action 1.5  cli command \"no event manager applet CA-ROOT-SET-CLOCK\"",
+        "  action 1.6  cli command \"end\"",
+        "  action 1.7  cli command \"write memory\"",
+        "  action 1.8  syslog msg \"EEM CA-ROOT-SET-CLOCK: TIME_DONE set (NTP synced) [step 1.8]\"",
+        "  action 1.9  exit",
+        " action 1.10 end",
+        "! Hardcoded clock set (no regexp) so CVAC applies; then ntp master 6.",
+        " action 2.0 cli command \"configure terminal\"",
+        f" action 2.1 cli command \"do clock set {clock_val}\"",
+        " action 2.2 cli command \"end\"",
+        " action 3.0 cli command \"configure terminal\"",
+        " action 3.1 cli command \"ntp master 6\"",
+        " action 3.2 cli command \"end\"",
+        " action 4.0 cli command \"configure terminal\"",
+        " action 4.1 cli command \"event manager environment TIME_DONE 1\"",
+        " action 4.2 cli command \"no event manager applet CA-ROOT-SET-CLOCK\"",
+        " action 4.3 cli command \"end\"",
+        " action 4.4 cli command \"write memory\"",
+        " action 4.5 syslog msg \"EEM CA-ROOT-SET-CLOCK: TIME_DONE set (clock + ntp master 6) [step 4.5]\"",
+        "end",
+        "!",
+    ]
+
+
+def _pki_ca_authenticate_eem_lines() -> list[str]:
+    """EEM applet CA-ROOT-AUTHENTICATE: CA-ROOT only. Triggers on syslog PKI-6-CS_ENABLED (Certificate server now enabled).
+    Only the CA router sees that message; clients use a different trigger (e.g. TIME_DONE set or timer)."""
+    return [
+        "!",
+        "event manager applet CA-ROOT-AUTHENTICATE authorization bypass",
+        " event syslog pattern \"Certificate server now enabled\"",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 cli command \"terminal length 0\"",
+        " action 0.3 cli command \"show crypto pki certificates CA-ROOT-SELF\"",
+        " action 0.4 regexp \"CA Certificate\" \"$_cli_result\" match",
+        " action 0.5 if $_regexp_result eq \"1\"",
+        "  action 0.6  exit",
+        "  action 0.7 end",
+        " action 0.8 cli command \"configure terminal\"",
+        " action 0.9 cli command \"crypto pki authenticate CA-ROOT-SELF\" pattern \"yes/no\"",
+        " action 0.91 wait 2",
+        " action 0.92 cli command \"yes\" pattern \".*\"",
+        " action 0.93 cli command \" \"",
+        " action 0.94 cli command \"end\"",
+        " action 0.95 cli command \"write memory\"",
+        " action 0.96 cli command \"configure terminal\"",
+        " action 0.97 cli command \"no event manager applet CA-ROOT-AUTHENTICATE\"",
+        " action 0.98 cli command \"end\"",
+        " action 0.99 cli command \"write memory\"",
+        "!",
+        "end",
+    ]
+
+
+def _pki_client_authenticate_eem_lines() -> list[str]:
+    """EEM applet CLIENT-PKI-AUTHENTICATE: PKI clients only. Runs 95s after boot (after
+    CLIENT-PKI-SET-CLOCK at 90s). Proceeds only when TIME_DONE is 1 so cert validation
+    does not fail on time. Authenticates CA and enrolls; then removes itself.
+    Skips if CA cert already present."""
+    return [
+        "!",
+        "event manager applet CLIENT-PKI-AUTHENTICATE authorization bypass",
+        " event timer countdown time 305",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 cli command \"terminal length 0\"",
+        " action 0.3 cli command \"show event manager environment | include TIME_DONE\"",
+        " action 0.4 regexp \"TIME_DONE 1\" \"$_cli_result\" match",
+        " action 0.5 if $_regexp_result ne \"1\"",
+        "  action 0.6  cli command \"configure terminal\"",
+        "  action 0.7  cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
+        "  action 0.8  cli command \"end\"",
+        "  action 0.9  syslog msg \"EEM CLIENT-PKI-AUTHENTICATE: TIME_DONE not set, skipping\"",
+        "  action 0.10 exit",
+        "  action 0.11 end",
+        " action 1.0 cli command \"show crypto pki certificates CA-ROOT-SELF\"",
+        " action 1.1 regexp \"CA Certificate\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        "  action 1.3  cli command \"configure terminal\"",
+        "  action 1.4  cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
+        "  action 1.5  cli command \"end\"",
+        "  action 1.6  cli command \"write memory\"",
+        "  action 1.7  exit",
+        "  action 1.8  end",
+        " action 2.0 cli command \"configure terminal\"",
+        " action 2.1 cli command \"crypto pki authenticate CA-ROOT-SELF\" pattern \"yes/no\"",
+        " action 2.2 wait 2",
+        " action 2.3 cli command \"yes\" pattern \".*\"",
+        " action 2.4 cli command \" \"",
+        " action 2.5 cli command \"end\"",
+        " action 2.6 cli command \"write memory\"",
+        " action 2.7 cli command \"configure terminal\"",
+        " action 2.8 cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
+        " action 2.9 cli command \"end\"",
+        " action 3.0 cli command \"write memory\"",
+        "end",
+        "!",
+    ]
+
+
+def _pki_client_wait_for_ca_eem_lines() -> list[str]:
+    """EEM applets for PKI clients: WAIT-FOR-CA (ping CA until reachable, then send syslog)
+    and CA-ROOT-AUTHENTICATE (triggered by that syslog; runs crypto pki authenticate).
+    On ping success WAIT-FOR-CA removes itself and writes memory so it does not keep running.
+    Must be injected at the end of config (before final 'end')."""
+    return [
+        "!",
+        "event manager environment TIME_DONE 0",
+        "event manager applet WAIT-FOR-CA",
+        " event timer watchdog time 300",
+        " action 0.1 cli command \"enable\"",
+        " action 0.2 cli command \"terminal length 0\"",
+        " action 1.0 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
+        " action 1.1 regexp \"10/10\" \"$_cli_result\" match",
+        " action 1.2 if $_regexp_result eq \"1\"",
+        " action 1.3  cli command \"send log Certificate server now enabled\"",
+        " action 1.31 cli command \"configure terminal\"",
+        " action 1.32 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 1.33 cli command \"end\"",
+        " action 1.34 cli command \"write memory\"",
+        " action 1.4  exit",
+        " action 1.5 end",
+        " action 2.0 wait 60",
+        " action 2.1 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
+        " action 2.2 regexp \"10/10\" \"$_cli_result\" match",
+        " action 2.3 if $_regexp_result eq \"1\"",
+        " action 2.4  cli command \"send log Certificate server now enabled\"",
+        " action 2.41 cli command \"configure terminal\"",
+        " action 2.42 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 2.43 cli command \"end\"",
+        " action 2.44 cli command \"write memory\"",
+        " action 2.5  exit",
+        " action 2.6 end",
+        " action 3.0 wait 60",
+        " action 3.1 cli command \"ping 10.10.255.254 repeat 10 timeout 2\"",
+        " action 3.2 regexp \"10/10\" \"$_cli_result\" match",
+        " action 3.3 if $_regexp_result eq \"1\"",
+        " action 3.4  cli command \"send log Certificate server now enabled\"",
+        " action 3.41 cli command \"configure terminal\"",
+        " action 3.42 cli command \"no event manager applet WAIT-FOR-CA\"",
+        " action 3.43 cli command \"end\"",
+        " action 3.44 cli command \"write memory\"",
+        " action 3.5  exit",
+        " action 3.6 end",
+        "event manager applet CA-ROOT-AUTHENTICATE authorization bypass",
+        " event syslog pattern \"Certificate server now enabled\"",
+        " action 0.1  cli command \"enable\"",
+        " action 0.2  cli command \"terminal length 0\"",
+        " action 0.3  cli command \"show crypto pki certificates CA-ROOT-SELF\"",
+        " action 0.4  regexp \"CA Certificate\" \"$_cli_result\" match",
+        " action 0.5  if $_regexp_result eq \"1\"",
+        " action 0.6   exit",
+        " action 0.7  end",
+        " action 0.8  cli command \"configure terminal\"",
+        " action 0.9  cli command \"crypto pki authenticate CA-ROOT-SELF\" pattern \"yes/no\"",
+        " action 0.91 wait 2",
+        " action 0.92 cli command \"yes\" pattern \".*\"",
+        " action 0.93 cli command \" \"",
+        " action 0.94 cli command \"end\"",
+        " action 0.95 cli command \"write memory\"",
+        " action 0.96 cli command \"configure terminal\"",
+        " action 0.97 cli command \"no event manager applet CA-ROOT-AUTHENTICATE\"",
+        " action 0.98 cli command \"end\"",
+        " action 0.99 cli command \"write memory\"",
+        "!",
+        "end",
+        "!",
+    ]
+
+
+def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url: str) -> list[str]:
+    """Return CA self-enrollment block lines (do clock set, then ip http secure-server, trustpoint CA-ROOT-SELF).
+    do clock set placed after crypto pki server CA-ROOT block and before CA-ROOT-SELF key/trustpoint (working order)."""
+    fqdn = f"{hostname}.{domainname}"
+    return [
+        "!",
+        f"do clock set {_pki_clock_set_today(backdate_days=1)}",
+        "!",
+        "ip http secure-server",
+        "ip http secure-server trustpoint CA-ROOT-SELF",
+        "!",
+        "crypto key generate rsa modulus 2048 label CA-ROOT-SELF",
+        "!",
+        "crypto pki trustpoint CA-ROOT-SELF",
+        f" enrollment url {ca_scep_url}",
+        " enrollment retry count 15",
+        " enrollment retry period 60",
+        " auto-enroll 70 regenerate",
+        f" subject-name cn={fqdn}",
+        f" subject-alt-name {fqdn}",
+        " revocation-check none",
+        " rsakeypair CA-ROOT-SELF",
+        "!",
+    ]
+
+
+def _inject_pki_client_trustpoint(
+    rendered: str,
+    hostname: str,
+    domainname: str,
+    ca_url: str,
+    *,
+    key_label: str = "CA-ROOT",
+    inject_clock_eem: bool = True,
+) -> str:
+    """Insert PKI client trustpoint definition before 'crypto ikev2 proposal' and
+    EEM applets at the end of the config (before the final 'end').
+
+    Two separate injection points are required:
+    - Trustpoint definition BEFORE 'crypto ikev2 proposal': IOS-XE processes startup
+      config sequentially and silently rejects forward references to undefined trustpoints,
+      so the trustpoint must be defined before the IKEv2 profile references it.
+    - EEM applets LAST (before final 'end'): each EEM applet's closing 'end' exits
+      IOS-XE global config mode. If placed before interface/routing/crypto sections,
+      those sections are never loaded from startup config.
+
+    Falls back to before 'end' for the trustpoint when no IKEv2 section is present.
+    """
+    fqdn = f"{hostname}.{domainname}"
+    trustpoint_block = [
+        "!",
+        f"do clock set {_pki_clock_set_today()}",
+        "!",
+        "ip http secure-server",
+        "ip http secure-server trustpoint CA-ROOT-SELF",
+        "!",
+        f"crypto key generate rsa modulus 2048 label {key_label}",
+        "!",
+        "crypto pki trustpoint CA-ROOT-SELF",
+        f" enrollment url {ca_url}",
+        " enrollment retry count 15",
+        " enrollment retry period 60",
+        " revocation-check none",
+        f" rsakeypair {key_label}",
+        f" subject-name cn={fqdn}",
+        f" subject-alt-name {fqdn}",
+        " auto-enroll 70 regenerate",
+        "!",
+        "alias configure authc crypto pki authenticate CA-ROOT-SELF",
+        "!",
+    ]
+    lines = rendered.splitlines()
+    # Inject trustpoint before "crypto ikev2 proposal" (forward reference fix).
+    # Fall back to before "end" when no IKEv2 section is present.
+    try:
+        inject_idx = next(
+            i for i, line in enumerate(lines)
+            if line.strip().startswith("crypto ikev2 proposal")
+        )
+    except StopIteration:
+        try:
+            inject_idx = next(
+                i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+            )
+        except StopIteration:
+            inject_idx = len(lines)
+    lines[inject_idx:inject_idx] = trustpoint_block
+    # Inject EEM applets LAST (before final 'end') so their closing 'end' lines
+    # do not exit global config mode before interfaces/routing/crypto are applied.
+    if inject_clock_eem:
+        eem_block = _pki_client_wait_for_ca_eem_lines()
+        try:
+            end_idx = next(
+                i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+            )
+            lines[end_idx:end_idx] = eem_block
+        except StopIteration:
+            lines.extend(eem_block)
+    return "\n".join(lines)
 
 
 class Renderer:
@@ -306,8 +765,21 @@ class Renderer:
             # cafile to None when args.insecure is set.
             cainfo = not self.args.insecure
 
+        url = os.environ.get("VIRL2_URL")
+        username = os.environ.get("VIRL2_USER")
+        password = os.environ.get("VIRL2_PASS")
+        if not url or not username or not password:
+            raise TopogenError(
+                "Online mode requires VIRL2_URL, VIRL2_USER, VIRL2_PASS set in this shell. "
+                "Example (PowerShell): $env:VIRL2_URL='https://192.168.1.164'; $env:VIRL2_USER='admin'; $env:VIRL2_PASS='yourpass'; topogen ..."
+            )
         try:
-            client = ClientLibrary(ssl_verify=cainfo)
+            client = ClientLibrary(
+                url=url,
+                username=username,
+                password=password,
+                ssl_verify=cainfo,
+            )
             if not client.is_system_ready():
                 raise TopogenError("system is not ready")
             return client
@@ -315,8 +787,35 @@ class Renderer:
             raise TopogenError("no connection: " + str(exc)) from None
         except InitializationError as exc:
             raise TopogenError(
-                "no env provided, need VIRL2_URL, VIRL2_USER and VIRL2_PASS"
+                "CML client init failed. Check VIRL2_URL, VIRL2_USER, VIRL2_PASS are set in this shell. Details: " + str(exc)
             ) from exc
+
+    @staticmethod
+    def import_yaml_to_cml(yaml_path: str, args: Namespace, size_already_logged: bool = False) -> int:
+        """Import an offline YAML file into CML via virl2_client.
+
+        When size_already_logged is False (e.g. --import-yaml only), prints file size.
+        When True (generate then import), offline step already printed size; skip duplicate.
+        Prints lab URL and optionally starts the lab in the background (non-blocking).
+        """
+        disable_pcl_loggers()
+        path = Path(yaml_path)
+        if not path.exists():
+            raise TopogenError(f"YAML file not found: {yaml_path}")
+        size_bytes = path.stat().st_size
+        size_kb = size_bytes / 1024
+        if not size_already_logged:
+            _LOGGER.warning("Lab file: %s (%.1f KB)", path, size_kb)
+        _LOGGER.warning("Importing to CML...")
+        client = _init_client_from_args(args)
+        lab = client.import_lab_from_path(path, title=getattr(args, "labname", None) or path.stem)
+        base_url = os.environ.get(
+            "VIRL2_URL",
+            client.url if hasattr(client, "url") else "http://localhost",
+        ).rstrip("/")
+        _LOGGER.warning("Lab URL: %s/lab/%s", base_url, lab.id)
+        _start_lab_in_background(lab, args)
+        return 0
 
     @staticmethod
     def validate_flat_topology(total_nodes: int, group_size: int) -> int:
@@ -611,7 +1110,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -619,6 +1118,12 @@ class Renderer:
                 ntp_ctx = {
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
+                }
+            ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                 }
 
             # "origin" identifies the default gateway on the node connecting
@@ -630,6 +1135,8 @@ class Renderer:
                 origin="" if node_index != core else dns_addr,
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             if cmlnode is None:
                 continue
@@ -686,11 +1193,8 @@ class Renderer:
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
         _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
 
-        # Start lab if requested
-        if getattr(self.args, "start_lab", False):
-            _LOGGER.warning("Starting lab...")
-            self.lab.start()
-            _LOGGER.warning("Lab started")
+        # Start lab if requested (non-blocking)
+        _start_lab_in_background(self.lab, self.args)
 
         return 0
 
@@ -708,6 +1212,7 @@ class Renderer:
         ).lower() == "eigrp"
 
         dmvpn_vrf = self.args.pair_vrf if getattr(self.args, "enable_vrf", False) else None
+        dmvpn_fvrf = getattr(self.args, "dmvpn_fvrf", None)
 
         hubs_list = getattr(self.args, "dmvpn_hubs_list", None)
         if hubs_list:
@@ -867,9 +1372,17 @@ class Renderer:
                     dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
                     dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
+                    dmvpn_fvrf=dmvpn_fvrf,
                     dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
+                    dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                    archive=getattr(self.args, "archive", False),
                 )
+                if getattr(self.args, "pki_enabled", False):
+                    ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                    rendered = _inject_pki_client_trustpoint(
+                        rendered, node.hostname, self.config.domainname, ca_url
+                    )
             else:
                 rendered = eigrp_template.render(
                     config=self.config,
@@ -877,6 +1390,7 @@ class Renderer:
                     date=datetime.now(timezone.utc),
                     origin="",
                     eigrp_stub=stub_evens,
+                    archive=getattr(self.args, "archive", False),
                 )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
@@ -1063,9 +1577,17 @@ class Renderer:
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(self.args, "dmvpn_tunnel_key", 10),
                 dmvpn_phase=getattr(self.args, "dmvpn_phase", 2),
+                dmvpn_fvrf=getattr(self.args, "dmvpn_fvrf", None),
                 dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
+                dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                archive=getattr(self.args, "archive", False),
             )
+            if getattr(self.args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, node.hostname, self.config.domainname, ca_url
+                )
             try:
                 cml_router.configuration = rendered  # type: ignore[method-assign]
             except Exception:
@@ -1233,6 +1755,7 @@ class Renderer:
                 node=node,
                 date=datetime.now(timezone.utc),
                 origin="",
+                archive=getattr(self.args, "archive", False),
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
@@ -1287,10 +1810,16 @@ class Renderer:
 
         # set up Jinja to render configs from packaged templates
         env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        # DMVPN mode requires a template with Tunnel0/NHRP; use -dmvpn template if base was chosen
+        tpl_name = (
+            args.template
+            if args.template.endswith("-dmvpn")
+            else ("csr-dmvpn" if str(getattr(args, "dev_template", args.template)).lower() == "csr1000v" else "iosv-dmvpn")
+        )
         try:
-            tpl = env.get_template(f"{args.template}{Renderer.J2SUFFIX}")
+            tpl = env.get_template(f"{tpl_name}{Renderer.J2SUFFIX}")
         except TemplateNotFound as exc:  # pragma: no cover - defensive
-            raise TopogenError(f"template does not exist: {args.template}") from exc
+            raise TopogenError(f"template does not exist: {tpl_name}") from exc
 
         try:
             nbma_net = IPv4Network(str(getattr(args, "dmvpn_nbma_cidr", "10.10.0.0/16")))
@@ -1348,6 +1877,8 @@ class Renderer:
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
         if hubs_list:
             args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -1363,8 +1894,14 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        args_bits.append(f"-L {args.labname}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
 
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn) | args: "
@@ -1372,7 +1909,9 @@ class Renderer:
         )
         if getattr(args, "remark", None):
             desc += f" | remark: {args.remark}"
+        # Full args in description (visible in Lab Description pop-up); same intent in notes (hidden span) + annotation for CI/CD grep
         lines.append(f"  description: \"{desc}\"")
+        lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
@@ -1432,7 +1971,10 @@ class Renderer:
         # Scale router Y spacing so the bottom-most router stays within max_coord.
         router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
 
-        # Core NBMA switch
+        # Core NBMA switch (one port per access switch + one for CA-ROOT if --pki)
+        swnbma0_port_count = num_access
+        if getattr(args, "pki_enabled", False):
+            swnbma0_port_count += 1
         node_ids["SWnbma0"] = f"n{nid}"; nid += 1
         lines.append(f"  - id: {node_ids['SWnbma0']}")
         lines.append("    label: SWnbma0")
@@ -1440,7 +1982,7 @@ class Renderer:
         lines.append("    x: 0")
         lines.append("    y: 0")
         lines.append("    interfaces:")
-        for p in range(num_access):
+        for p in range(swnbma0_port_count):
             lines.append(f"      - id: i{p}")
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
@@ -1499,7 +2041,10 @@ class Renderer:
                 lines.append("        label: port")
                 lines.append("        type: physical")
 
-            # OOB core switch
+            # OOB core switch (one port per OOB access switch + one for CA-ROOT if --pki)
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
             lines.append("    label: SWoob0")
@@ -1515,7 +2060,7 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -1605,7 +2150,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -1613,6 +2158,12 @@ class Renderer:
                 ntp_ctx = {
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                 }
             rendered = tpl.render(
                 config=cfg,
@@ -1623,11 +2174,20 @@ class Renderer:
                 hub_info=hub_info,
                 dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
                 dmvpn_phase=getattr(args, "dmvpn_phase", 2),
+                dmvpn_fvrf=getattr(args, "dmvpn_fvrf", None),
                 dmvpn_security=getattr(args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(args, "dmvpn_psk", None),
+                dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
             # Flat-like placement
             sw_index = idx // group
@@ -1661,6 +2221,112 @@ class Renderer:
             if ticks:
                 ticks.update()  # type: ignore
 
+        # CA-ROOT node (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+            ca_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 1}/{nbma_net.prefixlen}")
+            ca_loopback_ip = IPv4Interface(f"{l_base}.255.254/32")
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=ca_loopback_ip,
+                interfaces=[
+                    TopogenInterface(
+                        address=ca_nbma_ip,
+                        description="=== SCEP Enrollment URL ===",
+                        slot=0,
+                    )
+                ],
+            )
+            try:
+                ca_base_tpl = env.get_template(f"csr-eigrp{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                raise TopogenError("CA template not found: csr-eigrp")
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+            ca_base_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+            )
+            pki_config_lines = [
+                "ntp master 6",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
+                "!",
+                "crypto pki server CA-ROOT",
+                " database level complete",
+                " no database archive",
+                " grant auto",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
+                "!",
+            ]
+            ca_config_lines = ca_base_config.splitlines()
+            for i, line in enumerate(ca_config_lines):
+                if line.strip() == "crypto key generate rsa modulus 2048":
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+            ca_scep_url = f"http://{ca_nbma_ip.ip}:80"
+            insert_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + _pki_ca_authenticate_eem_lines()
+            )
+            try:
+                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
+                ca_config_lines[end_idx:end_idx] = insert_block
+            except StopIteration:
+                ca_config_lines.extend(insert_block)
+            ca_rendered = "\n".join(ca_config_lines)
+            ca_x = -400
+            ca_y = 200
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append("    node_definition: csr1000v")
+            lines.append(f"    x: {ca_x}")
+            lines.append(f"    y: {ca_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                ca_mgmt_slot_id = mgmt_slot - 1
+                lines.append(f"      - id: i{ca_mgmt_slot_id}")
+                lines.append(f"        slot: {ca_mgmt_slot_id}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_rendered.splitlines():
+                lines.append(f"      {ln}")
+
         # Links
         lines.append("links:")
         lid = 0
@@ -1677,6 +2343,17 @@ class Renderer:
 
             if ticks:
                 ticks.update()  # type: ignore
+
+        # CA-ROOT -> SWnbma0 data link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            swnbma0_ca_port = num_access
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{swnbma0_ca_port}")
 
         # Router-to-NBMA links (each router uses its slot-0 interface)
         for idx in range(total_routers):
@@ -1738,6 +2415,18 @@ class Renderer:
                 if ticks:
                     ticks.update()  # type: ignore
 
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                ca_mgmt_iface_id = mgmt_slot - 1  # CA is always CSR1000v
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -1746,8 +2435,10 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
+        lines = _intent_annotation_lines(desc) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML (dmvpn) written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -1769,6 +2460,7 @@ class Renderer:
         ).lower() == "eigrp"
 
         dmvpn_vrf = args.pair_vrf if getattr(args, "enable_vrf", False) else None
+        dmvpn_fvrf = getattr(args, "dmvpn_fvrf", None)
 
         base = str(getattr(args, "template", ""))
         if not base.endswith("-dmvpn"):
@@ -1821,11 +2513,10 @@ class Renderer:
         num_oob_sw = 0
         oob_per_sw_counts: list[int] = []
         if enable_mgmt:
-            num_oob_sw = num_access  # Match the number of NBMA switches
-            # Precompute how many routers per OOB access switch
-            # In flat-pair, routers are paired (total_endpoints is the pair count)
-            # But we connect ALL routers to mgmt, so use total_routers
+            # OOB connects ALL routers (not just DMVPN endpoints), so size based on total_routers
             from math import ceil
+            num_oob_sw = ceil(total_routers / oob_group)
+            # Precompute how many routers per OOB access switch
             routers_per_oob = ceil(total_routers / num_oob_sw)
             for i in range(num_oob_sw):
                 start = i * routers_per_oob
@@ -1867,6 +2558,8 @@ class Renderer:
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
         if hubs_list:
             args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -1882,15 +2575,23 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        args_bits.append(f"-L {args.labname}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, dmvpn flat-pair) | args: "
             + " ".join(args_bits)
         )
         if getattr(args, "remark", None):
             desc += f" | remark: {args.remark}"
+        # Full args in description (visible in Lab Description pop-up); same intent in notes (hidden span) + annotation for CI/CD grep
         lines.append(f"  description: \"{desc}\"")
+        lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
@@ -1903,8 +2604,12 @@ class Renderer:
         lines.append("    node_definition: unmanaged_switch")
         lines.append("    x: 0")
         lines.append("    y: 0")
+        # Core interfaces: one per access switch + 1 extra for CA-ROOT if --pki enabled
+        swnbma0_port_count = num_access
+        if getattr(args, "pki_enabled", False):
+            swnbma0_port_count += 1
         lines.append("    interfaces:")
-        for p in range(num_access):
+        for p in range(swnbma0_port_count):
             lines.append(f"      - id: i{p}")
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
@@ -1973,7 +2678,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -2062,7 +2771,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -2070,6 +2779,12 @@ class Renderer:
                 ntp_ctx = {
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                 }
 
             if rnum % 2 == 1:
@@ -2095,10 +2810,14 @@ class Renderer:
                     dmvpn_tunnel_key=getattr(args, "dmvpn_tunnel_key", 10),
                     dmvpn_phase=getattr(args, "dmvpn_phase", 2),
                     dmvpn_vrf=dmvpn_vrf,
+                    dmvpn_fvrf=dmvpn_fvrf,
                     dmvpn_security=getattr(args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(args, "dmvpn_psk", None),
+                    dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
+                    ntp_oob=ntp_oob_ctx,
+                    archive=getattr(args, "archive", False),
                 )
             else:
                 pair_ip = pair_ips.get(rnum - 1, (None, None))[1]
@@ -2115,6 +2834,13 @@ class Renderer:
                     eigrp_stub=stub_evens,
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
+                    ntp_oob=ntp_oob_ctx,
+                    archive=getattr(args, "archive", False),
+                )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
                 )
 
             sw_index = ((rnum - 1) // 2) // group
@@ -2151,6 +2877,133 @@ class Renderer:
             for ln in rendered.splitlines():
                 lines.append(f"      {ln}")
 
+        # CA-ROOT node (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+
+            # CA gets last usable IP in NBMA CIDR (avoid conflict with sequential router allocation)
+            ca_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 1}/{nbma_net.prefixlen}")
+
+            # CA loopback at upper end (same as flat mode: .255.254) for consistency with future CAs
+            ca_loopback_ip = IPv4Interface(f"{l_base}.255.254/32")
+
+            # Create CA node with NBMA interface (connects to SWnbma0)
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=ca_loopback_ip,
+                interfaces=[
+                    TopogenInterface(
+                        address=ca_nbma_ip,
+                        description="=== SCEP Enrollment URL ===",
+                        slot=0,
+                    )
+                ],
+            )
+
+            # CA always uses EIGRP template (DMVPN default routing protocol)
+            try:
+                ca_base_tpl = env.get_template(f"csr-eigrp{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                raise TopogenError("CA template not found: csr-eigrp")
+
+            # Render base config with EIGRP routing
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+            ca_base_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+            )
+
+            # Append PKI-specific config
+            pki_config_lines = [
+                "ntp master 6",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
+                "!",
+                "crypto pki server CA-ROOT",
+                " database level complete",
+                " no database archive",
+                " grant auto",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
+                "!",
+            ]
+
+            ca_config_lines = ca_base_config.splitlines()
+
+            # Replace generic RSA key with named key (needed for PKI server)
+            for i, line in enumerate(ca_config_lines):
+                if line.strip() == "crypto key generate rsa modulus 2048":
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+
+            # PKI block before EEM so double end/end does not quit config too soon
+            ca_scep_url = f"http://{ca_nbma_ip.ip}:80"
+            insert_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + _pki_ca_authenticate_eem_lines()
+            )
+            try:
+                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
+                ca_config_lines[end_idx:end_idx] = insert_block
+            except StopIteration:
+                ca_config_lines.extend(insert_block)
+
+            ca_rendered = "\n".join(ca_config_lines)
+
+            # Place CA near SWnbma0 (core switch area)
+            ca_x = -400
+            ca_y = 200
+
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append("    node_definition: csr1000v")  # CA is always CSR
+            lines.append(f"    x: {ca_x}")
+            lines.append(f"    y: {ca_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                ca_mgmt_slot_id = mgmt_slot - 1  # CA is always CSR, so slot-1
+                lines.append(f"      - id: i{ca_mgmt_slot_id}")
+                lines.append(f"        slot: {ca_mgmt_slot_id}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_rendered.splitlines():
+                lines.append(f"      {ln}")
+
         lines.append("links:")
         lid = 0
 
@@ -2162,6 +3015,18 @@ class Renderer:
             lines.append("    i1: i0")
             lines.append(f"    n2: {node_ids['SWnbma0']}")
             lines.append(f"    i2: i{sidx}")
+
+        # CA-ROOT -> SWnbma0 data link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            # SWnbma0's next available port after access switches
+            swnbma0_ca_port = num_access
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{swnbma0_ca_port}")
 
         for ep in range(1, total_endpoints + 1):
             rlabel = f"R{ep * 2 - 1}"
@@ -2238,6 +3103,20 @@ class Renderer:
                 if ticks:
                     ticks.update()  # type: ignore
 
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                # CA is always CSR1000v, so use slot - 1
+                ca_mgmt_iface_id = mgmt_slot - 1
+                # SWoob0's next available port after ext-conn-mgmt (if present) and OOB access switches
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -2246,8 +3125,10 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
+        lines = _intent_annotation_lines(desc) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -2278,6 +3159,14 @@ class Renderer:
         total = int(args.nodes)
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
+
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # Scale spacing so any node count and group size produces importable coordinates.
+        max_coord = 15000
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_sw + 1))))
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
 
         # Warn about custom device templates/images which may affect interface behavior
         dev_def = getattr(args, "dev_template", args.template)
@@ -2328,16 +3217,27 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
             if getattr(args, "ntp_vrf", None):
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
+        args_bits.append(f"-L {args.labname}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML) | args: "
             + " ".join(args_bits)
         )
         if getattr(args, "remark", None):
             desc += f" | remark: {args.remark}"
-        # Quote description to avoid YAML parsing issues due to ':' characters
+        # Full args in description (visible in Lab Description pop-up); same intent in notes (hidden span) + annotation for CI/CD grep
         lines.append(f'  description: "{desc}"')
+        lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
@@ -2359,8 +3259,10 @@ class Renderer:
             end = min((i + 1) * group, total)
             per_sw_counts.append(max(0, end - start + 1))
 
-        # Core switch needs one port per access switch
+        # Core switch needs one port per access switch + 1 for CA if --pki
         core_if_count = num_sw
+        if getattr(args, "pki_enabled", False):
+            core_if_count += 1
         lines.append("    interfaces:")
         for p in range(core_if_count):
             lines.append(f"      - id: i{p}")
@@ -2373,7 +3275,7 @@ class Renderer:
         for i in range(num_sw):
             label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
-            x = (i + 1) * args.distance * 3
+            x = min(max_coord, (i + 1) * sw_step_x)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
@@ -2438,7 +3340,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -2493,7 +3399,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -2502,6 +3408,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             rendered = tpl.render(
                 config=cfg,
                 node=node,
@@ -2509,10 +3421,17 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
-            rx = (idx // group + 1) * args.distance * 3
-            ry = (idx % group + 1) * args.distance
+            rx = min(max_coord, (idx // group + 1) * sw_step_x)
+            ry = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
@@ -2539,6 +3458,143 @@ class Renderer:
                 lines.append("        type: physical")
             lines.append("    configuration: |-")
             for ln in rendered.splitlines():
+                lines.append(f"      {ln}")
+
+        # Create PKI Root CA router if --pki enabled
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+
+            # CA gets last usable IP in the flat CIDR (e.g., 10.10.255.254/16)
+            ca_g_ip = f"{g_base}.255.254"
+            ca_l_ip = f"{l_base}.255.254"
+
+            # CA-ROOT is always CSR1000v (required for PKI server features)
+            ca_dev_def = "csr1000v"
+
+            # Determine which CSR template to use based on regular router template
+            # This ensures CA uses same routing protocol as regular routers
+            template_name = getattr(args, "template", "iosv")
+            if "ospf" in template_name or template_name == "iosv":  # iosv defaults to OSPF
+                ca_template_name = "csr-ospf"
+            elif "eigrp" in template_name:
+                ca_template_name = "csr-eigrp"
+            else:
+                ca_template_name = "csr-eigrp"  # Default to EIGRP if unknown
+
+            # Load appropriate CSR template
+            try:
+                ca_base_tpl = env.get_template(f"{ca_template_name}{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                ca_base_tpl = tpl  # Fallback to default template
+
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=IPv4Interface(f"{ca_l_ip}/32"),
+                interfaces=[
+                    TopogenInterface(
+                        address=IPv4Interface(f"{ca_g_ip}/16"), description="=== SCEP Enrollment URL ===", slot=0
+                    )
+                ],
+            )
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+            # Render base config with routing protocol
+            ca_base_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+            )
+
+            # CA clock EEM: one-shot 90s to set clock + ntp master if NTP not synced (so PKI server can start)
+            ca_config_lines = ca_base_config.rstrip().split('\n')
+            # Remove trailing "end" if present
+            if ca_config_lines and ca_config_lines[-1].strip() == "end":
+                ca_config_lines.pop()
+
+            # Replace generic RSA key with named key for PKI
+            for i, line in enumerate(ca_config_lines):
+                if line.strip() == "crypto key generate rsa modulus 2048":
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+                    break
+
+            # PKI block before EEM so double end/end does not quit config too soon
+            pki_config_lines = [
+                "ntp master 6",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
+                "!",
+                "crypto pki server CA-ROOT",
+                " database level complete",
+                " no database archive",
+                " grant auto",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
+                "!",
+            ]
+            ca_scep_url = f"http://{ca_g_ip}:80"
+            ca_config_lines.extend(pki_config_lines)
+            ca_config_lines.extend(_pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url))
+            ca_config_lines.extend(_pki_ca_authenticate_eem_lines())
+            ca_config_lines.append("end")
+
+            ca_rendered = '\n'.join(ca_config_lines)
+
+            # Position CA to the left of SW0
+            ca_x = -args.distance * 3
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append(f"    node_definition: {ca_dev_def}")
+            lines.append(f"    x: {ca_x}")
+            lines.append("    y: 0")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            if ca_dev_def == "csr1000v":
+                lines.append("        label: GigabitEthernet1")
+            else:
+                lines.append("        label: GigabitEthernet0/0")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                if ca_dev_def == "csr1000v":
+                    csr_slot = mgmt_slot - 1
+                    lines.append(f"      - id: i{csr_slot}")
+                    lines.append(f"        slot: {csr_slot}")
+                    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                else:
+                    lines.append(f"      - id: i{mgmt_slot}")
+                    lines.append(f"        slot: {mgmt_slot}")
+                    lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_rendered.splitlines():
                 lines.append(f"      {ln}")
 
         # Links section
@@ -2568,6 +3624,17 @@ class Renderer:
             lines.append("    i1: i0")
             lines.append(f"    n2: {node_ids[acc]}")
             lines.append(f"    i2: i{acc_port}")
+
+        # CA-ROOT -> SW0 link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            # SW0's next available port is after all access switch uplinks (i0 through i{num_sw-1})
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SW0']}")
+            lines.append(f"    i2: i{num_sw}")
 
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
@@ -2609,6 +3676,20 @@ class Renderer:
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
 
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                # CA is always CSR1000v, so use slot - 1
+                ca_mgmt_iface_id = mgmt_slot - 1
+                # SWoob0's next available port after ext-conn-mgmt (if present) and OOB access switches
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -2617,8 +3698,10 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
+        lines = _intent_annotation_lines(desc) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.info("Offline YAML written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
         return 0
     @staticmethod
     def offline_flat_pair_yaml(args: Namespace, cfg: Config) -> int:
@@ -2642,6 +3725,14 @@ class Renderer:
         total = int(args.nodes)
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
+
+        # CML input validation requires x/y coordinates to be within a bounded range.
+        # Scale spacing so any node count and group size produces importable coordinates.
+        max_coord = 15000
+        base_distance = int(getattr(args, "distance", 200))
+        base_sw_step_x = base_distance * 3
+        sw_step_x = max(1, min(base_sw_step_x, max_coord // max(1, (num_sw + 1))))
+        router_step_y = max(1, min(base_distance, max_coord // max(1, (group + 2))))
 
         # helper to compute addressing
         def addr_parts(n: int) -> tuple[int, int]:
@@ -2675,17 +3766,26 @@ class Renderer:
                 args_bits.append("--mgmt-bridge")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
+            if getattr(args, "ntp_vrf", None):
+                args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
+        args_bits.append(f"-L {args.labname}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, flat-pair) | args: "
             + " ".join(args_bits)
         )
         if getattr(args, "remark", None):
             desc += f" | remark: {args.remark}"
-        # Quote description to avoid YAML parsing issues due to ':' characters
+        # Full args in description (visible in Lab Description pop-up); same intent in notes (hidden span) + annotation for CI/CD grep
         lines.append(f'  description: "{desc}"')
+        lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
@@ -2706,9 +3806,12 @@ class Renderer:
             end = min((i + 1) * group, total)
             per_sw_counts.append(max(0, end - start + 1))
 
-        # Core interfaces: one per access switch
+        # Core interfaces: one per access switch + 1 extra for CA-ROOT if --pki enabled
+        sw0_port_count = num_sw
+        if getattr(args, "pki_enabled", False):
+            sw0_port_count += 1
         lines.append("    interfaces:")
-        for p in range(num_sw):
+        for p in range(sw0_port_count):
             lines.append(f"      - id: i{p}")
             lines.append(f"        slot: {p}")
             lines.append(f"        label: port{p}")
@@ -2719,7 +3822,7 @@ class Renderer:
         for i in range(num_sw):
             label = f"SW{i+1}"
             node_ids[label] = f"n{nid}"; nid += 1
-            x = (i + 1) * args.distance * 3
+            x = min(max_coord, (i + 1) * sw_step_x)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
@@ -2784,7 +3887,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            swoob0_port_count = num_oob_sw
+            if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            for p in range(swoob0_port_count):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -2876,7 +3983,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None),
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -2885,6 +3992,12 @@ class Renderer:
                     "server": args.ntp_server,
                     "vrf": getattr(args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
             rendered = tpl.render(
                 config=cfg,
                 node=node,
@@ -2892,10 +4005,17 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
             )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_url
+                )
 
-            rx = (idx // group + 1) * args.distance * 3
-            ry = (idx % group + 1) * args.distance
+            rx = min(max_coord, (idx // group + 1) * sw_step_x)
+            ry = min(max_coord, (idx % group + 1) * router_step_y)
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
@@ -2936,6 +4056,140 @@ class Renderer:
             for ln in rendered.splitlines():
                 lines.append(f"      {ln}")
 
+        # CA-ROOT node (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            node_ids[ca_label] = f"n{nid}"; nid += 1
+
+            # CA gets last usable IP in the flat CIDR (e.g. 10.10.255.254/16), same as flat mode
+            ca_loopback_ip = f"{l_base}.255.254"
+            ca_data_ip = f"{g_base}.255.254"
+
+            # Create CA node with data interface (connects to SW0)
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=IPv4Interface(f"{ca_loopback_ip}/32"),
+                interfaces=[
+                    TopogenInterface(
+                        address=IPv4Interface(f"{ca_data_ip}/16"),
+                        description="=== SCEP Enrollment URL ===",
+                        slot=0,
+                    )
+                ],
+            )
+
+            # Build CA config using same template selection logic as offline_flat_yaml
+            # Determine which CSR template to use based on regular router template
+            template_name = getattr(args, "template", "iosv")
+            if "ospf" in template_name or template_name == "iosv":
+                ca_template_name = "csr-ospf"
+            elif "eigrp" in template_name:
+                ca_template_name = "csr-eigrp"
+            else:
+                ca_template_name = "csr-eigrp"
+
+            try:
+                ca_base_tpl = env.get_template(f"{ca_template_name}{Renderer.J2SUFFIX}")
+            except TemplateNotFound:
+                raise TopogenError(f"CA template not found: {ca_template_name}")
+
+            # Render base config with routing protocol
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ca_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+            ca_base_config = ca_base_tpl.render(
+                config=cfg,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+            )
+
+            # Append PKI-specific config
+            pki_config_lines = [
+                "ntp master 6",
+                "!",
+                "ip http server",
+                "ip http secure-server",
+                "ip http secure-server trustpoint CA-ROOT-SELF",
+                "!",
+                "crypto pki server CA-ROOT",
+                " database level complete",
+                " no database archive",
+                " grant auto",
+                " lifetime certificate 7300",
+                " lifetime ca-certificate 7300",
+                " database url flash:",
+                " no shutdown",
+                "!",
+            ]
+
+            ca_config_lines = ca_base_config.splitlines()
+
+            # Replace generic RSA key with named key (needed for PKI server)
+            for i, line in enumerate(ca_config_lines):
+                if line.strip() == "crypto key generate rsa modulus 2048":
+                    ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+
+            # PKI block before EEM so double end/end does not quit config too soon
+            ca_scep_url = f"http://{ca_data_ip}:80"
+            insert_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + _pki_ca_authenticate_eem_lines()
+            )
+            try:
+                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
+                ca_config_lines[end_idx:end_idx] = insert_block
+            except StopIteration:
+                ca_config_lines.extend(insert_block)
+
+            ca_rendered = "\n".join(ca_config_lines)
+
+            # Place CA near SW0 (core switch area)
+            ca_x = -400
+            ca_y = 200
+
+            lines.append(f"  - id: {node_ids[ca_label]}")
+            lines.append(f"    label: {ca_label}")
+            lines.append("    node_definition: csr1000v")  # CA is always CSR
+            lines.append(f"    x: {ca_x}")
+            lines.append(f"    y: {ca_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                ca_mgmt_slot_id = mgmt_slot - 1  # CA is always CSR, so slot-1
+                lines.append(f"      - id: i{ca_mgmt_slot_id}")
+                lines.append(f"        slot: {ca_mgmt_slot_id}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ca_rendered.splitlines():
+                lines.append(f"      {ln}")
+
         # Links
         lines.append("links:")
         lid = 0
@@ -2948,6 +4202,18 @@ class Renderer:
             lines.append("    i1: i0")
             lines.append(f"    n2: {node_ids['SW0']}")
             lines.append(f"    i2: i{i}")
+
+        # CA-ROOT -> SW0 data link (if --pki enabled)
+        if getattr(args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            # SW0's next available port after access switches
+            sw0_ca_port = num_sw
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ca_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SW0']}")
+            lines.append(f"    i2: i{sw0_ca_port}")
 
         # Router -> access switch (only odd routers connect Gi0/0 to access switch)
         router_sw_port: dict[str, tuple[str, int]] = {}
@@ -3020,6 +4286,20 @@ class Renderer:
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
 
+            # CA-ROOT -> SWoob0 mgmt link (if --pki enabled)
+            if getattr(args, "pki_enabled", False):
+                ca_label = "CA-ROOT"
+                # CA is always CSR1000v, so use slot - 1
+                ca_mgmt_iface_id = mgmt_slot - 1
+                # SWoob0's next available port after ext-conn-mgmt (if present) and OOB access switches
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ca_label]}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
@@ -3028,8 +4308,10 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
+        lines = _intent_annotation_lines(desc) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
-        _LOGGER.info("Offline YAML (flat-pair) written to %s", outfile)
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
         return 0
     def render_flat_network(self) -> int:
         """Render a flat L2 management network.
@@ -3063,10 +4345,22 @@ class Renderer:
         enable_mgmt = getattr(self.args, "enable_mgmt", False)
         mgmt_slot = getattr(self.args, "mgmt_slot", 5)
         oob_switch = None
+        mgmt_ext_conn = None
         if enable_mgmt:
             oob_switch = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
             if hasattr(oob_switch, "hide_links"):
                 oob_switch.hide_links = True
+
+            # Create external connector for management bridge (if --mgmt-bridge enabled)
+            mgmt_bridge = getattr(self.args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                mgmt_ext_conn = self.create_node("ext-conn-mgmt", "external_connector", Point(-440, 0))
+                mgmt_ext_conn.configuration = "System Bridge"
+                self.lab.create_link(
+                    mgmt_ext_conn.get_interface_by_slot(0),
+                    oob_switch.get_interface_by_slot(0),
+                )
+                _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
 
         # Create access switches positioned horizontally
         switches: list[Node] = []
@@ -3125,7 +4419,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -3133,6 +4427,12 @@ class Renderer:
                 ntp_ctx = {
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
+                }
+            ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                 }
 
             # Build config: Loopback0 and Gi0/0 with assigned addresses
@@ -3148,35 +4448,129 @@ class Renderer:
                 origin="",
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             cml_router.configuration = config  # type: ignore[method-assign]
 
+        # Create PKI Root CA router if --pki enabled
+        if getattr(self.args, "pki_enabled", False):
+            ca_label = "CA-ROOT"
+            # Position CA to the left of SW0
+            ca_pos = Point(-self.args.distance * 3, 0)
+            ca_router = self.create_router(ca_label, ca_pos)
+
+            # Connect CA to core switch (SW0) on slot 0
+            ca_if = ca_router.get_interface_by_slot(0)
+            core_if = self.new_interface(core)
+            self.lab.create_link(ca_if, core_if)
+            _LOGGER.info("CA link: %s Gi0/0 -> %s", ca_label, core.label)
+
+            # Connect CA to OOB switch if enabled
+            if enable_mgmt and oob_switch is not None:
+                dev_def = getattr(self.args, "dev_template", self.args.template)
+                ca_mgmt_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+                try:
+                    ca_mgmt_if = ca_router.get_interface_by_slot(ca_mgmt_slot)
+                except Exception:
+                    ca_mgmt_if = ca_router.create_interface(slot=ca_mgmt_slot)
+                oob_ca_if = self.new_interface(oob_switch)
+                self.lab.create_link(ca_mgmt_if, oob_ca_if)
+                _LOGGER.info("CA mgmt-link: %s slot %d -> %s", ca_label, ca_mgmt_slot, oob_switch.label)
+
+            # Assign last usable IP in the flat CIDR (e.g., 10.10.255.254/16)
+            g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
+            l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
+            ca_g_addr = IPv4Interface(f"{g_base}.255.254/16")
+            ca_l_addr = IPv4Interface(f"{l_base}.255.254/32")
+
+            # Build mgmt/ntp context for CA
+            ca_mgmt_ctx = None
+            if enable_mgmt:
+                ca_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(self.args, "mgmt_gw", None),
+                }
+            ca_ntp_ctx = None
+            if getattr(self.args, "ntp_server", None):
+                ca_ntp_ctx = {
+                    "server": self.args.ntp_server,
+                    "vrf": getattr(self.args, "ntp_vrf", None),
+                }
+            ca_ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ca_ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+
+            # Build config using csr-pki-ca template
+            ca_node = TopogenNode(
+                hostname=ca_label,
+                loopback=ca_l_addr,
+                interfaces=[TopogenInterface(address=ca_g_addr, description="=== SCEP Enrollment URL ===", slot=0)],
+            )
+            # Load csr-pki-ca template (no trim_blocks/lstrip_blocks to preserve newlines)
+            import jinja2
+            from pathlib import Path
+            template_dir = Path(__file__).parent / "templates"
+            ca_template = jinja2.Environment(
+                loader=jinja2.FileSystemLoader(template_dir),
+            ).get_template("csr-pki-ca.jinja2")
+
+            ca_config = ca_template.render(
+                config=self.config,
+                node=ca_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ca_mgmt_ctx,
+                ntp=ca_ntp_ctx,
+                ntp_oob=ca_ntp_oob_ctx,
+                pki_ca_key="",  # Empty for now; will be filled once key is exported
+                pki_enrollment_url=str(ca_g_addr.ip),  # CA's own data interface IP
+            )
+            ca_router.configuration = ca_config  # type: ignore[method-assign]
+            _LOGGER.warning("PKI Root CA created: %s at %s", ca_label, ca_g_addr.ip)
+
         _LOGGER.warning("Flat management network created")
-        # Optional YAML export
+        # Get lab definition size (and optionally export to file) so we can log size for online create
         outfile = getattr(self.args, "yaml_output", None)
-        if outfile:
-            try:
-                content = None
-                if hasattr(self.client, "export_lab"):
-                    content = self.client.export_lab(self.lab.id)  # type: ignore[attr-defined]
-                elif hasattr(self.lab, "export"):
-                    content = self.lab.export()  # type: ignore[attr-defined]
-                elif hasattr(self.lab, "topology"):
-                    # as a last resort, dump topology JSON as YAML-compatible text
-                    content = str(self.lab.topology)  # type: ignore[attr-defined]
-                if content is not None:
-                    if isinstance(content, bytes):
-                        data = content
-                    else:
-                        data = str(content).encode("utf-8")
+        content = None
+        try:
+            if hasattr(self.client, "export_lab"):
+                content = self.client.export_lab(self.lab.id)  # type: ignore[attr-defined]
+            elif hasattr(self.lab, "export"):
+                content = self.lab.export()  # type: ignore[attr-defined]
+            elif hasattr(self.lab, "topology"):
+                content = str(self.lab.topology)  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - best-effort
+            pass
+        if content is not None:
+            data = content if isinstance(content, bytes) else str(content).encode("utf-8")
+            size_kb = len(data) / 1024
+            _LOGGER.warning("Lab created (%.1f KB) - uploaded to controller", size_kb)
+            if outfile:
+                try:
                     with open(outfile, "wb") as fh:
                         fh.write(data)
                     _LOGGER.warning("Exported lab YAML to %s", outfile)
-                else:
-                    _LOGGER.error("YAML export not supported by client library")
-            except Exception as exc:  # pragma: no cover - best-effort export
-                _LOGGER.error("YAML export failed: %s", exc)
+                except Exception as exc:  # pragma: no cover
+                    _LOGGER.error("YAML export failed: %s", exc)
+        else:
+            _LOGGER.warning("Lab created - uploaded to controller")
+
+        # Print lab URL
+        import os
+        base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
+        _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
+
+        # Start lab if requested (non-blocking)
+        _start_lab_in_background(self.lab, self.args)
+
         return 0
+
     def render_node_sequence(self):
         """render the square spiral / node sequence network. Note: due to TTL
         limitations, it does not make a lot of sense to have this larger than
@@ -3264,7 +4658,7 @@ class Renderer:
                 mgmt_ctx = {
                     "enabled": True,
                     "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None),
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
                     "gw": getattr(self.args, "mgmt_gw", None),
                 }
             ntp_ctx = None
@@ -3273,12 +4667,20 @@ class Renderer:
                     "server": self.args.ntp_server,
                     "vrf": getattr(self.args, "ntp_vrf", None),
                 }
+            ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
 
             config = self.template.render(
                 config=self.config,
                 node=node,
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(self.args, "archive", False),
             )
             node_def = getattr(self.args, "dev_template", self.args.template)
             cml2_node = self.create_node(
@@ -3324,10 +4726,7 @@ class Renderer:
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
         _LOGGER.warning(f"Lab URL: {base_url}/lab/{self.lab.id}")
 
-        # Start lab if requested
-        if getattr(self.args, "start_lab", False):
-            _LOGGER.warning("Starting lab...")
-            self.lab.start()
-            _LOGGER.warning("Lab started")
+        # Start lab if requested (non-blocking)
+        _start_lab_in_background(self.lab, self.args)
 
         return 0

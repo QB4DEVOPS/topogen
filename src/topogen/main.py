@@ -1,3 +1,7 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.1.4
+# Date Modified: 2026-02-19
+#
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
 
@@ -93,6 +97,12 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "--progress",
         action="store_true",
         help="show a progress bar",
+    )
+    config_settings.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress non-essential output (INFO/WARN); only errors and final result",
     )
 
     parser.add_argument(
@@ -206,9 +216,16 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "--dmvpn-security",
         dest="dmvpn_security",
         type=str,
-        choices=("none", "ikev2-psk"),
+        choices=("none", "ikev2-psk", "ikev2-pki", "ikev2-rsa"),
         default="none",
-        help='DMVPN security/profile, default "%(default)s"',
+        help='DMVPN security: none, ikev2-psk (requires --dmvpn-psk), ikev2-pki (requires --pki), ikev2-rsa (PKI/cert, requires --dmvpn-trustpoint), default "%(default)s"',
+    )
+    parser.add_argument(
+        "--dmvpn-trustpoint",
+        dest="dmvpn_trustpoint",
+        type=str,
+        default="CA-ROOT-SELF",
+        help="DMVPN IKEv2 PKI trustpoint name (used when --dmvpn-security ikev2-rsa), default CA-ROOT-SELF",
     )
     parser.add_argument(
         "--dmvpn-psk",
@@ -316,6 +333,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help='VRF name to apply to the flat-pair odd-router Gi0/1 (pair link), default "%(default)s"',
     )
     parser.add_argument(
+        "--dmvpn-fvrf",
+        dest="dmvpn_fvrf",
+        type=str,
+        default=None,
+        help='Enable Front Door VRF: place the NBMA interface into the named transport VRF (e.g. INTERNET). Adds tunnel vrf, match fvrf to IKEv2, and ip tcp adjust-mss 1360 on Tunnel0.',
+    )
+    parser.add_argument(
         "--mgmt",
         dest="enable_mgmt",
         action="store_true",
@@ -369,7 +393,42 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="ntp_vrf",
         type=str,
         default=None,
-        help="VRF for NTP source interface; uses mgmt VRF if not specified and --mgmt-vrf is set",
+        help="VRF for NTP (e.g. Mgmt-vrf). Omit for global. With --mgmt, default is mgmt VRF unless --ntp-inband.",
+    )
+    parser.add_argument(
+        "--ntp-inband",
+        dest="ntp_inband",
+        action="store_true",
+        default=False,
+        help="Put --ntp server in global (inband); no VRF. Use when CA is NTP server on data network.",
+    )
+    parser.add_argument(
+        "--ntp-oob",
+        dest="ntp_oob_server",
+        type=str,
+        default=None,
+        help="Optional second NTP server in mgmt VRF (e.g. external NTP). Use with --mgmt.",
+    )
+    parser.add_argument(
+        "--pki",
+        dest="pki_enabled",
+        action="store_true",
+        default=False,
+        help="Enable PKI Root CA (adds CA-ROOT router for certificate services)",
+    )
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        default=False,
+        help="Enable config archive and rundiff alias on routers (archive log config, path flash:, write-memory)",
+    )
+    parser.add_argument(
+        "--pki-enroll",
+        dest="pki_enroll_mode",
+        type=str,
+        choices=["scep", "cli"],
+        default="scep",
+        help="PKI enrollment mode: scep (auto via SCEP) or cli (manual CLI enrollment for external CA)",
     )
     parser.add_argument(
         "--start",
@@ -416,6 +475,34 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         action="store_true",
         default=False,
         help="Allow overwriting an existing output file when using --offline-yaml",
+    )
+    parser.add_argument(
+        "--import-yaml",
+        dest="import_yaml",
+        metavar="FILE",
+        type=str,
+        help="Path to existing offline YAML to import (skip generation); use with --import",
+    )
+    parser.add_argument(
+        "--import",
+        dest="do_import",
+        action="store_true",
+        default=False,
+        help="Import the generated or specified YAML into CML (requires --offline-yaml or --import-yaml)",
+    )
+    parser.add_argument(
+        "--up",
+        dest="up",
+        metavar="FILE",
+        type=str,
+        help="Shorthand for --import-yaml FILE --import --start (import YAML to CML and start lab)",
+    )
+    parser.add_argument(
+        "--print-up-cmd",
+        dest="print_up_cmd",
+        action="store_true",
+        default=False,
+        help="With --offline-yaml, print the topogen --up <file> command to run later",
     )
     parser.add_argument(
         "--cml-version",
@@ -486,6 +573,11 @@ def main():
     """main function, returns 0 on success, 1 otherwise"""
     parser = create_argparser()
     args = parser.parse_args()
+    # Default lab name: when generating offline YAML and user did not pass -L, use filename (no path, no extension); otherwise "topogen lab" (e.g. online).
+    if getattr(args, "offline_yaml", None) and getattr(args, "labname", None) == "topogen lab":
+        args.labname = os.path.splitext(os.path.basename(args.offline_yaml))[0]
+    if getattr(args, "quiet", False):
+        args.loglevel = "ERROR"
     setup_logging(args.loglevel)
 
     def parse_dmvpn_hubs(value: str | None) -> list[int] | None:
@@ -523,6 +615,12 @@ def main():
             psk = getattr(args, "dmvpn_psk", None)
             if not psk or not str(psk).strip():
                 parser.error("--dmvpn-security ikev2-psk requires --dmvpn-psk <key>")
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-pki":
+            if not getattr(args, "pki_enabled", False):
+                parser.error("--dmvpn-security ikev2-pki requires --pki")
+        if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-rsa":
+            if not getattr(args, "dmvpn_trustpoint", "").strip():
+                parser.error("--dmvpn-security ikev2-rsa requires --dmvpn-trustpoint (e.g. CA-ROOT-SELF)")
 
         # DMVPN flat-pair uses odd routers as DMVPN endpoints. If hubs are not
         # provided, default to the first 3 endpoint routers (R1,R3,R5), or fewer
@@ -614,19 +712,70 @@ def main():
                 IPv4Address(args.ntp_server)
             except ValueError as exc:
                 parser.error(f"Invalid --ntp: {exc}")
-            # If ntp_vrf not set but mgmt_vrf is, inherit mgmt_vrf
-            if not getattr(args, "ntp_vrf", None) and getattr(args, "mgmt_vrf", None):
-                args.ntp_vrf = args.mgmt_vrf
-        # Offline YAML path requires no controller
+            # If ntp_vrf not set and OOB (--mgmt) is enabled, inherit mgmt_vrf (unless --ntp-inband).
+            # Without --mgmt, NTP is inband so do not set ntp_vrf (no "ntp server vrf Mgmt-vrf").
+            if not getattr(args, "ntp_inband", False):
+                if (
+                    not getattr(args, "ntp_vrf", None)
+                    and getattr(args, "enable_mgmt", False)
+                    and getattr(args, "mgmt_vrf", None)
+                ):
+                    args.ntp_vrf = args.mgmt_vrf
+            else:
+                args.ntp_vrf = None  # inband: no VRF for --ntp
+            if getattr(args, "ntp_oob_server", None):
+                from ipaddress import IPv4Address
+                try:
+                    IPv4Address(args.ntp_oob_server)
+                except ValueError as exc:
+                    parser.error(f"Invalid --ntp-oob: {exc}")
+        # --up is shorthand for --import-yaml FILE --import --start (ignore empty string from GUI)
+        up_val = getattr(args, "up", None)
+        if up_val and str(up_val).strip():
+            args.import_yaml = up_val.strip()
+            args.do_import = True
+            args.start_lab = True
+
+        # --import requires a YAML source
+        if getattr(args, "do_import", False):
+            if not (getattr(args, "offline_yaml", None) or getattr(args, "import_yaml", None)):
+                parser.error("--import requires --offline-yaml or --import-yaml")
+
+        # Warn if --start used with --offline-yaml but not importing (start would do nothing)
+        if (
+            getattr(args, "start_lab", False)
+            and getattr(args, "offline_yaml", None)
+            and not getattr(args, "do_import", False)
+        ):
+            _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller; use --import to import then start")
+
+        # Import-only path: existing YAML, no generation
+        if getattr(args, "import_yaml", None) and getattr(args, "do_import", False):
+            return Renderer.import_yaml_to_cml(args.import_yaml, args)
+
+        # Offline YAML path: generate, then optionally import
         if getattr(args, "offline_yaml", None):
             if args.mode == "dmvpn":
                 if getattr(args, "dmvpn_underlay", "flat") == "flat-pair":
-                    return Renderer.offline_dmvpn_flat_pair_yaml(args, cfg)
-                return Renderer.offline_dmvpn_yaml(args, cfg)
-            if args.mode == "flat-pair":
-                return Renderer.offline_flat_pair_yaml(args, cfg)
+                    retval = Renderer.offline_dmvpn_flat_pair_yaml(args, cfg)
+                else:
+                    retval = Renderer.offline_dmvpn_yaml(args, cfg)
+            elif args.mode == "flat-pair":
+                retval = Renderer.offline_flat_pair_yaml(args, cfg)
             else:
-                return Renderer.offline_flat_yaml(args, cfg)
+                retval = Renderer.offline_flat_yaml(args, cfg)
+            if retval != 0:
+                return retval
+            if getattr(args, "do_import", False):
+                return Renderer.import_yaml_to_cml(
+                    args.offline_yaml, args, size_already_logged=True
+                )
+            if getattr(args, "print_up_cmd", False) and not getattr(args, "up", None):
+                _LOGGER.warning(
+                    "When you're ready: topogen --up %s",
+                    args.offline_yaml.replace("\\", "/"),
+                )
+            return retval
 
         renderer = Renderer(args, cfg)
         # argparse ensures correct mode

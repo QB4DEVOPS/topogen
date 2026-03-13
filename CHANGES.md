@@ -1,8 +1,96 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.2.11
+Date Modified: 2026-03-13
+
+- Called by: Users checking release notes, package managers, documentation generators
+- Reads from: Developer commits, PR descriptions, completed TODO items
+- Writes to: None (documentation only, but informs release notes and versioning)
+- Calls into: None (changelog-only)
+
+Purpose: Changelog documenting all user-facing changes, features, and bug fixes.
+         Follows conventional commit style (feat, fix, docs, refactor).
+         Used for release notes and version history.
+
+Blast Radius: None (documentation only, but critical for communicating changes to users)
+-->
+
 # Changes
 
-This file lists changes.
+This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(pki): backdate CA-ROOT clock by 1 day so CA certificate `notBefore` precedes client clocks — prevents `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors on node boot (closes #31)
+    - `_pki_clock_set_today()` now accepts `backdate_days` parameter; CA uses `backdate_days=1`, clients use default `0`
+    - Design supports future 3-level PKI hierarchy with tiered offsets (see DEVELOPER.md)
+    - Files: src/topogen/render.py (rev v1.0.14 → v1.0.15), DEVELOPER.md (rev v1.7.5 → v1.7.6), TODO.md (rev v1.6.19 → v1.6.20), CHANGES.md (rev v1.2.10 → v1.2.11), README.md (rev v1.4.9 → v1.4.10)
+  - docs(todo): add enhancement — `--import-yaml` should read `title:` from YAML when `-L` is not provided (PLA)
+  - docs(cleanup): remove stray merge conflict marker from CHANGES.md; clean up TODO.md — remove completed roadmap items (OOB mgmt, DMVPN IPsec PSK, DMVPN PKI, DMVPN Phase 3, DMVPN security roadmap, CSR EEM link-up superseded by TOPOGEN-NOSHUT), remove duplicate done items from Future ideas, move coordinate scaling bug to Done, remove placeholders
+    - Files: CHANGES.md (rev v1.2.9 → v1.2.10), TODO.md (rev v1.6.13 → v1.6.14)
+  - fix(csr): add TOPOGEN-NOSHUT EEM applet to all CSR1000v templates — works around CML bug where CSR interfaces enter `shutdown` after first boot or wipe despite `no shutdown` in startup config
+    - EEM fires unconditionally at `@reboot`, applies `no shutdown` to all configured physical and management interfaces
+    - Interface list is data-driven from the same `node.interfaces` + `mgmt` context the templates already use — no hardcoded interface range
+    - EEM applet placed after `line vty` / `line con` sections (IOS-XE requires event manager blocks last before `end`)
+    - Action labels kept within `.0`–`.9` to avoid EEM lexicographic sorting issues
+    - Templates: csr-dmvpn (rev v1.1.2 → v1.3.0), csr-eigrp (rev v1.1.1 → v1.3.0), csr-ospf (rev v1.1.1 → v1.3.0), csr-pki-ca (rev v1.1.1 → v1.3.0)
+    - Files: CHANGES.md (rev v1.2.7 → v1.2.9)
+  - docs(developer): add EEM placement and action label numbering rules
+    - EEM applets must appear after `line vty`/`line con` sections; action labels must stay within `.0`–`.9`
+    - Files: DEVELOPER.md
+  - docs(todo): add RESTCONF/NETCONF future feature for CSR1000v templates
+    - Files: TODO.md
+  - fix(flat): auto-scale x/y coordinates in `offline_flat_yaml` and `offline_flat_pair_yaml` so any node count and group size produces importable YAML without exceeding CML's 15000-coordinate limit
+    - Previously, switch x was computed as `(i+1) * distance * 3` with no upper bound; at 26 access switches (520 nodes, group=20) the last switch landed at x=15600 and CML rejected the import with a validation error
+    - Fix: compute `sw_step_x` and `router_step_y` scaled to `max_coord=15000` (same approach as the existing DMVPN renderer); all node placements are clamped with `min(max_coord, ...)`
+    - Users no longer need to manually tune `--flat-group-size` to avoid coordinate overflow; the layout adapts automatically
+    - Files: src/topogen/render.py (rev v1.0.13 → v1.0.14), CHANGES.md (rev v1.2.8 → v1.2.9), README.md (rev v1.4.8 → v1.4.9)
+  - docs(pki): add PKI.md — single reference for TopoGen PKI (flags, CA-ROOT, clients, EEM applets, known issues, auto-deploy certs, troubleshooting); add PKI.md to README documentation map
+    - Files: PKI.md (new, rev v1.0.0), README.md (rev v1.4.7 → v1.4.8), CHANGES.md (rev v1.2.7 → v1.2.8)
+  - feat(quiet): add `-q` / `--quiet` flag to suppress non-essential output
+    - When set, log level is forced to ERROR so only errors and final result are shown; useful for scripts and CI/CD
+    - Files: src/topogen/main.py (rev v1.1.3 → v1.1.4), CHANGES.md (rev v1.2.6 → v1.2.7), README.md (rev v1.4.5 → v1.4.6), DEVELOPER.md (rev v1.7.3 → v1.7.4), TODO.md (rev v1.6.3 → v1.6.4)
+  - fix(online): pass VIRL2_URL, VIRL2_USER, VIRL2_PASS explicitly into ClientLibrary
+    - TopoGen now reads env vars and passes url/username/password to virl2_client.ClientLibrary(); fixes "no env provided" when vars are set in PowerShell/shell before running topogen
+    - Files: src/topogen/render.py (rev v1.0.11 → v1.0.12), CHANGES.md (rev v1.2.5 → v1.2.6)
+  - feat(archive): add `--archive` flag and archive config block to all IOS/IOS-XE templates (feat/archive branch)
+    - CLI: `--archive` enables config archiving and rundiff alias on routers (opt-in)
+    - Enables: `archive` with `log config`, `path flash:`, `maximum 5`, `write-memory`; `alias exec rundiff` when `--archive` set; block omitted otherwise
+    - Templates: csr-dmvpn, csr-eigrp, csr-ospf, csr-pki-ca, iosv, iosv-dmvpn, iosv-eigrp, iosv-eigrp-stub, iosv-eigrp-nonflat, iol-xe; lxc (FRR) not applicable. Offline flat args_bits include `--pki` and `--archive` when set
+    - Files: src/topogen/main.py (rev v1.1.2 → v1.1.3), src/topogen/render.py (rev v1.0.11 → v1.0.12), src/topogen/templates/*.jinja2 (10 files), TODO.md (rev v1.6.2 → v1.6.3), README.md (rev v1.4.4 → v1.4.5), DEVELOPER.md (rev v1.7.2 → v1.7.3), CHANGES.md (rev v1.2.5 → v1.2.6)
+  - fix(dmvpn): OOB switch overflow in `offline_dmvpn_flat_pair_yaml` — `num_oob_sw` was set to `num_access` (NBMA switch count, based on odd routers only), but OOB connects ALL routers; with large labs (e.g. 200 nodes, group=20) each OOB access switch got 40 routers + 1 uplink = 41 ports, exceeding the CML `unmanaged_switch` 32-port cap; fix: `num_oob_sw = ceil(total_routers / oob_group)` so OOB switches are sized by total router count
+    - Files: src/topogen/render.py (rev v1.0.10 → v1.0.11), CHANGES.md (rev v1.2.4 → v1.2.5)
+  - fix(dmvpn): EEM CLIENT-PKI-SET-CLOCK and CLIENT-PKI-AUTHENTICATE timers increased from 90 s/95 s to 300 s/305 s to give CA-ROOT sufficient time to boot and start its PKI server before spoke enrollment attempts; if CA-ROOT is not reachable when the timer fires, manual `authc` is the workaround
+    - Files: src/topogen/render.py (rev v1.0.9 → v1.0.10), CHANGES.md (rev v1.2.3 → v1.2.4)
+  - fix(dmvpn): EEM applets now injected LAST in startup config (before final `end`), after all interface/routing/crypto sections — previously EEM applets were placed before the IKEv2/interface/routing sections, and each applet's closing `end` exits IOS-XE global config mode, causing everything after the first EEM `end` to be silently ignored at boot (interfaces never came up, no IPs assigned, no EIGRP/DMVPN)
+    - Root cause: `_inject_pki_client_trustpoint` built one combined block (trustpoint definition + EEM applets) and injected it before `crypto ikev2 proposal`; EEM applet `end` closes the applet submode and exits global config, so all subsequent config (IKEv2, interfaces, routing) was lost
+    - Fix: split into two injection points — trustpoint definition still injected before `crypto ikev2 proposal` (forward-reference fix from v1.0.8), EEM applets now injected in a separate pass before the final `end`
+    - Files: src/topogen/render.py (rev v1.0.8 → v1.0.9), CHANGES.md (rev v1.2.2 → v1.2.3)
+  - fix(dmvpn): IKEv2 PKI trustpoint injection order — `crypto pki trustpoint CA-ROOT-SELF` now injected BEFORE `crypto ikev2 proposal` so IOS-XE does not reject the forward reference to the undefined trustpoint at boot; fixes `pki trustpoint CA-ROOT-SELF` being silently dropped from the IKEv2 profile in running-config on all routers
+    - Root cause: `_inject_pki_client_trustpoint` was injecting before `end` (end of config), placing the trustpoint definition after the IKEv2 profile that referenced it; IOS-XE processes startup config sequentially and silently drops `pki trustpoint` references to trustpoints not yet defined
+    - Fix: injection point changed to before `crypto ikev2 proposal` when present, falling back to before `end`
+    - Files: src/topogen/render.py (rev v1.0.7 → v1.0.8), CHANGES.md (rev v1.2.1 → v1.2.2)
+  - feat(dmvpn): add DMVPN IKEv2 PKI (certificate-based auth)
+    - `--dmvpn-security ikev2-pki`: IKEv2 with RSA-sig auth using trustpoint CA-ROOT-SELF (requires `--pki`)
+    - CLI: add `ikev2-pki` to `--dmvpn-security` choices; validate `ikev2-pki` requires `--pki`
+    - Templates: iosv-dmvpn and csr-dmvpn emit IKEv2 profile with `authentication local rsa-sig`, `authentication remote rsa-sig`, `pki trustpoint CA-ROOT-SELF`; no keyring
+    - Online DMVPN: inject PKI client trustpoint on non-CA routers when `--pki` (flat and flat-pair)
+    - Offline DMVPN: args_bits include `--pki` when pki_enabled for lab description
+    - Files: src/topogen/main.py, src/topogen/render.py, src/topogen/templates/csr-dmvpn.jinja2 (rev v1.1.0), src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.1.0), README.md (rev v1.4.0), CHANGES.md (rev v1.1.8), TODO.md (rev v1.5.3), DEVELOPER.md (rev v1.4.3)
+  - feat(import): add offline-to-CML import workflow
+    - `--import-yaml FILE`: path to existing offline YAML (skip generation); use with `--import`
+    - `--import`: import the generated or specified YAML into CML via virl2_client (requires `--offline-yaml` or `--import-yaml`)
+    - prints file size (KB) before import and lab URL after import (clickable)
+    - `--start` works after import (start runs in background so CLI returns immediately)
+    - workflows: generate then import (`--offline-yaml out/lab.yaml --import`), or import existing (`--import-yaml out/lab.yaml --import`), optionally `--start`
+    - Files: src/topogen/main.py (rev v1.0.0), src/topogen/render.py (rev v1.0.4), src/topogen/__main__.py (rev v1.0.0), CHANGES.md (rev v1.1.7), README.md (rev v1.3.4), TODO.md (rev v1.5.2), DEVELOPER.md (rev v1.4.2)
+  - feat(cli): add `--up FILE` shorthand for `--import-yaml FILE --import --start`
+  - feat(cli): add `--print-up-cmd` to print "When you're ready: topogen --up <file>" after offline generation
+  - fix(ntp): NTP server uses VRF only when --mgmt is enabled (inband `ntp server IP` without OOB)
+  - feat(cli): add `src/topogen/__main__.py` so `python -m topogen` works
+  - fix(gooey): ignore empty `--up` from GUI so "Import requires ..." error does not occur when field left blank
+  - feat(online): make `--start` non-blocking (online and import paths)
+    - start runs in a background thread; CLI prints "Starting lab... (running in background; check CML UI for status)" and returns
+    - lab continues starting on the server; user can watch CML UI
   - feat(mgmt): add OOB management network support for flat, flat-pair, and dmvpn modes
     - enable with `--mgmt`
     - creates `SWoob0` unmanaged switch (with `hide_links: true`) and connects all router mgmt interfaces
@@ -70,6 +158,54 @@ This file lists changes.
     - GUI-only: clearer offline/online YAML file labels and file-save pickers
   - docs: offline YAML output is recommended to be written under the `out/` directory (see README examples)
   - fix(templates): set `line vty 0 4` `exec-timeout` to `0 0` (was `720 0`)
+  - chore(ping): increase DMVPN-ping.tcl sweep max from 10 to 20 (reverts earlier reduction)
+  - docs(__init__): add File Chain front matter, entry points, and public API exports section
+    - Files: src/topogen/__init__.py (rev v1.1.0)
+  - docs(todo): update PKI naming (RCA-ROOT → CA-ROOT, RCA-ICA → CA-POLICY), mark 4 tasks complete, add future ideas
+    - Files: TODO.md (rev v1.4.0)
+  - docs(readme): add concrete intent/metadata example showing embedded string format and grep command
+    - Files: README.md (rev v1.3.1)
+  - docs(todo): add --pki-scep future idea (replace dead --pki-enroll, CA name fix, router trustpoint)
+    - Files: TODO.md (rev v1.4.1)
+  - feat(pki): add single root CA router for DMVPN PKI
+    - `--pki`: add CA-ROOT node to DMVPN labs (connects to SWnbma0 slot 0 and OOB switch if `--mgmt`)
+    - `--pki-enroll scep|cli` CLI flags (main.py); CA IP = last usable in NBMA CIDR
+    - csr-pki-ca.jinja2 template; CA-ROOT naming; CA-POLICY / CA-SIGN reserved for future
+  - docs(templates): add File Chain front matter with Doc Version to csr-pki-ca.jinja2
+    - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.0)
+  - chore(templates): add `alias exec rundiff` to all router templates
+    - `alias exec rundiff show archive config differences system:running-config` placed before `line vty 0 4`
+    - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.1)
+    - Files: src/topogen/templates/csr-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-ospf.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iol-xe.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv.jinja2 (rev v1.0.0)
+  - feat(pki): harden CA-ROOT template with validated running config changes
+    - RSA key: add `exportable` flag (`crypto key generate rsa modulus 2048 label CA-ROOT.server exportable`)
+    - PKI server: reorder block to match IOS-XE canonical order
+    - PKI server: `lifetime certificate` and `lifetime ca-certificate` 3650/1095 → 7300 days
+    - PKI server: `no shut` → `no shutdown`
+    - HTTP: `ip http secure-server` → `no ip http secure-server` (SCEP uses plain HTTP only)
+    - NTP: `ntp master 5` → `ntp master 6` (matches validated lab config)
+    - Interface: Gi1 always gets `description === SCEP Enrollment URL ===`
+    - EEM: add `CA-ROOT-SET-CLOCK` applet (90s countdown, NTP check, clock force + ntp master fallback)
+    - EEM: init `event manager environment TIME_DONE 0` in startup config
+    - Files: src/topogen/templates/csr-pki-ca.jinja2 (rev v1.0.2)
+  - docs(templates): add File Chain front matter (Doc Version v1.0.0) to 9 templates missing it
+    - Files: src/topogen/templates/csr-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/csr-ospf.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iol-xe.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.0.0)
+    - Files: src/topogen/templates/iosv.jinja2 (rev v1.0.0)
 
 - version 0.2.4
   - empty
