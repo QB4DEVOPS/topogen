@@ -8,8 +8,8 @@
 #            Future TODO: Support IOSv if PKI server works on IOSv platform.
 #
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
-# Date Modified: 2026-02-25
+# Doc Version: v1.3.1
+# Date Modified: 2026-03-14
 #
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, pki_enabled)
@@ -201,6 +201,7 @@ archive
 alias exec rundiff show archive config differences system:running-config
 !
 {%- endif %}
+alias exec servcerts sh crypto pki server CA-ROOT cer
 !
 line vty 0 4
     transport input ssh telnet

@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.6
-Date Modified: 2026-03-13
+Doc Version: v1.7.7
+Date Modified: 2026-03-14
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -286,6 +286,8 @@ Pitfall:
 Maintenance note:
 
 - Some offline YAML generation features (notably `--mgmt-bridge` external_connector emission and related OOB switch/link wiring) currently appear as repeated blocks across multiple offline renderers in `src/topogen/render.py`. This is intentional for now, but it increases maintenance cost (a future edit could fix one mode and miss another). Prefer refactoring into a shared helper when touching this area again.
+
+- **CA-ROOT config is built in two ways.** The online render path uses `csr-pki-ca.jinja2` (via Jinja render). The offline paths (`offline_dmvpn_yaml` flat and flat-pair, `offline_flat_yaml`, `offline_flat_pair_yaml`) build CA config **inline in `render.py`** by assembling `ca_config_lines` from a base template render, then splicing in PKI blocks (`_pki_ca_self_enroll_block_lines`, `_pki_ca_authenticate_eem_lines`, aliases, etc.) before `end`. Any change to CA-ROOT config (e.g. adding an alias, EEM applet, or reordering blocks) must be applied in **both** `csr-pki-ca.jinja2` and all four inline assembly sites in `render.py`.
 
 
 
