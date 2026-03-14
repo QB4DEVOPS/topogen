@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.15
-# Date Modified: 2026-03-13
+# Doc Version: v1.0.16
+# Date Modified: 2026-03-14
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -2297,6 +2297,7 @@ class Renderer:
             insert_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
                 + _pki_ca_authenticate_eem_lines()
             )
             try:
@@ -2970,6 +2971,7 @@ class Renderer:
             insert_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
                 + _pki_ca_authenticate_eem_lines()
             )
             try:
@@ -3562,6 +3564,7 @@ class Renderer:
             ca_scep_url = f"http://{ca_g_ip}:80"
             ca_config_lines.extend(pki_config_lines)
             ca_config_lines.extend(_pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url))
+            ca_config_lines.extend(["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"])
             ca_config_lines.extend(_pki_ca_authenticate_eem_lines())
             ca_config_lines.append("end")
 
@@ -4156,6 +4159,7 @@ class Renderer:
             insert_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
                 + _pki_ca_authenticate_eem_lines()
             )
             try:

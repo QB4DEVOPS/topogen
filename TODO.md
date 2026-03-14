@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.20
-Date Modified: 2026-03-13
+Doc Version: v1.6.21
+Date Modified: 2026-03-14
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -47,12 +47,6 @@ This file tracks in-progress work and future ideas for TopoGen.
   - Scope: iosv-dmvpn.jinja2, csr-dmvpn.jinja2 (under `interface Tunnel0`)
   - Needs: new Jinja context variable (e.g. `dmvpn_nhrp_auth`) or hardcoded string; decide if CLI flag controls the auth string or if it is always emitted
   - Blast radius: templates (iosv-dmvpn, csr-dmvpn), render.py (pass context), optionally main.py (new flag)
-
-### CA-ROOT alias
-
-- [ ] Add `alias exec servcerts sh crypto pki server CA-ROOT cer` to CA-ROOT config
-  - Scope: csr-pki-ca.jinja2 (alias section)
-  - Why: convenience shortcut to inspect CA-issued certificates on the root CA
 
 ### EEM scripts (PKI) — working status
 
@@ -106,6 +100,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] CA-ROOT alias: `alias exec servcerts sh crypto pki server CA-ROOT cer` added to csr-pki-ca.jinja2 and all inline CA config paths in render.py (see CHANGES.md)
 - [x] TOPOGEN-NOSHUT EEM applet on all CSR1000v templates (supersedes "CSR EEM link-up script" future idea). See CHANGES.md `fix(csr)` entry.
 - [x] Archive config in all IOS/IOS-XE templates (feat/archive branch): archive + log config + path flash: + maximum 5 + write-memory; rundiff alias unchanged.
 - [x] DMVPN IKEv2 PKI validated (`--dmvpn-security ikev2-pki` + `--pki`): IKEv2 rsa-sig tunnels come up; flat, flat-pair underlays confirmed; EEM applets structurally fixed (injected last, before final `end`); timers 300 s/305 s; manual `authc` is workaround when CA-ROOT timing misses auto-enrollment window (see CHANGES.md v1.2.2–v1.2.4)

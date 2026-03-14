@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.11
-Date Modified: 2026-03-13
+Doc Version: v1.2.12
+Date Modified: 2026-03-14
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(pki): add `alias exec servcerts` to CA-ROOT — shortcut for `sh crypto pki server CA-ROOT cer` to inspect issued certificates
+    - Added to `csr-pki-ca.jinja2` (online path) and all four inline CA config assembly sites in `render.py` (offline DMVPN flat, DMVPN flat-pair, flat, flat-pair)
+    - Alias placed before EEM applets to avoid being swallowed by EEM `end` statements
+    - Files: csr-pki-ca.jinja2 (rev v1.3.0 → v1.3.1), src/topogen/render.py (rev v1.0.15 → v1.0.16), DEVELOPER.md (rev v1.7.6 → v1.7.7), CHANGES.md (rev v1.2.11 → v1.2.12), TODO.md (rev v1.6.20 → v1.6.21)
   - fix(pki): backdate CA-ROOT clock by 1 day so CA certificate `notBefore` precedes client clocks — prevents `%PKI-3-CERTIFICATE_INVALID_NOT_YET_VALID` errors on node boot (closes #31)
     - `_pki_clock_set_today()` now accepts `backdate_days` parameter; CA uses `backdate_days=1`, clients use default `0`
     - Design supports future 3-level PKI hierarchy with tiered offsets (see DEVELOPER.md)
