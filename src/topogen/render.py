@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.16
+# Doc Version: v1.0.17
 # Date Modified: 2026-03-14
 #
 # - Called by: src/topogen/main.py
@@ -808,7 +808,11 @@ class Renderer:
             _LOGGER.warning("Lab file: %s (%.1f KB)", path, size_kb)
         _LOGGER.warning("Importing to CML...")
         client = _init_client_from_args(args)
-        lab = client.import_lab_from_path(path, title=getattr(args, "labname", None) or path.stem)
+        labname = getattr(args, "labname", None)
+        if labname:
+            lab = client.import_lab_from_path(path, title=labname)
+        else:
+            lab = client.import_lab_from_path(path)
         base_url = os.environ.get(
             "VIRL2_URL",
             client.url if hasattr(client, "url") else "http://localhost",
