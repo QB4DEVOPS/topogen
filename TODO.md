@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.21
+Doc Version: v1.6.22
 Date Modified: 2026-03-14
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -40,13 +40,6 @@ This file tracks in-progress work and future ideas for TopoGen.
 1. Decide/implement least-astonishment semantics for DMVPN `--dmvpn-underlay flat-pair` node counts
 
 ## Current work
-
-### NHRP authentication
-
-- [ ] Add `ip nhrp authentication DMVPN-AUTH` to DMVPN tunnel interface config (hub and spoke, all phases, all security modes)
-  - Scope: iosv-dmvpn.jinja2, csr-dmvpn.jinja2 (under `interface Tunnel0`)
-  - Needs: new Jinja context variable (e.g. `dmvpn_nhrp_auth`) or hardcoded string; decide if CLI flag controls the auth string or if it is always emitted
-  - Blast radius: templates (iosv-dmvpn, csr-dmvpn), render.py (pass context), optionally main.py (new flag)
 
 ### EEM scripts (PKI) — working status
 
@@ -100,6 +93,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] NHRP authentication: `ip nhrp authentication DMVPNKEY` added to iosv-dmvpn.jinja2 and csr-dmvpn.jinja2 (hub and spoke, all phases, all security modes)
 - [x] CA-ROOT alias: `alias exec servcerts sh crypto pki server CA-ROOT cer` added to csr-pki-ca.jinja2 and all inline CA config paths in render.py (see CHANGES.md)
 - [x] TOPOGEN-NOSHUT EEM applet on all CSR1000v templates (supersedes "CSR EEM link-up script" future idea). See CHANGES.md `fix(csr)` entry.
 - [x] Archive config in all IOS/IOS-XE templates (feat/archive branch): archive + log config + path flash: + maximum 5 + write-memory; rundiff alias unchanged.
