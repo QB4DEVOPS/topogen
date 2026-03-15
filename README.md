@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.11
+Doc Version: v1.4.12
 Date Modified: 2026-03-14
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
