@@ -686,7 +686,7 @@ When enabled, the generated router configs include a `ip vrf NAME` stanza and ap
 
 ### Management Network (OOB)
 
-In `flat`, `flat-pair`, and `dmvpn` modes, an optional out-of-band management network can be created. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
+All modes (`simple`, `nx`, `flat`, `flat-pair`, `dmvpn`) support an optional out-of-band management network. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
 
 - `--mgmt`: enable management network
 - `--mgmt-cidr CIDR`: management network CIDR (default: `10.254.0.0/16`)
