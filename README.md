@@ -699,6 +699,28 @@ When enabled, the generated router configs include a management interface with D
 
 The `--mgmt-bridge` flag creates an `ext-conn-mgmt` external_connector node using "System Bridge" mode, connecting SWoob0 to your physical/external network. This enables bidirectional connectivity, allowing routers to reach external resources (internet, NTP servers, external DHCP) and external systems to access the lab's management network.
 
+```mermaid
+graph TD
+    subgraph data ["Data Plane (flat)"]
+        SW0["SW0 (core)"]
+        SW1dat["SW1"]
+        SW0 --- SW1dat
+        SW1dat ---|"Gi0/0"| R1
+        SW1dat ---|"Gi0/0"| R2
+        SW1dat ---|"Gi0/0"| R3
+    end
+    subgraph mgmt ["OOB Management"]
+        extconn["ext-conn-mgmt"]
+        SWoob0["SWoob0 (core)"]
+        SWoob1["SWoob1"]
+        extconn --- SWoob0
+        SWoob0 --- SWoob1
+    end
+    R1 ---|"Gi0/5"| SWoob1
+    R2 ---|"Gi0/5"| SWoob1
+    R3 ---|"Gi0/5"| SWoob1
+```
+
 Example (flat mode with mgmt network):
 
 ```powershell
