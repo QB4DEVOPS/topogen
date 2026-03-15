@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.7
+Doc Version: v1.7.8
 Date Modified: 2026-03-14
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -1370,11 +1370,40 @@ Online (basic smoke checks once routers boot):
 
 ## Feature closeout checklist
 
+When finishing a feature (especially anything that changes CLI flags, templates, topology logic, or lab behavior), close it out completely so the repo stays self-explanatory and future AI sessions follow the same process:
 
+- Update `CHANGES.md` (add an Unreleased bullet describing the change)
+  - List each modified file and its new Doc Version (rev) so reviewers can see what was touched and to what rev. Example: `Files: src/topogen/render.py (rev v1.0.0), README.md (rev v1.2.1)`.
+- Update `README.md`
+  - Document new flags / changed semantics
+  - Add or update command examples (including Phase 2/Phase 3 where applicable)
+  - Refresh the `--help` output block if new flags were added or flag descriptions changed
+- Update `TODO.md` (move completed items out of `## Current work` into `## Done` or remove them; add follow-ups)
+- Generate at least one small offline YAML lab to validate the change (and keep the command in the PR description)
+- Open a PR and prefer squash-merge for a clean history
+- After merge: sync `main` locally (`git checkout main`, `git pull`) and delete the feature branch (local + remote)
 
-See the README checklist and follow it for any change that affects behavior. When updating **CHANGES.md** (Unreleased), list each modified file and its new Doc Version (rev) so reviewers can see what was touched and to what rev. Example: `Files: src/topogen/render.py (rev v1.0.0), README.md (rev v1.2.1)`.
+## AI-Assisted Usage and Validation
 
+When using AI assistants (Claude, ChatGPT, etc.) to generate TopoGen labs, always validate that the generated YAML contains all expected configurations based on the flags used:
 
+**Required validations after generation:**
+- Lab title matches expectation (check `-L` flag was applied)
+- VRFs are configured if `--vrf` or `--mgmt-vrf` flags were used
+- External connector exists if `--mgmt-bridge` was used
+- Hub configuration is correct if `--dmvpn-hubs` was used:
+  - Verify hub routers have `ip nhrp redirect` (Phase 3) or no `ip nhrp nhs` (Phase 2)
+  - Verify spoke routers have `ip nhrp shortcut` (Phase 3) and `ip nhrp nhs` commands
+- NTP configuration exists if `--ntp` was used
+- Management network configuration if `--mgmt` was used
 
-- [Feature closeout checklist](README.md#feature-closeout-checklist-required)
+**Example validation commands:**
+```bash
+head -3 out/your-lab.yaml
+grep "ip vrf" out/your-lab.yaml
+grep "ext-conn-mgmt" out/your-lab.yaml
+grep -A 15 "interface Tunnel0" out/your-lab.yaml | grep "ip nhrp"
+```
+
+This validation step prevents importing incomplete or misconfigured labs into CML.
 

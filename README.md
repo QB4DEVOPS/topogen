@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.10
-Date Modified: 2026-03-13
+Doc Version: v1.4.11
+Date Modified: 2026-03-14
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -26,7 +26,7 @@ controller, creating the lab, nodes and links on the fly.
 
 ## Features
 
-- create topologies of arbitrary size (up to 400 tested, this is N^2)
+- create topologies of arbitrary size (up to 520 tested, this is N^2)
 - can use templates to provide node configurations (currently a built-in
   DNS host template and an IOSv template exist)
 - provide network numbering for all links (/30) and router loopbacks
@@ -71,58 +71,6 @@ templates (*.jinja2)
 
 For a developer-oriented starting point (repo layout, entrypoints, dependency chain, and Gooey notes), see [DEVELOPER.md](DEVELOPER.md).
 
-- **src/topogen/__main__.py**
-  - Enables `python -m topogen` (calls `main.main()` and exits with its return code). The console script `topogen` still resolves via `topogen:main` in `__init__.py`.
-
-- **src/topogen/main.py**
-  - CLI entrypoint. Parses arguments, sets up logging, loads config, and dispatches to the renderer.
-  - Calls `Renderer.offline_flat_yaml()` / `Renderer.offline_flat_pair_yaml()` / `Renderer.offline_dmvpn_yaml()` for offline export, or constructs `Renderer` and calls one of:
-    - `render_node_sequence()`
-    - `render_node_network()`
-    - `render_flat_network()`
-    - `render_dmvpn_network()`
-  - Depends on: `topogen.Config`, `topogen.render.Renderer`, and templates by name.
-
-- **src/topogen/render.py**
-  - Authoritative topology logic and configuration rendering.
-  - Online path uses `virl2_client` to create labs/nodes/links on a controller.
-  - Offline path builds CML-compatible YAML (schema controlled by `--cml-version`).
-  - Uses Jinja2 templates to render per-node configs and `Config` for settings.
-  - Depends on: `virl2_client`, `jinja2`, `networkx` (for nx mode), `topogen.models`, and packaged templates.
-
-- **src/topogen/templates/**
-  - Jinja2 templates for device configuration.
-  - `iosv.jinja2`: baseline IOSv config.
-  - `iosv-eigrp.jinja2`: IOSv with EIGRP 100, SSH v2/RSA 2048, console no-timeout.
-  - Referenced by name via `--template`; rendered by `render.py`.
-
-- **src/topogen/config.py**
-  - Defines `Config` (IP pools, credentials, defaults) loaded by `main.py` and used by `render.py`.
-
-- **src/topogen/models.py**
-  - Light data classes (`TopogenNode`, `TopogenInterface`, `Point`, etc.) and error types (`TopogenError`).
-  - Consumed by `render.py` to pass structured data to templates and CML client.
-
-- **src/topogen/__init__.py**
-  - Package metadata and exposure of entrypoints.
-
-Dependency flow (high level):
-
-`main.py` → loads `Config` → selects template name → dispatches to `render.py` → `render.py` uses templates + config to build topology (online via `virl2_client` or offline YAML) → templates produce per-node configs.
-
-## Feature closeout checklist (required)
-
-When finishing a feature (especially anything that changes CLI flags, templates, topology logic, or lab behavior), close it out completely so the repo stays self-explanatory and future AI sessions follow the same process:
-
-- Update `CHANGES.md` (add an Unreleased bullet describing the change)
-- Update `README.md`
-  - document new flags / changed semantics
-  - add or update command examples (including Phase 2/Phase 3 where applicable)
-- Update `TODO.md` (move completed items out of `## Current work` into `## Done` or remove them; add follow-ups)
-- Generate at least one small offline YAML lab to validate the change (and keep the command in the PR description)
-- Open a PR and prefer squash-merge for a clean history
-- After merge: sync `main` locally (`git checkout main`, `git pull`) and delete the feature branch (local + remote)
-
 ## Installation
 
 > **Important** Ensure that the PCL you install is compatible with your controller.
@@ -135,7 +83,7 @@ Steps:
 2. create virtual environment in it `python3 -mvenv .venv`
 3. activate the venv `source .venv/bin/activate` (or with
    .fish or .bat, ...)
-4. install using `python3 -mpip install -e .`
+4. install using `python3 -m pip install -e .`
 
 Alternatively, use Astral/uv:
 
@@ -196,37 +144,6 @@ command is required instead to install SciPy and NumPy dependencies: `uv sync
 At this point, the `topogen` command should be available. Alternatively,
 if you did not activate the venv, use `uv run topogen`.
 
-## AI-Assisted Usage and Validation
-
-When using AI assistants (Claude, ChatGPT, etc.) to generate TopoGen labs, **always validate** that the generated YAML contains all expected configurations based on the flags used:
-
-**Required validations after generation:**
-- ✅ Lab title matches expectation (check `-L` flag was applied)
-- ✅ VRFs are configured if `--vrf` or `--mgmt-vrf` flags were used
-- ✅ External connector exists if `--mgmt-bridge` was used
-- ✅ Hub configuration is correct if `--dmvpn-hubs` was used:
-  - Verify hub routers have `ip nhrp redirect` (Phase 3) or no `ip nhrp nhs` (Phase 2)
-  - Verify spoke routers have `ip nhrp shortcut` (Phase 3) and `ip nhrp nhs` commands
-- ✅ NTP configuration exists if `--ntp` was used
-- ✅ Management network configuration if `--mgmt` was used
-
-**Example validation commands:**
-```bash
-# Check lab title and description
-head -3 out/your-lab.yaml
-
-# Verify VRFs are configured
-grep "ip vrf" out/your-lab.yaml
-
-# Verify external connector exists
-grep "ext-conn-mgmt" out/your-lab.yaml
-
-# Check hub configuration (should have "ip nhrp redirect" for Phase 3)
-grep -A 15 "interface Tunnel0" out/your-lab.yaml | grep "ip nhrp"
-```
-
-This validation step prevents importing incomplete or misconfigured labs into CML.
-
 ## Configuration
 
 ### CML2
@@ -252,53 +169,165 @@ IP** into your hosts file).
 
 ### Tool
 
-Run the CLI with `topogen` (after install) or `python -m topogen`. The tool accepts a variety of command line switches. Run `topogen --help` (or `python -m topogen --help`) for the full, current list of flags; the excerpt below may be outdated.
+Run the CLI with `topogen` (after install) or `python -m topogen`. The tool accepts a variety of command line switches. Run `topogen --help` (or `python -m topogen --help`) for the full, current list of flags.
 
 ```plain
 $ topogen --help
-usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [--ca CAFILE] [-i] [-d DISTANCE] [-L LABNAME] [-T TEMPLATE]
-               [--device-template DEV_TEMPLATE] [--list-templates] [-m {nx,simple,flat}] [--flat-group-size FLAT_GROUP_SIZE]
-               [--loopback-255] [--gi0-zero] [--yaml FILE] [--offline-yaml FILE]
-               [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}] [nodes]
+usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
+               [--ca CAFILE] [-i] [-d DISTANCE] [-L LABNAME] [-R REMARK]
+               [-T TEMPLATE] [--device-template DEV_TEMPLATE]
+               [--list-templates] [-m {nx,simple,flat,flat-pair,dmvpn}]
+               [--dmvpn-phase {2,3}] [--dmvpn-routing {eigrp,ospf}]
+               [--eigrp-stub]
+               [--dmvpn-security {none,ikev2-psk,ikev2-pki,ikev2-rsa}]
+               [--dmvpn-trustpoint DMVPN_TRUSTPOINT] [--dmvpn-psk DMVPN_PSK]
+               [--dmvpn-underlay {flat,flat-pair}]
+               [--dmvpn-nbma-cidr DMVPN_NBMA_CIDR]
+               [--dmvpn-tunnel-cidr DMVPN_TUNNEL_CIDR]
+               [--dmvpn-tunnel-key DMVPN_TUNNEL_KEY] [--dmvpn-hubs DMVPN_HUBS]
+               [--flat-group-size FLAT_GROUP_SIZE] [--loopback-255]
+               [--gi0-zero] [--vrf] [--pair-vrf PAIR_VRF]
+               [--dmvpn-fvrf DMVPN_FVRF] [--mgmt] [--mgmt-cidr MGMT_CIDR]
+               [--mgmt-gw MGMT_GW] [--mgmt-slot MGMT_SLOT]
+               [--mgmt-vrf MGMT_VRF] [--mgmt-bridge] [--ntp NTP_SERVER]
+               [--ntp-vrf NTP_VRF] [--ntp-inband] [--ntp-oob NTP_OOB_SERVER]
+               [--pki] [--archive] [--pki-enroll {scep,cli}] [--start]
+               [--yaml FILE] [--offline-yaml FILE] [--overwrite]
+               [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
+               [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}]
+               [--allow-oversubscribe]
+               [nodes]
 
-generate test topology files and configurations for CML2
+Generate test topology files and configurations for CML2
 
 positional arguments:
-  nodes                 Number of nodes to generate
+  nodes                 Number of nodes to generate (2-1000)
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
-  --ca CAFILE           Use the CA certificate from this file (PEM format), defaults to ca.pem
+  --ca CAFILE           Use the CA certificate from this file (PEM format),
+                        defaults to ca.pem
   -i, --insecure        If no CA provided, do not verify TLS (insecure!)
   -d DISTANCE, --distance DISTANCE
                         Node distance, default 200
   -L LABNAME, --labname LABNAME
                         Lab name to create, default "topogen lab"
+  -R REMARK, --remark REMARK
+                        Add a custom remark/note to the lab description
+                        (optional)
   -T TEMPLATE, --template TEMPLATE
-                        Configuration template to use, defaults to "iosv"
+                        Template name to use, defaults to "iosv"
   --device-template DEV_TEMPLATE
-                        CML node definition for routers (e.g. iosv, iol, lxc). Defaults to "iosv"
+                        CML node definition to use for routers (e.g., iosv,
+                        iol, lxc). Defaults to "iosv"
   --list-templates      List all available templates
-  -m {nx,simple,flat}, --mode {nx,simple,flat}
+  -m {nx,simple,flat,flat-pair,dmvpn}, --mode {nx,simple,flat,flat-pair,dmvpn}
                         mode of operation, default is "simple"
+  --dmvpn-phase {2,3}   DMVPN phase (2 or 3), default 2
+  --dmvpn-routing {eigrp,ospf}
+                        Routing protocol over DMVPN tunnel, default "eigrp"
+  --eigrp-stub          Enable EIGRP stub (connected summary) on selected
+                        routers (DMVPN flat-pair: even routers)
+  --dmvpn-security {none,ikev2-psk,ikev2-pki,ikev2-rsa}
+                        DMVPN security: none, ikev2-psk (requires --dmvpn-
+                        psk), ikev2-pki (requires --pki), ikev2-rsa (PKI/cert,
+                        requires --dmvpn-trustpoint), default "none"
+  --dmvpn-trustpoint DMVPN_TRUSTPOINT
+                        DMVPN IKEv2 PKI trustpoint name (used when --dmvpn-
+                        security ikev2-rsa), default CA-ROOT-SELF
+  --dmvpn-psk DMVPN_PSK
+                        DMVPN IKEv2 pre-shared key (used when --dmvpn-security
+                        ikev2-psk)
+  --dmvpn-underlay {flat,flat-pair}
+                        DMVPN underlay topology, default "flat"
+  --dmvpn-nbma-cidr DMVPN_NBMA_CIDR
+                        NBMA underlay CIDR for DMVPN WAN segment, default
+                        "10.10.0.0/16"
+  --dmvpn-tunnel-cidr DMVPN_TUNNEL_CIDR
+                        Tunnel overlay CIDR for DMVPN Tunnel0 addressing,
+                        default "172.20.0.0/16"
+  --dmvpn-tunnel-key DMVPN_TUNNEL_KEY
+                        DMVPN Tunnel0 key (GRE tunnel key), default 10
+  --dmvpn-hubs DMVPN_HUBS
+                        Comma-separated router numbers to act as DMVPN hubs
+                        (e.g., 1,21,41). When set, the nodes argument is
+                        interpreted as total routers.
   --flat-group-size FLAT_GROUP_SIZE
-                        Routers per unmanaged switch when using flat mode, default 20
-  --loopback-255        Use 10.255.C.D/32 for Loopback0 addressing in flat mode (default is 10.20.C.D/32)
-  --gi0-zero            Use 10.0.C.D/16 for Gi0/0 addressing in flat mode (default is 10.10.C.D/16)
-  --allow-oversubscribe Bypass the recommended 520-node lab limit (use with caution)
-  --yaml FILE           Export the created lab to a YAML file at FILE (via controller API)
-  --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller required)
-  --cml-version ...     CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)
-  --start               Automatically start the lab after creation (online mode only)
+                        Routers per unmanaged switch when using flat mode,
+                        default 20
+  --loopback-255        Use 10.255.C.D/32 for Loopback0 addressing in flat
+                        mode (default is 10.20.C.D/32)
+  --gi0-zero            Use 10.0.C.D/16 for Gi0/0 addressing in flat mode
+                        (default is 10.10.C.D/16)
+  --vrf                 Enable VRF configuration (applies to flat-pair odd-
+                        router Gi0/1 when combined with --pair-vrf)
+  --pair-vrf PAIR_VRF   VRF name to apply to the flat-pair odd-router Gi0/1
+                        (pair link), default "tenant"
+  --dmvpn-fvrf DMVPN_FVRF
+                        Enable Front Door VRF: place the NBMA interface into
+                        the named transport VRF (e.g. INTERNET). Adds tunnel
+                        vrf, match fvrf to IKEv2, and ip tcp adjust-mss 1360
+                        on Tunnel0.
+  --mgmt                Enable a dedicated OOB management network (SWmgmt0 +
+                        router mgmt interfaces)
+  --mgmt-cidr MGMT_CIDR
+                        Management network CIDR, default "10.254.0.0/16"
+  --mgmt-gw MGMT_GW    Management network gateway IP (optional); adds a
+                        default route in the mgmt VRF if set
+  --mgmt-slot MGMT_SLOT
+                        Interface slot for management (IOSv Gi0/N, CSR GiN),
+                        default 5
+  --mgmt-vrf MGMT_VRF  VRF name for management interface (default: "Mgmt-
+                        vrf"); use "global" for global routing table
+  --mgmt-bridge         Add external-connector to bridge OOB management
+                        network to external network (requires --mgmt)
+  --ntp NTP_SERVER      NTP server IP address (optional)
+  --ntp-vrf NTP_VRF     VRF for NTP (e.g. Mgmt-vrf). Omit for global. With
+                        --mgmt, default is mgmt VRF unless --ntp-inband.
+  --ntp-inband          Put --ntp server in global (inband); no VRF. Use when
+                        CA is NTP server on data network.
+  --ntp-oob NTP_OOB_SERVER
+                        Optional second NTP server in mgmt VRF (e.g. external
+                        NTP). Use with --mgmt.
+  --pki                 Enable PKI Root CA (adds CA-ROOT router for
+                        certificate services)
+  --archive             Enable config archive and rundiff alias on routers
+                        (archive log config, path flash:, write-memory)
+  --pki-enroll {scep,cli}
+                        PKI enrollment mode: scep (auto via SCEP) or cli
+                        (manual CLI enrollment for external CA)
+  --start               Automatically start the lab after creation
+  --yaml FILE           Export the created lab to a YAML file at FILE
+  --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller
+                        required)
+  --overwrite           Allow overwriting an existing output file when using
+                        --offline-yaml
+  --import-yaml FILE    Path to existing offline YAML to import (skip
+                        generation); use with --import
+  --import              Import the generated or specified YAML into CML
+                        (requires --offline-yaml or --import-yaml)
+  --up FILE             Shorthand for --import-yaml FILE --import --start
+                        (import YAML to CML and start lab)
+  --print-up-cmd        With --offline-yaml, print the topogen --up <file>
+                        command to run later
+  --cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}
+                        CML lab schema version for offline YAML (CML 2.9 uses
+                        0.3.0)
+  --allow-oversubscribe
+                        Bypass the recommended 520-node lab limit (use with
+                        caution)
 
 configuration:
   -c CONFIGFILE, --config CONFIGFILE
-                        Use the configuration from this file, defaults to config.toml
+                        Use the configuration from this file, defaults to
+                        config.toml
   -w, --write           Write the default configuration to a file and exit
   -v, --version         show program's version number and exit
   -l LOGLEVEL, --loglevel LOGLEVEL
                         DEBUG, INFO, WARN, ERROR, CRITICAL, defaults to WARN
   -p, --progress        show a progress bar
+  -q, --quiet           suppress non-essential output (INFO/WARN); only errors
+                        and final result
 $
 ```
 
@@ -319,10 +348,38 @@ There are three modes available right now:
   connects only to its access switch on `Gi0/0`. Group size per access switch is
   controlled by `--flat-group-size` (default 20). No router-to-router links are
   created in this mode.
+
+```mermaid
+graph TD
+    SWcore["SWmgt0 (core)"]
+    SW1["SWmgt1"]
+    SW2["SWmgt2"]
+    SWcore --- SW1
+    SWcore --- SW2
+    SW1 ---|"Gi0/0"| R1
+    SW1 ---|"Gi0/0"| R2
+    SW1 ---|"Gi0/0"| R3
+    SW2 ---|"Gi0/0"| R4
+    SW2 ---|"Gi0/0"| R5
+    SW2 ---|"Gi0/0"| R6
+```
+
 - `flat-pair`: similar to `flat`, but routers are odd/even paired.
   - Odd routers: `Gi0/0` connects to the access switch and `Gi0/1` connects to the even router's `Gi0/0`.
   - Even routers: no access-switch link; only paired to the preceding odd router.
   - If the last router is odd and has no partner, its `Gi0/1` is unused.
+
+```mermaid
+graph TD
+    SWcore["SWmgt0 (core)"]
+    SW1["SWmgt1"]
+    SWcore --- SW1
+    SW1 ---|"Gi0/0"| R1["R1 (odd)"]
+    R1 ---|"Gi0/1 -- Gi0/0"| R2["R2 (even)"]
+    SW1 ---|"Gi0/0"| R3["R3 (odd)"]
+    R3 ---|"Gi0/1 -- Gi0/0"| R4["R4 (even)"]
+    SW1 ---|"Gi0/0"| R5["R5 (odd, unpaired)"]
+```
 - `dmvpn`: hub-and-spoke DMVPN topology.
   - Default behavior: `nodes` is the number of **spokes** (R1 is hub; R2.. are spokes). So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers).
   - Multi-hub: use `--dmvpn-hubs` to specify hub router numbers (e.g., `1,21,41`).
@@ -571,6 +628,7 @@ You can import an offline YAML into CML from the CLI so you don't have to use th
 
 - **`--import-yaml FILE`**: path to an existing offline YAML (skip generation). Use with `--import`.
 - **`--import`**: import the generated or specified YAML into CML via virl2_client. Requires `--offline-yaml` or `--import-yaml`. Prints file size (KB) before import and lab URL after import (clickable).
+- **`-L` on import**: when importing with `--import-yaml`, the YAML's `title:` field is used as the lab title by default (no need to repeat `-L`). Pass `-L "name"` to override the YAML title (e.g. for importing the same YAML multiple times with different names).
 - **`--start`**: after import (or online creation), start the lab in the background so the CLI returns immediately; check the CML UI for when the lab has started.
 - **`--up FILE`**: shorthand for `--import-yaml FILE --import --start` (import YAML to CML and start lab in one flag).
 - **`--print-up-cmd`**: with `--offline-yaml`, after generating prints the exact `topogen --up <file>` command to run later (when you're ready to deploy).
@@ -681,16 +739,35 @@ topogen --cml-version 0.3.0 -L "Flat-Mgmt-Bridge-10" -T iosv-eigrp --device-temp
 An optional NTP server can be configured on all routers.
 
 - `--ntp IP`: NTP server IP address
-- `--ntp-vrf NAME`: optional VRF for NTP source; inherits `--mgmt-vrf` if not specified
+- `--ntp-vrf NAME`: VRF for NTP source (e.g. `Mgmt-vrf`). Omit for global table. When `--mgmt` is used, defaults to the mgmt VRF unless `--ntp-inband` is set.
+- `--ntp-inband`: force NTP into the global (inband) routing table instead of the mgmt VRF. Use when the NTP server is on the data network (e.g. the CA router is also the NTP server).
+- `--ntp-oob IP`: optional second NTP server in the mgmt VRF. Use with `--mgmt` for a dedicated OOB NTP source (e.g. an external NTP appliance).
 
-Example (flat mode with mgmt + NTP):
+Example (flat mode with mgmt + NTP in mgmt VRF):
 
 ```powershell
 topogen --cml-version 0.3.0 -L "Flat-Mgmt-NTP-10" -T iosv-eigrp --device-template iosv -m flat \
   --flat-group-size 5 --mgmt --mgmt-vrf MGMT --ntp 10.254.0.1 --offline-yaml out/flat-mgmt-ntp-10.yaml 10
 ```
 
-### Examples
+Example (DMVPN with NTP inband -- CA router is the NTP server on the data network):
+
+```powershell
+topogen --cml-version 0.3.0 -m dmvpn -T iosv-dmvpn --device-template iosv --dmvpn-phase 3 \
+  --dmvpn-routing eigrp --dmvpn-security ikev2-pki --dmvpn-hubs 1 --pki \
+  --mgmt --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband \
+  -L "DMVPN-P3-NTP-Inband-11" --offline-yaml out/dmvpn-p3-ntp-inband-11.yaml 11
+```
+
+Example (flat mode with mgmt + dual NTP -- inband + OOB):
+
+```powershell
+topogen --cml-version 0.3.0 -L "Flat-Dual-NTP-10" -T iosv-eigrp --device-template iosv -m flat \
+  --flat-group-size 5 --mgmt --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband \
+  --ntp-oob 192.168.1.10 --offline-yaml out/flat-dual-ntp-10.yaml 10
+```
+
+## Examples
 
 Create a 300-node flat star lab directly on a controller (insecure TLS):
 
@@ -700,14 +777,17 @@ topogen -L "FlatLab-300-star" -T iosv -m flat --flat-group-size 20 --insecure --
 ```
 Create a 20-node simple lab with EIGRP (non-flat):
 
-powershell
+```powershell
 topogen -L "Simple-20-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
   -m simple --distance 250 --insecure --progress 20
+```
+
 Create a 20-node NX lab with EIGRP (non-flat):
 
-powershell
+```powershell
 topogen -L "NX-20-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
   -m nx --distance 250 --insecure --progress 20
+```
 
 Create a 10-node simple lab with OOB management, external bridge, NTP, and auto-start:
 
@@ -720,10 +800,10 @@ topogen -L "Simple-10-Mgmt-Bridge" -T iosv-eigrp --device-template iosv -m simpl
 
 Create and export a 500-node NX lab with EIGRP (YAML filename is Git-ignored):
 
-powershell
+```powershell
 topogen -L "NX-500-eigrp" -T iosv-eigrp-nonflat --device-template iosv `
   -m nx --distance 300 --yaml NX-500-eigrp.yaml --insecure --progress 500
-
+```
 
 Create the same lab with EIGRP config and export YAML:
 
