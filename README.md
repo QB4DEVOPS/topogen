@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.11
+Doc Version: v1.4.12
 Date Modified: 2026-03-14
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -344,16 +344,16 @@ There are three modes available right now:
 - `simple` (which is the default): this creates a single string of nodes, laid out
   in a square / spiral pattern.
 - `flat`: builds a flat L2 fabric for large-scale experiments. One core unmanaged
-  switch (SWmgt0) connects to N access unmanaged switches (SWmgt1..N). Each router
+  switch (SW0) connects to N access unmanaged switches (SW1..N). Each router
   connects only to its access switch on `Gi0/0`. Group size per access switch is
   controlled by `--flat-group-size` (default 20). No router-to-router links are
   created in this mode.
 
 ```mermaid
 graph TD
-    SWcore["SWmgt0 (core)"]
-    SW1["SWmgt1"]
-    SW2["SWmgt2"]
+    SWcore["SW0 (core)"]
+    SW1["SW1"]
+    SW2["SW2"]
     SWcore --- SW1
     SWcore --- SW2
     SW1 ---|"Gi0/0"| R1
@@ -371,8 +371,8 @@ graph TD
 
 ```mermaid
 graph TD
-    SWcore["SWmgt0 (core)"]
-    SW1["SWmgt1"]
+    SWcore["SW0 (core)"]
+    SW1["SW1"]
     SWcore --- SW1
     SW1 ---|"Gi0/0"| R1["R1 (odd)"]
     R1 ---|"Gi0/1 -- Gi0/0"| R2["R2 (even)"]
@@ -618,7 +618,7 @@ Tip: add `--progress` to show a progress bar (opt-in).
 TopoGen does not pick an output filename automatically; you must provide one. We recommend `out/` for generated artifacts.
 
 - Schema selection: `--cml-version` chooses the lab schema version (CML 2.9 uses `0.3.0`).
-- Topology: star fabric with one core `SWmgt0`, N access `SWmgt1..N`, and routers `R1..R${nodes}`.
+- Topology: star fabric with one core `SW0`, N access `SW1..N`, and routers `R1..R${nodes}`.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
 - Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
 
@@ -686,7 +686,7 @@ When enabled, the generated router configs include a `ip vrf NAME` stanza and ap
 
 ### Management Network (OOB)
 
-In `flat`, `flat-pair`, and `dmvpn` modes, an optional out-of-band management network can be created. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
+All modes (`simple`, `nx`, `flat`, `flat-pair`, `dmvpn`) support an optional out-of-band management network. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
 
 - `--mgmt`: enable management network
 - `--mgmt-cidr CIDR`: management network CIDR (default: `10.254.0.0/16`)
@@ -698,6 +698,28 @@ In `flat`, `flat-pair`, and `dmvpn` modes, an optional out-of-band management ne
 When enabled, the generated router configs include a management interface with DHCP addressing.
 
 The `--mgmt-bridge` flag creates an `ext-conn-mgmt` external_connector node using "System Bridge" mode, connecting SWoob0 to your physical/external network. This enables bidirectional connectivity, allowing routers to reach external resources (internet, NTP servers, external DHCP) and external systems to access the lab's management network.
+
+```mermaid
+graph TD
+    subgraph data ["Data Plane (flat)"]
+        SW0["SW0 (core)"]
+        SW1dat["SW1"]
+        SW0 --- SW1dat
+        SW1dat ---|"Gi0/0"| R1
+        SW1dat ---|"Gi0/0"| R2
+        SW1dat ---|"Gi0/0"| R3
+    end
+    subgraph mgmt ["OOB Management"]
+        extconn["ext-conn-mgmt"]
+        SWoob0["SWoob0 (core)"]
+        SWoob1["SWoob1"]
+        extconn --- SWoob0
+        SWoob0 --- SWoob1
+    end
+    R1 ---|"Gi0/5"| SWoob1
+    R2 ---|"Gi0/5"| SWoob1
+    R3 ---|"Gi0/5"| SWoob1
+```
 
 Example (flat mode with mgmt network):
 
