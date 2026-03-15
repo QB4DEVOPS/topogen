@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.12
+Doc Version: v1.2.13
 Date Modified: 2026-03-14
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,11 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(import): `--import-yaml` now reads `title:` from YAML when `-L` is not provided (PoLA — closes #36)
+    - Previously, importing always overwrote the lab title with `"topogen lab"` or the filename stem, discarding the `title:` set during generation
+    - Now: no `-L` on import → YAML's `title:` carries through; `-L` on import → explicit override
+    - Changed `-L` argparse default from `"topogen lab"` to `None`; smart-defaulting in `main()` sets context-appropriate defaults for offline-yaml and online paths
+    - Files: src/topogen/main.py (rev v1.1.4 → v1.2.0), src/topogen/render.py (rev v1.0.16 → v1.0.17), CHANGES.md (rev v1.2.12 → v1.2.13), TODO.md (rev v1.6.22 → v1.6.23)
   - feat(pki): add `alias exec servcerts` to CA-ROOT — shortcut for `sh crypto pki server CA-ROOT cer` to inspect issued certificates
     - Added to `csr-pki-ca.jinja2` (online path) and all four inline CA config assembly sites in `render.py` (offline DMVPN flat, DMVPN flat-pair, flat, flat-pair)
     - Alias placed before EEM applets to avoid being swallowed by EEM `end` statements

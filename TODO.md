@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.22
+Doc Version: v1.6.23
 Date Modified: 2026-03-14
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -71,8 +71,6 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 ## Promote to Issues
 
-- [ ] **Enhancement: `--import-yaml` should read `title:` from YAML when `-L` is not provided.** Currently, `--import-yaml` only sets the lab title if `-L` is passed on the import command line. If `-L` is omitted, the lab defaults to "topogen lab" even though the YAML contains a `title:` field set during generation. A user who generated with `-L MyLab` expects the title to carry through on import without repeating it (principle of least astonishment). Fix: after `import_lab()`, read the `title:` from the YAML and set `lab.title` if `-L` was not provided. `-L` on import should act as an override, enabling use cases like importing the same YAML multiple times with different lab names for tracking (e.g. `-L "regression-test-42"`, `-L "nightly-build-2026-03-13"`). Blast radius: render.py (import path), main.py (pass `-L` value or None to import logic).
-
 - [ ] **Task: Determine CML 2.10 lab schema version and add to `--cml-version` choices.** CML 2.10 (beta) currently accepts `0.3.0` YAML (backward-compatible), but may introduce a new schema version. Check an exported lab from a CML 2.10 controller for the `version:` field at the top of the YAML. If a new version (e.g. `0.4.0`) is introduced: add it to `--cml-version` choices in the arg parser, update the README default note, and make it the new default. Blast radius: arg parser choices list, README `--cml-version` docs.
 
 - [ ] **Bug: `iosv.jinja2` missing NTP support — PKI requires NTP.** `iosv.jinja2` has no `ntp server` block; `--ntp` / `--ntp-inband` flags are silently ignored for all IOSv routers. Only the CA-ROOT (CSR1000v, csr-ospf.jinja2) gets NTP config. Since PKI enrollment depends on correct time, IOSv routers using `--pki` will have clock issues at enrollment. Fix: add NTP block to `iosv.jinja2` matching the pattern in `csr-ospf.jinja2` (`ntp server [vrf <vrf>] <ip>`). Also audit all other templates (iosv-eigrp, iosv-eigrp-stub, iosv-eigrp-nonflat, iosv-dmvpn) for the same gap.
@@ -93,6 +91,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] `--import-yaml` reads `title:` from YAML when `-L` is not provided (PoLA, closes #36; see CHANGES.md)
 - [x] NHRP authentication: `ip nhrp authentication DMVPNKEY` added to iosv-dmvpn.jinja2 and csr-dmvpn.jinja2 (hub and spoke, all phases, all security modes)
 - [x] CA-ROOT alias: `alias exec servcerts sh crypto pki server CA-ROOT cer` added to csr-pki-ca.jinja2 and all inline CA config paths in render.py (see CHANGES.md)
 - [x] TOPOGEN-NOSHUT EEM applet on all CSR1000v templates (supersedes "CSR EEM link-up script" future idea). See CHANGES.md `fix(csr)` entry.

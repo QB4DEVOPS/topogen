@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.4
-# Date Modified: 2026-02-19
+# Doc Version: v1.2.0
+# Date Modified: 2026-03-14
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -129,8 +129,8 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "-L",
         "--labname",
         type=str,
-        default="topogen lab",
-        help='Lab name to create, default "%(default)s"',
+        default=None,
+        help='Lab name to create, default "topogen lab"',
     )
     parser.add_argument(
         "-R",
@@ -573,9 +573,13 @@ def main():
     """main function, returns 0 on success, 1 otherwise"""
     parser = create_argparser()
     args = parser.parse_args()
-    # Default lab name: when generating offline YAML and user did not pass -L, use filename (no path, no extension); otherwise "topogen lab" (e.g. online).
-    if getattr(args, "offline_yaml", None) and getattr(args, "labname", None) == "topogen lab":
-        args.labname = os.path.splitext(os.path.basename(args.offline_yaml))[0]
+    # Default lab name: when -L is not provided (None), derive from context.
+    # --offline-yaml: use filename stem. --import-yaml: leave None (let YAML title: take effect). Online: "topogen lab".
+    if args.labname is None:
+        if getattr(args, "offline_yaml", None):
+            args.labname = os.path.splitext(os.path.basename(args.offline_yaml))[0]
+        elif not getattr(args, "import_yaml", None):
+            args.labname = "topogen lab"
     if getattr(args, "quiet", False):
         args.loglevel = "ERROR"
     setup_logging(args.loglevel)
