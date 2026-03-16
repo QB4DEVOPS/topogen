@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.12
-Date Modified: 2026-03-14
+Doc Version: v1.4.13
+Date Modified: 2026-03-15
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -331,7 +331,12 @@ configuration:
 $
 ```
 
-Note: Generated offline YAML includes `smart_annotations: []`, a field introduced in CML 2.8. TopoGen has not been tested on CML versions earlier than 2.9. Import on CML 2.7 or older may fail if the parser rejects unknown fields.
+**CML version / schema compatibility:** The `--cml-version` flag sets the lab schema version in offline YAML **and** controls which optional fields are emitted. Known mapping:
+
+- CML 2.5–2.7 = schema `0.2.0`–`0.2.2`. No `smart_annotations` in YAML.
+- CML 2.8+ = schema `0.3.0`. `smart_annotations` included.
+
+When targeting CML 2.7 or earlier, use `--cml-version 0.2.2` (or lower). TopoGen automatically omits `smart_annotations` for schema versions `<= 0.2.2`.
 
 At a minimum, the amount of nodes to be created must be provided.
 

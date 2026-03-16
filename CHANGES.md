@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.13
-Date Modified: 2026-03-14
+Doc Version: v1.2.14
+Date Modified: 2026-03-15
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(compat): omit `smart_annotations` from offline YAML when `--cml-version` is `<= 0.2.2` — fixes CML 2.7 import rejection (`Additional properties are not allowed ('smart_annotations' was unexpected)`)
+    - `_intent_annotation_lines()` now accepts `version` parameter; `smart_annotations: []` only emitted for schema `> 0.2.2`
+    - Added CML schema version mapping to DEVELOPER.md and README.md
+    - Files: src/topogen/render.py (rev v1.0.17 → v1.0.18), README.md (rev v1.4.12 → v1.4.13), DEVELOPER.md (rev v1.7.8 → v1.7.9), CHANGES.md (rev v1.2.13 → v1.2.14)
   - feat(import): `--import-yaml` now reads `title:` from YAML when `-L` is not provided (PoLA — closes #36)
     - Previously, importing always overwrote the lab title with `"topogen lab"` or the filename stem, discarding the `title:` set during generation
     - Now: no `-L` on import → YAML's `title:` carries through; `-L` on import → explicit override
