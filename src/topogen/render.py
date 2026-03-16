@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.17
-# Date Modified: 2026-03-14
+# Doc Version: v1.0.18
+# Date Modified: 2026-03-15
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -138,15 +138,16 @@ except Exception:  # pragma: no cover - best effort
     TOPGEN_VERSION = "unknown"
 
 
-def _intent_annotation_lines(intent: str) -> list[str]:
+def _intent_annotation_lines(intent: str, version: str = "0.3.0") -> list[str]:
     """Return YAML lines for annotations + smart_annotations with one hidden intent annotation.
 
     Embeds intent at x=-9999, y=-9999 (off-canvas) for CI/CD to grep. Same intent is also
     in lab.notes inside a hidden HTML span (visible in YAML/grep, not in CML guide).
+
+    smart_annotations is omitted for schema versions <= 0.2.2 (CML 2.7 and earlier).
     """
-    # YAML single-quoted: escape single quote as ''
     content = intent.replace("'", "''")
-    return [
+    lines = [
         "annotations:",
         "  - border_color: '#FFFFFF'",
         "    border_style: ''",
@@ -163,8 +164,10 @@ def _intent_annotation_lines(intent: str) -> list[str]:
         "    x1: -9999",
         "    y1: -9999",
         "    z_index: 0",
-        "smart_annotations: []",
     ]
+    if tuple(int(x) for x in version.split(".")) > (0, 2, 2):
+        lines.append("smart_annotations: []")
+    return lines
 
 
 def _intent_notes_lines(intent: str) -> list[str]:
@@ -2440,7 +2443,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc) + lines
+        lines = _intent_annotation_lines(desc, version) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
@@ -3131,7 +3134,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc) + lines
+        lines = _intent_annotation_lines(desc, version) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
@@ -3705,7 +3708,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc) + lines
+        lines = _intent_annotation_lines(desc, version) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
@@ -4316,7 +4319,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc) + lines
+        lines = _intent_annotation_lines(desc, version) + lines
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)

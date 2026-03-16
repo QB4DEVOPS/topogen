@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.8
-Date Modified: 2026-03-14
+Doc Version: v1.7.10
+Date Modified: 2026-03-15
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -104,6 +104,17 @@ graph TD
 For detailed version information (Python, CML servers, node images, dependencies), see [TESTED.md](TESTED.md).
 
 **TL;DR**: Python 3.12.0, CML 2.6.1/2.7.0, CSR1000v 17.3, IOSv 15.9, Windows 11.
+
+## CML lab schema versions (confirmed)
+
+The `--cml-version` flag controls the `version:` field in offline YAML **and** which optional fields are emitted. Known mapping from CML release to lab schema version:
+
+- CML 2.5 = schema `0.2.0` (max). Accepted: `0.0.1`–`0.0.5`, `0.1.0`, `0.2.0`. Fields: `annotations`, `notes`. No `smart_annotations`.
+- CML 2.7 = schema `0.2.2` (max). Accepted: `0.0.1`–`0.0.5`, `0.1.0`, `0.2.0`–`0.2.2`. Fields: `annotations`, `notes`. No `smart_annotations`.
+- CML 2.8 = schema `0.3.0`. Introduced `smart_annotations`.
+- CML 2.9 = schema `0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
+
+TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`.
 
 ## 5-minute environment validation
 
@@ -959,7 +970,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.1.4
+- **Doc Version:** v1.2.1
 
 - **Called by**
 
@@ -993,7 +1004,7 @@ Jinja2:
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.0.12
+- **Doc Version:** v1.0.18
 
 - **Called by**
 

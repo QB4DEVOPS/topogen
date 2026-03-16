@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.12
-Date Modified: 2026-03-14
+Doc Version: v1.4.14
+Date Modified: 2026-03-15
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -311,8 +311,8 @@ options:
   --print-up-cmd        With --offline-yaml, print the topogen --up <file>
                         command to run later
   --cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}
-                        CML lab schema version for offline YAML (CML 2.9 uses
-                        0.3.0)
+                        CML lab schema version for offline YAML (CML 2.5:
+                        0.2.0, CML 2.7: 0.2.2, CML 2.8+: 0.3.0)
   --allow-oversubscribe
                         Bypass the recommended 520-node lab limit (use with
                         caution)
@@ -331,7 +331,12 @@ configuration:
 $
 ```
 
-Note: Generated offline YAML includes `smart_annotations: []`, a field introduced in CML 2.8. TopoGen has not been tested on CML versions earlier than 2.9. Import on CML 2.7 or older may fail if the parser rejects unknown fields.
+**CML version / schema compatibility:** The `--cml-version` flag sets the lab schema version in offline YAML **and** controls which optional fields are emitted. Known mapping:
+
+- CML 2.5–2.7 = schema `0.2.0`–`0.2.2`. No `smart_annotations` in YAML.
+- CML 2.8+ = schema `0.3.0`. `smart_annotations` included.
+
+When targeting CML 2.7 or earlier, use `--cml-version 0.2.2` (or lower). TopoGen automatically omits `smart_annotations` for schema versions `<= 0.2.2`.
 
 At a minimum, the amount of nodes to be created must be provided.
 
@@ -585,8 +590,8 @@ Licensing guidance:
 Version-specific capacity:
 
 - CML 2.9+ (lab schema `0.3.0`): empirically supports flat labs up to ~500 nodes.
-- CML versions prior to 2.9: practical enterprise limit ~300 nodes for this flat EIGRP scenario.
-- For offline YAML intended for 2.9+, use `--cml-version 0.3.0`.
+- CML 2.5–2.7 (lab schema `0.2.0`–`0.2.2`): practical enterprise limit ~300 nodes for this flat EIGRP scenario.
+- Use `--cml-version` matching your target CML (see schema compatibility note above).
 
 Recommended group sizes (stay within 32-port limits):
 
@@ -617,7 +622,7 @@ Tip: add `--progress` to show a progress bar (opt-in).
 
 TopoGen does not pick an output filename automatically; you must provide one. We recommend `out/` for generated artifacts.
 
-- Schema selection: `--cml-version` chooses the lab schema version (CML 2.9 uses `0.3.0`).
+- Schema selection: `--cml-version` chooses the lab schema version (see schema compatibility note above).
 - Topology: star fabric with one core `SW0`, N access `SW1..N`, and routers `R1..R${nodes}`.
 - Configs: rendered from the chosen template (e.g. `iosv-eigrp`).
 - Import: In CML, go to Tools → Import/Export → Import Lab and select the YAML.
