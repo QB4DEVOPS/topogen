@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.26
+Doc Version: v1.6.27
 Date Modified: 2026-03-16
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -221,6 +221,12 @@ Recent completions:
 
 - [ ] Named OSPF support (feature)
   - Add an intentional named OSPF config model (VRF + GRT where applicable)
+
+- [ ] GET VPN (Group Encrypted Transport VPN) support
+  - Why: Enterprise WAN encryption without tunnels — preserves original IP headers (multicast, MPLS-friendly). Pairs well with existing PKI infrastructure (`--pki`) and future 3-level CA hierarchy.
+  - Components: Key Server (KS) node, Group Members (GMs) on routers, GDOI group policy, cooperative KS for redundancy.
+  - Requires: KS template (CSR1000v), GM config in router templates, `--getvpn` flag, PKI for KS/GM authentication.
+  - Blast radius: main.py (argparse), render.py (KS node creation + GM config injection), templates (KS + GM GDOI blocks).
 
 - [ ] Add CLI to select routing protocol configuration model (named EIGRP / named OSPF vs classic/numeric)
   - Why: avoid mixed-mode confusion; make the chosen model explicit
