@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.10
-Date Modified: 2026-03-15
+Doc Version: v1.7.11
+Date Modified: 2026-03-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -109,10 +109,11 @@ For detailed version information (Python, CML servers, node images, dependencies
 
 The `--cml-version` flag controls the `version:` field in offline YAML **and** which optional fields are emitted. Known mapping from CML release to lab schema version:
 
-- CML 2.5 = schema `0.2.0` (max). Accepted: `0.0.1`–`0.0.5`, `0.1.0`, `0.2.0`. Fields: `annotations`, `notes`. No `smart_annotations`.
-- CML 2.7 = schema `0.2.2` (max). Accepted: `0.0.1`–`0.0.5`, `0.1.0`, `0.2.0`–`0.2.2`. Fields: `annotations`, `notes`. No `smart_annotations`.
-- CML 2.8 = schema `0.3.0`. Introduced `smart_annotations`.
-- CML 2.9 = schema `0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
+- CML 2.5 = schema `0.2.0` (max). Accepted: `0.0.1`–`0.2.0`. Fields: `annotations`, `notes`. No `smart_annotations`.
+- CML 2.6.1 = schema `0.2.1`. Fields: `annotations`, `notes`. No `smart_annotations`.
+- CML 2.7 = schema `0.2.2` (max). Accepted: `0.0.1`–`0.2.2`. Fields: `annotations`, `notes`. No `smart_annotations`.
+- CML 2.8.1 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Introduced `smart_annotations`, `parameters` (node), `mac_address` (interface). Fields: `annotations`, `notes`, `smart_annotations`.
+- CML 2.9 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
 
 TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`.
 
