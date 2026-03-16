@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.0
-# Date Modified: 2026-03-14
+# Doc Version: v1.2.1
+# Date Modified: 2026-03-15
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -521,7 +521,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
             "0.2.2",
             "0.3.0",
         ],
-        help="CML lab schema version for offline YAML (CML 2.9 uses 0.3.0)",
+        help="CML lab schema version for offline YAML (CML 2.5: 0.2.0, CML 2.7: 0.2.2, CML 2.8+: 0.3.0)",
     )
     parser.add_argument(
         "nodes",
