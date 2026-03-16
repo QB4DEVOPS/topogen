@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.16
+Doc Version: v1.2.17
 Date Modified: 2026-03-16
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,8 +20,8 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
-  - chore(version): bump `pyproject.toml` version to `0.2.5` — generated lab descriptions now show `v0.2.5`
-    - Files: pyproject.toml (rev v1.0.1 → v1.0.2), CHANGES.md (rev v1.2.15 → v1.2.16), TODO.md (rev v1.6.24 → v1.6.25)
+
+- version 0.2.5
   - fix(compat): omit `smart_annotations` from offline YAML when `--cml-version` is `<= 0.2.2` — fixes CML 2.7 import rejection (`Additional properties are not allowed ('smart_annotations' was unexpected)`)
     - `_intent_annotation_lines()` now accepts `version` parameter; `smart_annotations: []` only emitted for schema `> 0.2.2`
     - Added CML schema version mapping to DEVELOPER.md and README.md
