@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.12
+Doc Version: v1.7.13
 Date Modified: 2026-03-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -114,7 +114,7 @@ The `--cml-version` flag controls the `version:` field in offline YAML **and** w
 - CML 2.7 = schema `0.2.2` (max). Accepted: `0.0.1`–`0.2.2`. Fields: `annotations`, `notes`. No `smart_annotations`.
 - CML 2.8.1 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Introduced `smart_annotations`, `parameters` (node), `mac_address` (interface). Fields: `annotations`, `notes`, `smart_annotations`.
 - CML 2.9 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
-- CML 2.10 = schema `0.3.1`. Introduced `lab.node_staging` (`enabled`, `start_remaining`, `abort_on_failure`). Per-node priority field TBD (needs export with staging enabled and nodes assigned to stages). Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`.
+- CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`.
 
 TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`.
 

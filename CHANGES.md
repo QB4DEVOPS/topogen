@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.17
+Doc Version: v1.2.18
 Date Modified: 2026-03-16
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,8 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - docs(schema): document confirmed CML 2.10 schema `0.3.1` findings — `lab.node_staging`, per-node `priority`, `pyats` block, named-file `configuration` format, per-link `conditioning`, autostart is server-side only; add staging and config format TODOs
+    - Files: DEVELOPER.md (rev v1.7.12 → v1.7.13), TODO.md (rev v1.6.25 → v1.6.26), README.md (rev v1.4.14 → v1.4.15), CHANGES.md (rev v1.2.17 → v1.2.18)
 
 - version 0.2.5
   - fix(compat): omit `smart_annotations` from offline YAML when `--cml-version` is `<= 0.2.2` — fixes CML 2.7 import rejection (`Additional properties are not allowed ('smart_annotations' was unexpected)`)

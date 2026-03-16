@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.14
-Date Modified: 2026-03-15
+Doc Version: v1.4.15
+Date Modified: 2026-03-16
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -194,7 +194,7 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--pki] [--archive] [--pki-enroll {scep,cli}] [--start]
                [--yaml FILE] [--offline-yaml FILE] [--overwrite]
                [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
-               [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}]
+               [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
                [--allow-oversubscribe]
                [nodes]
 
@@ -310,9 +310,10 @@ options:
                         (import YAML to CML and start lab)
   --print-up-cmd        With --offline-yaml, print the topogen --up <file>
                         command to run later
-  --cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0}
+  --cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}
                         CML lab schema version for offline YAML (CML 2.5:
-                        0.2.0, CML 2.7: 0.2.2, CML 2.8+: 0.3.0)
+                        0.2.0, CML 2.7: 0.2.2, CML 2.8/2.9: 0.3.0, CML 2.10:
+                        0.3.1)
   --allow-oversubscribe
                         Bypass the recommended 520-node lab limit (use with
                         caution)
@@ -334,7 +335,8 @@ $
 **CML version / schema compatibility:** The `--cml-version` flag sets the lab schema version in offline YAML **and** controls which optional fields are emitted. Known mapping:
 
 - CML 2.5–2.7 = schema `0.2.0`–`0.2.2`. No `smart_annotations` in YAML.
-- CML 2.8+ = schema `0.3.0`. `smart_annotations` included.
+- CML 2.8–2.9 = schema `0.3.0`. `smart_annotations` included.
+- CML 2.10 = schema `0.3.1`. Adds `lab.node_staging` and per-node `priority` for staged boot.
 
 When targeting CML 2.7 or earlier, use `--cml-version 0.2.2` (or lower). TopoGen automatically omits `smart_annotations` for schema versions `<= 0.2.2`.
 
