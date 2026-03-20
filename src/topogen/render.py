@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
-# Date Modified: 2026-03-19
+# Doc Version: v1.1.1
+# Date Modified: 2026-03-20
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -353,7 +353,6 @@ def _pki_client_clock_eem_lines() -> list[str]:
         " action 3.4 cli command \"write memory\"",
         " action 3.5 syslog msg \"EEM CLIENT-PKI-SET-CLOCK: TIME_DONE set (clock authoritative) [step 3.5]\"",
         " action 3.6 cli command \"event manager run CLIENT-PKI-AUTHENTICATE\"",
-        "end",
         "!",
     ]
     return lines
@@ -403,7 +402,6 @@ def _pki_ca_clock_eem_lines() -> list[str]:
         " action 4.3 cli command \"end\"",
         " action 4.4 cli command \"write memory\"",
         " action 4.5 syslog msg \"EEM CA-ROOT-SET-CLOCK: TIME_DONE set (clock + ntp master 6) [step 4.5]\"",
-        "end",
         "!",
     ]
 
@@ -434,7 +432,6 @@ def _pki_ca_authenticate_eem_lines() -> list[str]:
         " action 0.98 cli command \"end\"",
         " action 0.99 cli command \"write memory\"",
         "!",
-        "end",
     ]
 
 
@@ -478,7 +475,6 @@ def _pki_client_authenticate_eem_lines() -> list[str]:
         " action 2.8 cli command \"no event manager applet CLIENT-PKI-AUTHENTICATE\"",
         " action 2.9 cli command \"end\"",
         " action 3.0 cli command \"write memory\"",
-        "end",
         "!",
     ]
 
@@ -547,8 +543,6 @@ def _pki_client_wait_for_ca_eem_lines() -> list[str]:
         " action 0.97 cli command \"no event manager applet CA-ROOT-AUTHENTICATE\"",
         " action 0.98 cli command \"end\"",
         " action 0.99 cli command \"write memory\"",
-        "!",
-        "end",
         "!",
     ]
 
@@ -626,7 +620,7 @@ def _inject_pki_client_trustpoint(
     ]
     lines = rendered.splitlines()
     # Inject trustpoint before "crypto ikev2 proposal" (forward reference fix).
-    # Fall back to before "end" when no IKEv2 section is present.
+    # Fall back to before first EEM applet so non-EEM config precedes all EEM.
     try:
         inject_idx = next(
             i for i, line in enumerate(lines)
@@ -635,13 +629,18 @@ def _inject_pki_client_trustpoint(
     except StopIteration:
         try:
             inject_idx = next(
-                i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+                i for i, line in enumerate(lines)
+                if line.strip().startswith("event manager")
             )
         except StopIteration:
-            inject_idx = len(lines)
+            try:
+                inject_idx = next(
+                    i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+                )
+            except StopIteration:
+                inject_idx = len(lines)
     lines[inject_idx:inject_idx] = trustpoint_block
-    # Inject EEM applets LAST (before final 'end') so their closing 'end' lines
-    # do not exit global config mode before interfaces/routing/crypto are applied.
+    # Inject EEM applets LAST (before final 'end') so all EEM stays at the end.
     if inject_clock_eem:
         eem_block = _pki_client_wait_for_ca_eem_lines()
         try:
@@ -651,6 +650,7 @@ def _inject_pki_client_trustpoint(
             lines[end_idx:end_idx] = eem_block
         except StopIteration:
             lines.extend(eem_block)
+            lines.append("end")
     return "\n".join(lines)
 
 
@@ -717,16 +717,27 @@ def _inject_getvpn_gm_config(
         f"interface {wan_interface}",
         " crypto map GETVPN-MAP",
         "!",
+        "alias exec gm show crypto gdoi",
+        "alias exec gmsa show crypto gdoi gm",
+        "alias exec ikesa show crypto isakmp sa",
+        "alias exec mycert show crypto pki certificates CA-ROOT-SELF",
+        "!",
     ])
 
     lines = rendered.splitlines()
     try:
-        end_idx = next(
-            i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+        inject_idx = next(
+            i for i, line in enumerate(lines)
+            if line.strip().startswith("event manager")
         )
-        lines[end_idx:end_idx] = gm_lines
     except StopIteration:
-        lines.extend(gm_lines)
+        try:
+            inject_idx = next(
+                i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+            )
+        except StopIteration:
+            inject_idx = len(lines)
+    lines[inject_idx:inject_idx] = gm_lines
     return "\n".join(lines)
 
 
@@ -2328,8 +2339,8 @@ class Renderer:
             ks_label = "KS"
             node_ids[ks_label] = f"n{nid}"; nid += 1
 
-            ks_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 2}/{nbma_net.prefixlen}")
-            ks_lo_ip = IPv4Interface(f"{l_base}.255.253/32")
+            ks_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 4}/{nbma_net.prefixlen}")
+            ks_lo_ip = IPv4Interface(f"{l_base}.255.251/32")
 
             ks_dev_def = "csr1000v"
             ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
@@ -2465,17 +2476,26 @@ class Renderer:
                 if line.strip() == "crypto key generate rsa modulus 2048":
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
             ca_scep_url = f"http://{ca_nbma_ip.ip}:80"
-            insert_block = (
+            non_eem_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
                 + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
-                + _pki_ca_authenticate_eem_lines()
             )
+            eem_block = _pki_ca_authenticate_eem_lines()
             try:
-                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
-                ca_config_lines[end_idx:end_idx] = insert_block
+                eem_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip().startswith("event manager"))
             except StopIteration:
-                ca_config_lines.extend(insert_block)
+                try:
+                    eem_idx = next(i for i in range(len(ca_config_lines) - 1, -1, -1) if ca_config_lines[i].strip() == "end")
+                except StopIteration:
+                    eem_idx = len(ca_config_lines)
+            ca_config_lines[eem_idx:eem_idx] = non_eem_block
+            try:
+                end_idx = next(i for i in range(len(ca_config_lines) - 1, -1, -1) if ca_config_lines[i].strip() == "end")
+                ca_config_lines[end_idx:end_idx] = eem_block
+            except StopIteration:
+                ca_config_lines.extend(eem_block)
+                ca_config_lines.append("end")
             ca_rendered = "\n".join(ca_config_lines)
             ca_x = -400
             ca_y = 200
@@ -3097,8 +3117,8 @@ class Renderer:
         if getvpn_enabled:
             ks_label = "KS"
             node_ids[ks_label] = f"n{nid}"; nid += 1
-            ks_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 2}/{nbma_net.prefixlen}")
-            ks_lo_ip = IPv4Interface("10.255.255.253/32")
+            ks_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 4}/{nbma_net.prefixlen}")
+            ks_lo_ip = IPv4Interface("10.255.255.251/32")
             ks_dev_def = "csr1000v"
             ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
             ks_node = TopogenNode(
@@ -3246,19 +3266,27 @@ class Renderer:
                 if line.strip() == "crypto key generate rsa modulus 2048":
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
 
-            # PKI block before EEM so double end/end does not quit config too soon
             ca_scep_url = f"http://{ca_nbma_ip.ip}:80"
-            insert_block = (
+            non_eem_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
                 + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
-                + _pki_ca_authenticate_eem_lines()
             )
+            eem_block = _pki_ca_authenticate_eem_lines()
             try:
-                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
-                ca_config_lines[end_idx:end_idx] = insert_block
+                eem_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip().startswith("event manager"))
             except StopIteration:
-                ca_config_lines.extend(insert_block)
+                try:
+                    eem_idx = next(i for i in range(len(ca_config_lines) - 1, -1, -1) if ca_config_lines[i].strip() == "end")
+                except StopIteration:
+                    eem_idx = len(ca_config_lines)
+            ca_config_lines[eem_idx:eem_idx] = non_eem_block
+            try:
+                end_idx = next(i for i in range(len(ca_config_lines) - 1, -1, -1) if ca_config_lines[i].strip() == "end")
+                ca_config_lines[end_idx:end_idx] = eem_block
+            except StopIteration:
+                ca_config_lines.extend(eem_block)
+                ca_config_lines.append("end")
 
             ca_rendered = "\n".join(ca_config_lines)
 
@@ -3744,8 +3772,9 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
-            if getvpn_enabled:
-                ks_ip = f"{g_base}.255.253"
+            is_odd = n % 2 == 1
+            if getvpn_enabled and is_odd:
+                ks_ip = f"{g_base}.255.251"
                 gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
                 rendered = _inject_getvpn_gm_config(
                     rendered, label, cfg.domainname,
@@ -3794,8 +3823,8 @@ class Renderer:
             ks_label = "KS"
             node_ids[ks_label] = f"n{nid}"; nid += 1
 
-            ks_g_ip = f"{g_base}.255.253"
-            ks_l_ip = f"{l_base}.255.253"
+            ks_g_ip = f"{g_base}.255.251"
+            ks_l_ip = f"{l_base}.255.251"
             ks_dev_def = "csr1000v"
 
             ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
@@ -3952,7 +3981,6 @@ class Renderer:
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
                     break
 
-            # PKI block before EEM so double end/end does not quit config too soon
             pki_config_lines = [
                 "ntp master 6",
                 "!",
@@ -3971,9 +3999,16 @@ class Renderer:
                 "!",
             ]
             ca_scep_url = f"http://{ca_g_ip}:80"
-            ca_config_lines.extend(pki_config_lines)
-            ca_config_lines.extend(_pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url))
-            ca_config_lines.extend(["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"])
+            non_eem_block = (
+                pki_config_lines
+                + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+                + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
+            )
+            try:
+                eem_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip().startswith("event manager"))
+            except StopIteration:
+                eem_idx = len(ca_config_lines)
+            ca_config_lines[eem_idx:eem_idx] = non_eem_block
             ca_config_lines.extend(_pki_ca_authenticate_eem_lines())
             ca_config_lines.append("end")
 
@@ -4402,7 +4437,8 @@ class Renderer:
 
             # Render configuration using the same template logic as online path
             # Offline config mirrors online behavior with optional p2p IPs
-            if n % 2 == 1:
+            is_odd = n % 2 == 1
+            if is_odd:
                 odd_ip = pair_ips_off.get(n, (None, None))[0]
                 pair_vrf = (
                     getattr(args, "pair_vrf", None)
@@ -4460,8 +4496,8 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
-            if getvpn_enabled:
-                ks_ip = f"{g_base}.255.253"
+            if getvpn_enabled and is_odd:
+                ks_ip = f"{g_base}.255.251"
                 gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
                 rendered = _inject_getvpn_gm_config(
                     rendered, label, cfg.domainname,
@@ -4521,8 +4557,8 @@ class Renderer:
         if getvpn_enabled:
             ks_label = "KS"
             node_ids[ks_label] = f"n{nid}"; nid += 1
-            ks_g_ip = f"{g_base}.255.253"
-            ks_l_ip = f"{l_base}.255.253"
+            ks_g_ip = f"{g_base}.255.251"
+            ks_l_ip = f"{l_base}.255.251"
             ks_dev_def = "csr1000v"
             ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
             ks_node = TopogenNode(
@@ -4676,19 +4712,27 @@ class Renderer:
                 if line.strip() == "crypto key generate rsa modulus 2048":
                     ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
 
-            # PKI block before EEM so double end/end does not quit config too soon
             ca_scep_url = f"http://{ca_data_ip}:80"
-            insert_block = (
+            non_eem_block = (
                 pki_config_lines
                 + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
                 + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
-                + _pki_ca_authenticate_eem_lines()
             )
+            eem_block = _pki_ca_authenticate_eem_lines()
             try:
-                end_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip() == "end")
-                ca_config_lines[end_idx:end_idx] = insert_block
+                eem_idx = next(i for i, line in enumerate(ca_config_lines) if line.strip().startswith("event manager"))
             except StopIteration:
-                ca_config_lines.extend(insert_block)
+                try:
+                    eem_idx = next(i for i in range(len(ca_config_lines) - 1, -1, -1) if ca_config_lines[i].strip() == "end")
+                except StopIteration:
+                    eem_idx = len(ca_config_lines)
+            ca_config_lines[eem_idx:eem_idx] = non_eem_block
+            try:
+                end_idx = next(i for i in range(len(ca_config_lines) - 1, -1, -1) if ca_config_lines[i].strip() == "end")
+                ca_config_lines[end_idx:end_idx] = eem_block
+            except StopIteration:
+                ca_config_lines.extend(eem_block)
+                ca_config_lines.append("end")
 
             ca_rendered = "\n".join(ca_config_lines)
 
@@ -5005,7 +5049,7 @@ class Renderer:
                 archive=getattr(self.args, "archive", False),
             )
             if getattr(self.args, "getvpn_enabled", False):
-                ks_ip = f"{g_base}.255.253"
+                ks_ip = f"{g_base}.255.251"
                 gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
                 config = _inject_getvpn_gm_config(
                     config, router_label, self.config.domainname,
@@ -5125,8 +5169,8 @@ class Renderer:
 
             g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
             l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
-            ks_g_ip = f"{g_base}.255.253"
-            ks_l_ip = f"{l_base}.255.253"
+            ks_g_ip = f"{g_base}.255.251"
+            ks_l_ip = f"{l_base}.255.251"
             ks_node = TopogenNode(
                 hostname=ks_label,
                 loopback=IPv4Interface(f"{ks_l_ip}/32"),

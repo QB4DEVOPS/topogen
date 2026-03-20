@@ -7,8 +7,8 @@
 #            This template uses CSR-style interface names (GigabitEthernet1, not Gi0/1).
 #
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
-# Date Modified: 2026-03-17
+# Doc Version: v1.0.1
+# Date Modified: 2026-03-20
 #
 # - Called by: src/topogen/render.py (offline renderers)
 # - Reads from: Jinja context (config, node, getvpn_*, mgmt, ntp, archive)
@@ -249,6 +249,11 @@ archive
 alias exec rundiff show archive config differences system:running-config
 !
 {%- endif %}
+!
+alias exec ksm show crypto gdoi ks members
+alias exec ksp show crypto gdoi ks policy
+alias exec kss show crypto gdoi ks
+alias exec ikesa show crypto isakmp sa
 !
 line vty 0 4
     transport input ssh telnet
