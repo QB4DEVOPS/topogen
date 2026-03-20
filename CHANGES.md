@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.19
-Date Modified: 2026-03-16
+Doc Version: v1.2.20
+Date Modified: 2026-03-19
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,13 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(getvpn): add GET VPN (Group Encrypted Transport VPN) support with GDOI and G-IKEv2 protocols
+    - New CLI flags: `--getvpn` (enable), `--getvpn-protocol {gdoi,gikev2}` (default: gdoi), `--getvpn-group-id N` (default: 1), `--getvpn-rekey-interval N` (default: 86400)
+    - Key Server (KS) node: CSR1000v with `csr-getvpn-ks.jinja2` template; GDOI `server local` or G-IKEv2 `gikev2` profile; encryption ACL pushed to GMs
+    - Group Members (GMs): all routers get ISAKMP/IKEv2 config, group registration, and crypto map on WAN interface
+    - Requires `--pki` for PKI certificate authentication (KS and GMs enroll with CA-ROOT)
+    - Works with flat, flat-pair, and dmvpn modes (all 4 offline renderers updated)
+    - Files: src/topogen/main.py, src/topogen/render.py, src/topogen/templates/csr-getvpn-ks.jinja2, README.md, CHANGES.md, TODO.md
   - docs(todo): add GET VPN (Group Encrypted Transport VPN) future idea
     - Files: TODO.md (rev v1.6.26 → v1.6.27), CHANGES.md (rev v1.2.18 → v1.2.19)
   - docs(schema): document confirmed CML 2.10 schema `0.3.1` findings — `lab.node_staging`, per-node `priority`, `pyats` block, named-file `configuration` format, per-link `conditioning`, autostart is server-side only; add staging and config format TODOs

@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.18
-# Date Modified: 2026-03-15
+# Doc Version: v1.1.0
+# Date Modified: 2026-03-19
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -651,6 +651,82 @@ def _inject_pki_client_trustpoint(
             lines[end_idx:end_idx] = eem_block
         except StopIteration:
             lines.extend(eem_block)
+    return "\n".join(lines)
+
+
+def _inject_getvpn_gm_config(
+    rendered: str,
+    hostname: str,
+    domainname: str,
+    getvpn_protocol: str,
+    getvpn_group_id: int,
+    getvpn_ks_ip: str,
+    wan_interface: str,
+) -> str:
+    """Insert GET VPN Group Member configuration before the final 'end'.
+
+    Adds IKE control plane (ISAKMP or IKEv2), GDOI/GKM group registration,
+    crypto map definition, and applies crypto map to the WAN interface.
+    """
+    gm_lines: list[str] = ["!"]
+
+    if getvpn_protocol == "gikev2":
+        gm_lines.extend([
+            "crypto ikev2 proposal GETVPN-IKE2-PROP",
+            " encryption aes-cbc-256",
+            " integrity sha256",
+            " group 19",
+            "!",
+            "crypto ikev2 policy GETVPN-IKE2-POL",
+            " match fvrf any",
+            " proposal GETVPN-IKE2-PROP",
+            "!",
+            "crypto ikev2 profile GETVPN-IKE2-PROFILE",
+            f" match identity remote fqdn domain {domainname}",
+            f" identity local fqdn {hostname}.{domainname}",
+            " authentication local rsa-sig",
+            " authentication remote rsa-sig",
+            " pki trustpoint CA-ROOT-SELF",
+            "!",
+            f"crypto gkm group GETVPN",
+            f" identity number {getvpn_group_id}",
+            f" server address ipv4 {getvpn_ks_ip}",
+            " client protocol gikev2 GETVPN-IKE2-PROFILE",
+            f" client registration interface {wan_interface}",
+            "!",
+        ])
+    else:
+        gm_lines.extend([
+            "crypto isakmp policy 10",
+            " encryption aes 256",
+            " hash sha256",
+            " authentication rsa-sig",
+            " group 14",
+            "!",
+            "crypto gdoi group GETVPN",
+            f" identity number {getvpn_group_id}",
+            f" server address ipv4 {getvpn_ks_ip}",
+            "!",
+        ])
+
+    gm_lines.extend([
+        "crypto map GETVPN-MAP local-address Loopback0",
+        "crypto map GETVPN-MAP 10 gdoi",
+        " set group GETVPN",
+        "!",
+        f"interface {wan_interface}",
+        " crypto map GETVPN-MAP",
+        "!",
+    ])
+
+    lines = rendered.splitlines()
+    try:
+        end_idx = next(
+            i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+        )
+        lines[end_idx:end_idx] = gm_lines
+    except StopIteration:
+        lines.extend(gm_lines)
     return "\n".join(lines)
 
 
@@ -1886,6 +1962,11 @@ class Renderer:
             args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
         if getattr(args, "pki_enabled", False):
             args_bits.append("--pki")
+        if getattr(args, "getvpn_enabled", False):
+            args_bits.append("--getvpn")
+            args_bits.append(f"--getvpn-protocol {getattr(args, 'getvpn_protocol', 'gdoi')}")
+            args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
+            args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -1922,6 +2003,7 @@ class Renderer:
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
+        getvpn_enabled = getattr(args, "getvpn_enabled", False)
         node_ids: dict[str, str] = {}
         nid = 0
 
@@ -1981,6 +2063,8 @@ class Renderer:
         # Core NBMA switch (one port per access switch + one for CA-ROOT if --pki)
         swnbma0_port_count = num_access
         if getattr(args, "pki_enabled", False):
+            swnbma0_port_count += 1
+        if getvpn_enabled:
             swnbma0_port_count += 1
         node_ids["SWnbma0"] = f"n{nid}"; nid += 1
         lines.append(f"  - id: {node_ids['SWnbma0']}")
@@ -2051,6 +2135,8 @@ class Renderer:
             # OOB core switch (one port per OOB access switch + one for CA-ROOT if --pki)
             swoob0_port_count = num_oob_sw
             if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            if getvpn_enabled:
                 swoob0_port_count += 1
             node_ids["SWoob0"] = f"n{nid}"; nid += 1
             lines.append(f"  - id: {node_ids['SWoob0']}")
@@ -2190,6 +2276,15 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if getvpn_enabled:
+                ks_ip = str(nbma_net.broadcast_address - 2)
+                gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
+                rendered = _inject_getvpn_gm_config(
+                    rendered, label, cfg.domainname,
+                    getattr(args, "getvpn_protocol", "gdoi"),
+                    getattr(args, "getvpn_group_id", 1),
+                    ks_ip, gm_wan,
+                )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
                 rendered = _inject_pki_client_trustpoint(
@@ -2227,6 +2322,75 @@ class Renderer:
 
             if ticks:
                 ticks.update()  # type: ignore
+
+        # GET VPN Key Server node (if --getvpn enabled)
+        if getvpn_enabled:
+            ks_label = "KS"
+            node_ids[ks_label] = f"n{nid}"; nid += 1
+
+            ks_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 2}/{nbma_net.prefixlen}")
+            ks_lo_ip = IPv4Interface(f"{l_base}.255.253/32")
+
+            ks_dev_def = "csr1000v"
+            ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
+
+            ks_node = TopogenNode(
+                hostname=ks_label,
+                loopback=ks_lo_ip,
+                interfaces=[
+                    TopogenInterface(
+                        address=ks_nbma_ip, description="=== GETVPN Key Server ===", slot=0
+                    )
+                ],
+            )
+            ks_mgmt_ctx = None
+            if enable_mgmt:
+                ks_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ks_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ks_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
+            ks_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ks_ntp_oob_ctx = {"server": args.ntp_oob_server, "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf"}
+            ks_rendered = ks_tpl.render(
+                config=cfg, node=ks_node, date=datetime.now(timezone.utc), origin="",
+                mgmt=ks_mgmt_ctx, ntp=ks_ntp_ctx, ntp_oob=ks_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+                getvpn_protocol=getattr(args, "getvpn_protocol", "gdoi"),
+                getvpn_group_id=getattr(args, "getvpn_group_id", 1),
+                getvpn_rekey_interval=getattr(args, "getvpn_rekey_interval", 86400),
+                getvpn_ks_ip=str(ks_nbma_ip.ip),
+            )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                ks_rendered = _inject_pki_client_trustpoint(ks_rendered, ks_label, cfg.domainname, ca_url)
+
+            ks_x = -400
+            ks_y = 300
+            lines.append(f"  - id: {node_ids[ks_label]}")
+            lines.append(f"    label: {ks_label}")
+            lines.append(f"    node_definition: {ks_dev_def}")
+            lines.append(f"    x: {ks_x}")
+            lines.append(f"    y: {ks_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                csr_slot = mgmt_slot - 1
+                lines.append(f"      - id: i{csr_slot}")
+                lines.append(f"        slot: {csr_slot}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ks_rendered.splitlines():
+                lines.append(f"      {ln}")
 
         # CA-ROOT node (if --pki enabled)
         if getattr(args, "pki_enabled", False):
@@ -2363,6 +2527,19 @@ class Renderer:
             lines.append(f"    n2: {node_ids['SWnbma0']}")
             lines.append(f"    i2: i{swnbma0_ca_port}")
 
+        # KS -> SWnbma0 data link (if --getvpn enabled)
+        if getvpn_enabled:
+            ks_label = "KS"
+            swnbma0_ks_port = num_access
+            if getattr(args, "pki_enabled", False):
+                swnbma0_ks_port += 1
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ks_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{swnbma0_ks_port}")
+
         # Router-to-NBMA links (each router uses its slot-0 interface)
         for idx in range(total_routers):
             rlabel = f"R{idx + 1}"
@@ -2434,6 +2611,20 @@ class Renderer:
                 lines.append(f"    i1: i{ca_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ca_port}")
+
+            # KS -> SWoob0 mgmt link (if --getvpn enabled)
+            if getvpn_enabled:
+                ks_label = "KS"
+                ks_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ks_port = port_offset + num_oob_sw
+                if getattr(args, "pki_enabled", False):
+                    swoob0_ks_port += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ks_label]}")
+                lines.append(f"    i1: i{ks_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ks_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -2568,6 +2759,11 @@ class Renderer:
             args_bits.append(f"--dmvpn-hubs {getattr(args, 'dmvpn_hubs')}")
         if getattr(args, "pki_enabled", False):
             args_bits.append("--pki")
+        if getattr(args, "getvpn_enabled", False):
+            args_bits.append("--getvpn")
+            args_bits.append(f"--getvpn-protocol {getattr(args, 'getvpn_protocol', 'gdoi')}")
+            args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
+            args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -2603,6 +2799,7 @@ class Renderer:
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
 
+        getvpn_enabled = getattr(args, "getvpn_enabled", False)
         node_ids: dict[str, str] = {}
         nid = 0
 
@@ -2615,6 +2812,8 @@ class Renderer:
         # Core interfaces: one per access switch + 1 extra for CA-ROOT if --pki enabled
         swnbma0_port_count = num_access
         if getattr(args, "pki_enabled", False):
+            swnbma0_port_count += 1
+        if getvpn_enabled:
             swnbma0_port_count += 1
         lines.append("    interfaces:")
         for p in range(swnbma0_port_count):
@@ -2845,6 +3044,15 @@ class Renderer:
                     ntp_oob=ntp_oob_ctx,
                     archive=getattr(args, "archive", False),
                 )
+            if getvpn_enabled:
+                ks_ip = str(nbma_net.broadcast_address - 2)
+                gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
+                rendered = _inject_getvpn_gm_config(
+                    rendered, label, cfg.domainname,
+                    getattr(args, "getvpn_protocol", "gdoi"),
+                    getattr(args, "getvpn_group_id", 1),
+                    ks_ip, gm_wan,
+                )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
                 rendered = _inject_pki_client_trustpoint(
@@ -2883,6 +3091,71 @@ class Renderer:
                 lines.append("        type: physical")
             lines.append("    configuration: |-")
             for ln in rendered.splitlines():
+                lines.append(f"      {ln}")
+
+        # GET VPN Key Server node (if --getvpn enabled)
+        if getvpn_enabled:
+            ks_label = "KS"
+            node_ids[ks_label] = f"n{nid}"; nid += 1
+            ks_nbma_ip = IPv4Interface(f"{nbma_net.broadcast_address - 2}/{nbma_net.prefixlen}")
+            ks_lo_ip = IPv4Interface("10.255.255.253/32")
+            ks_dev_def = "csr1000v"
+            ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
+            ks_node = TopogenNode(
+                hostname=ks_label,
+                loopback=ks_lo_ip,
+                interfaces=[
+                    TopogenInterface(
+                        address=ks_nbma_ip, description="=== GETVPN Key Server ===", slot=0
+                    )
+                ],
+            )
+            ks_mgmt_ctx = None
+            if enable_mgmt:
+                ks_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ks_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ks_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
+            ks_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ks_ntp_oob_ctx = {"server": args.ntp_oob_server, "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf"}
+            ks_rendered = ks_tpl.render(
+                config=cfg, node=ks_node, date=datetime.now(timezone.utc), origin="",
+                mgmt=ks_mgmt_ctx, ntp=ks_ntp_ctx, ntp_oob=ks_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+                getvpn_protocol=getattr(args, "getvpn_protocol", "gdoi"),
+                getvpn_group_id=getattr(args, "getvpn_group_id", 1),
+                getvpn_rekey_interval=getattr(args, "getvpn_rekey_interval", 86400),
+                getvpn_ks_ip=str(ks_nbma_ip.ip),
+            )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{nbma_net.broadcast_address - 1}:80"
+                ks_rendered = _inject_pki_client_trustpoint(ks_rendered, ks_label, cfg.domainname, ca_url)
+            ks_x = -400
+            ks_y = 300
+            lines.append(f"  - id: {node_ids[ks_label]}")
+            lines.append(f"    label: {ks_label}")
+            lines.append(f"    node_definition: {ks_dev_def}")
+            lines.append(f"    x: {ks_x}")
+            lines.append(f"    y: {ks_y}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                csr_slot = mgmt_slot - 1
+                lines.append(f"      - id: i{csr_slot}")
+                lines.append(f"        slot: {csr_slot}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ks_rendered.splitlines():
                 lines.append(f"      {ln}")
 
         # CA-ROOT node (if --pki enabled)
@@ -3037,6 +3310,19 @@ class Renderer:
             lines.append(f"    n2: {node_ids['SWnbma0']}")
             lines.append(f"    i2: i{swnbma0_ca_port}")
 
+        # KS -> SWnbma0 data link (if --getvpn enabled)
+        if getvpn_enabled:
+            ks_label = "KS"
+            swnbma0_ks_port = num_access
+            if getattr(args, "pki_enabled", False):
+                swnbma0_ks_port += 1
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ks_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SWnbma0']}")
+            lines.append(f"    i2: i{swnbma0_ks_port}")
+
         for ep in range(1, total_endpoints + 1):
             rlabel = f"R{ep * 2 - 1}"
             sw_label, sw_port = endpoint_port_map[ep - 1]
@@ -3125,6 +3411,20 @@ class Renderer:
                 lines.append(f"    i1: i{ca_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ca_port}")
+
+            # KS -> SWoob0 mgmt link (if --getvpn enabled)
+            if getvpn_enabled:
+                ks_label = "KS"
+                ks_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ks_port = port_offset + num_oob_sw
+                if getattr(args, "pki_enabled", False):
+                    swoob0_ks_port += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ks_label]}")
+                lines.append(f"    i1: i{ks_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ks_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -3234,6 +3534,11 @@ class Renderer:
             args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
         if getattr(args, "pki_enabled", False):
             args_bits.append("--pki")
+        if getattr(args, "getvpn_enabled", False):
+            args_bits.append("--getvpn")
+            args_bits.append(f"--getvpn-protocol {getattr(args, 'getvpn_protocol', 'gdoi')}")
+            args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
+            args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         if getattr(args, "archive", False):
             args_bits.append("--archive")
         args_bits.append(f"-L {args.labname}")
@@ -3249,6 +3554,8 @@ class Renderer:
         lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
+
+        getvpn_enabled = getattr(args, "getvpn_enabled", False)
 
         node_ids: dict[str, str] = {}
         nid = 0
@@ -3268,9 +3575,11 @@ class Renderer:
             end = min((i + 1) * group, total)
             per_sw_counts.append(max(0, end - start + 1))
 
-        # Core switch needs one port per access switch + 1 for CA if --pki
+        # Core switch needs one port per access switch + 1 for CA if --pki + 1 for KS if --getvpn
         core_if_count = num_sw
         if getattr(args, "pki_enabled", False):
+            core_if_count += 1
+        if getvpn_enabled:
             core_if_count += 1
         lines.append("    interfaces:")
         for p in range(core_if_count):
@@ -3349,9 +3658,11 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
+            # Ports for OOB access switches + 1 extra for CA-ROOT if --pki + 1 for KS if --getvpn
             swoob0_port_count = num_oob_sw
             if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            if getvpn_enabled:
                 swoob0_port_count += 1
             for p in range(swoob0_port_count):
                 port_num = p + port_offset
@@ -3433,6 +3744,15 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if getvpn_enabled:
+                ks_ip = f"{g_base}.255.253"
+                gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
+                rendered = _inject_getvpn_gm_config(
+                    rendered, label, cfg.domainname,
+                    getattr(args, "getvpn_protocol", "gdoi"),
+                    getattr(args, "getvpn_group_id", 1),
+                    ks_ip, gm_wan,
+                )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{g_base}.255.254:80"
                 rendered = _inject_pki_client_trustpoint(
@@ -3467,6 +3787,88 @@ class Renderer:
                 lines.append("        type: physical")
             lines.append("    configuration: |-")
             for ln in rendered.splitlines():
+                lines.append(f"      {ln}")
+
+        # Create GET VPN Key Server if --getvpn enabled
+        if getvpn_enabled:
+            ks_label = "KS"
+            node_ids[ks_label] = f"n{nid}"; nid += 1
+
+            ks_g_ip = f"{g_base}.255.253"
+            ks_l_ip = f"{l_base}.255.253"
+            ks_dev_def = "csr1000v"
+
+            ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
+
+            ks_node = TopogenNode(
+                hostname=ks_label,
+                loopback=IPv4Interface(f"{ks_l_ip}/32"),
+                interfaces=[
+                    TopogenInterface(
+                        address=IPv4Interface(f"{ks_g_ip}/16"), description="=== GETVPN Key Server ===", slot=0
+                    )
+                ],
+            )
+            ks_mgmt_ctx = None
+            if enable_mgmt:
+                ks_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ks_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ks_ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ks_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ks_ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+            ks_rendered = ks_tpl.render(
+                config=cfg,
+                node=ks_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ks_mgmt_ctx,
+                ntp=ks_ntp_ctx,
+                ntp_oob=ks_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+                getvpn_protocol=getattr(args, "getvpn_protocol", "gdoi"),
+                getvpn_group_id=getattr(args, "getvpn_group_id", 1),
+                getvpn_rekey_interval=getattr(args, "getvpn_rekey_interval", 86400),
+                getvpn_ks_ip=ks_g_ip,
+            )
+            # KS also needs PKI client trustpoint for CA enrollment
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                ks_rendered = _inject_pki_client_trustpoint(
+                    ks_rendered, ks_label, cfg.domainname, ca_url
+                )
+
+            ks_x = -args.distance * 2
+            lines.append(f"  - id: {node_ids[ks_label]}")
+            lines.append(f"    label: {ks_label}")
+            lines.append(f"    node_definition: {ks_dev_def}")
+            lines.append(f"    x: {ks_x}")
+            lines.append(f"    y: {args.distance}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                csr_slot = mgmt_slot - 1
+                lines.append(f"      - id: i{csr_slot}")
+                lines.append(f"        slot: {csr_slot}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ks_rendered.splitlines():
                 lines.append(f"      {ln}")
 
         # Create PKI Root CA router if --pki enabled
@@ -3646,6 +4048,19 @@ class Renderer:
             lines.append(f"    n2: {node_ids['SW0']}")
             lines.append(f"    i2: i{num_sw}")
 
+        # KS -> SW0 link (if --getvpn enabled)
+        if getvpn_enabled:
+            ks_label = "KS"
+            sw0_ks_port = num_sw
+            if getattr(args, "pki_enabled", False):
+                sw0_ks_port += 1
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ks_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SW0']}")
+            lines.append(f"    i2: i{sw0_ks_port}")
+
         # OOB access -> OOB core links (if --mgmt enabled)
         if enable_mgmt:
             # External connector -> SWoob0 link (if --mgmt-bridge enabled)
@@ -3699,6 +4114,20 @@ class Renderer:
                 lines.append(f"    i1: i{ca_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ca_port}")
+
+            # KS -> SWoob0 mgmt link (if --getvpn enabled)
+            if getvpn_enabled:
+                ks_label = "KS"
+                ks_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ks_port = port_offset + num_oob_sw
+                if getattr(args, "pki_enabled", False):
+                    swoob0_ks_port += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ks_label]}")
+                lines.append(f"    i1: i{ks_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ks_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -3782,6 +4211,13 @@ class Renderer:
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
         if getattr(args, "ntp_oob_server", None):
             args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        if getattr(args, "pki_enabled", False):
+            args_bits.append("--pki")
+        if getattr(args, "getvpn_enabled", False):
+            args_bits.append("--getvpn")
+            args_bits.append(f"--getvpn-protocol {getattr(args, 'getvpn_protocol', 'gdoi')}")
+            args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
+            args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
@@ -3798,6 +4234,8 @@ class Renderer:
         lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
         lines.append("nodes:")
+
+        getvpn_enabled = getattr(args, "getvpn_enabled", False)
 
         node_ids: dict[str, str] = {}
         nid = 0
@@ -3819,6 +4257,8 @@ class Renderer:
         # Core interfaces: one per access switch + 1 extra for CA-ROOT if --pki enabled
         sw0_port_count = num_sw
         if getattr(args, "pki_enabled", False):
+            sw0_port_count += 1
+        if getvpn_enabled:
             sw0_port_count += 1
         lines.append("    interfaces:")
         for p in range(sw0_port_count):
@@ -3900,6 +4340,8 @@ class Renderer:
             # Ports for OOB access switches + 1 extra for CA-ROOT if --pki enabled
             swoob0_port_count = num_oob_sw
             if getattr(args, "pki_enabled", False):
+                swoob0_port_count += 1
+            if getvpn_enabled:
                 swoob0_port_count += 1
             for p in range(swoob0_port_count):
                 port_num = p + port_offset
@@ -4018,6 +4460,15 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if getvpn_enabled:
+                ks_ip = f"{g_base}.255.253"
+                gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
+                rendered = _inject_getvpn_gm_config(
+                    rendered, label, cfg.domainname,
+                    getattr(args, "getvpn_protocol", "gdoi"),
+                    getattr(args, "getvpn_group_id", 1),
+                    ks_ip, gm_wan,
+                )
             if getattr(args, "pki_enabled", False):
                 ca_url = f"http://{g_base}.255.254:80"
                 rendered = _inject_pki_client_trustpoint(
@@ -4064,6 +4515,70 @@ class Renderer:
                 lines.append("        type: physical")
             lines.append("    configuration: |-")
             for ln in rendered.splitlines():
+                lines.append(f"      {ln}")
+
+        # Create GET VPN Key Server if --getvpn enabled
+        if getvpn_enabled:
+            ks_label = "KS"
+            node_ids[ks_label] = f"n{nid}"; nid += 1
+            ks_g_ip = f"{g_base}.255.253"
+            ks_l_ip = f"{l_base}.255.253"
+            ks_dev_def = "csr1000v"
+            ks_tpl = env.get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
+            ks_node = TopogenNode(
+                hostname=ks_label,
+                loopback=IPv4Interface(f"{ks_l_ip}/32"),
+                interfaces=[
+                    TopogenInterface(
+                        address=IPv4Interface(f"{ks_g_ip}/16"), description="=== GETVPN Key Server ===", slot=0
+                    )
+                ],
+            )
+            ks_mgmt_ctx = None
+            if enable_mgmt:
+                ks_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ks_ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ks_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
+            ks_ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ks_ntp_oob_ctx = {"server": args.ntp_oob_server, "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf"}
+            ks_rendered = ks_tpl.render(
+                config=cfg, node=ks_node, date=datetime.now(timezone.utc), origin="",
+                mgmt=ks_mgmt_ctx, ntp=ks_ntp_ctx, ntp_oob=ks_ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+                getvpn_protocol=getattr(args, "getvpn_protocol", "gdoi"),
+                getvpn_group_id=getattr(args, "getvpn_group_id", 1),
+                getvpn_rekey_interval=getattr(args, "getvpn_rekey_interval", 86400),
+                getvpn_ks_ip=ks_g_ip,
+            )
+            if getattr(args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                ks_rendered = _inject_pki_client_trustpoint(ks_rendered, ks_label, cfg.domainname, ca_url)
+            ks_x = -args.distance * 2
+            lines.append(f"  - id: {node_ids[ks_label]}")
+            lines.append(f"    label: {ks_label}")
+            lines.append(f"    node_definition: {ks_dev_def}")
+            lines.append(f"    x: {ks_x}")
+            lines.append(f"    y: {args.distance}")
+            lines.append("    interfaces:")
+            lines.append("      - id: i0")
+            lines.append("        slot: 0")
+            lines.append("        label: GigabitEthernet1")
+            lines.append("        type: physical")
+            if enable_mgmt:
+                csr_slot = mgmt_slot - 1
+                lines.append(f"      - id: i{csr_slot}")
+                lines.append(f"        slot: {csr_slot}")
+                lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                lines.append("        type: physical")
+            lines.append("    configuration: |-")
+            for ln in ks_rendered.splitlines():
                 lines.append(f"      {ln}")
 
         # CA-ROOT node (if --pki enabled)
@@ -4226,6 +4741,19 @@ class Renderer:
             lines.append(f"    n2: {node_ids['SW0']}")
             lines.append(f"    i2: i{sw0_ca_port}")
 
+        # KS -> SW0 link (if --getvpn enabled)
+        if getvpn_enabled:
+            ks_label = "KS"
+            sw0_ks_port = num_sw
+            if getattr(args, "pki_enabled", False):
+                sw0_ks_port += 1
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[ks_label]}")
+            lines.append("    i1: i0")
+            lines.append(f"    n2: {node_ids['SW0']}")
+            lines.append(f"    i2: i{sw0_ks_port}")
+
         # Router -> access switch (only odd routers connect Gi0/0 to access switch)
         router_sw_port: dict[str, tuple[str, int]] = {}
         per_sw_next_port = [1 for _ in range(num_sw)]  # reserve 0 for uplink
@@ -4310,6 +4838,20 @@ class Renderer:
                 lines.append(f"    i1: i{ca_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ca_port}")
+
+            # KS -> SWoob0 mgmt link (if --getvpn enabled)
+            if getvpn_enabled:
+                ks_label = "KS"
+                ks_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ks_port = port_offset + num_oob_sw
+                if getattr(args, "pki_enabled", False):
+                    swoob0_ks_port += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[ks_label]}")
+                lines.append(f"    i1: i{ks_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ks_port}")
 
         outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
@@ -4462,6 +5004,20 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(self.args, "archive", False),
             )
+            if getattr(self.args, "getvpn_enabled", False):
+                ks_ip = f"{g_base}.255.253"
+                gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
+                config = _inject_getvpn_gm_config(
+                    config, router_label, self.config.domainname,
+                    getattr(self.args, "getvpn_protocol", "gdoi"),
+                    getattr(self.args, "getvpn_group_id", 1),
+                    ks_ip, gm_wan,
+                )
+            if getattr(self.args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                config = _inject_pki_client_trustpoint(
+                    config, router_label, self.config.domainname, ca_url
+                )
             cml_router.configuration = config  # type: ignore[method-assign]
 
         # Create PKI Root CA router if --pki enabled
@@ -4544,6 +5100,91 @@ class Renderer:
             )
             ca_router.configuration = ca_config  # type: ignore[method-assign]
             _LOGGER.warning("PKI Root CA created: %s at %s", ca_label, ca_g_addr.ip)
+
+        # Create GET VPN Key Server if --getvpn enabled
+        if getattr(self.args, "getvpn_enabled", False):
+            ks_label = "KS"
+            ks_dev_def = "csr1000v"
+            ks_pos = Point(-self.args.distance * 2, self.args.distance)
+            ks_router = self.create_node(ks_label, ks_dev_def, ks_pos)
+
+            ks_if = ks_router.get_interface_by_slot(0)
+            core_ks_if = self.new_interface(core)
+            self.lab.create_link(ks_if, core_ks_if)
+            _LOGGER.info("KS link: %s Gi1 -> %s", ks_label, core.label)
+
+            if enable_mgmt and oob_switch is not None:
+                ks_mgmt_slot = mgmt_slot - 1
+                try:
+                    ks_mgmt_if = ks_router.get_interface_by_slot(ks_mgmt_slot)
+                except Exception:
+                    ks_mgmt_if = ks_router.create_interface(slot=ks_mgmt_slot)
+                oob_ks_if = self.new_interface(oob_switch)
+                self.lab.create_link(ks_mgmt_if, oob_ks_if)
+                _LOGGER.info("KS mgmt-link: %s slot %d -> %s", ks_label, ks_mgmt_slot, oob_switch.label)
+
+            g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
+            l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
+            ks_g_ip = f"{g_base}.255.253"
+            ks_l_ip = f"{l_base}.255.253"
+            ks_node = TopogenNode(
+                hostname=ks_label,
+                loopback=IPv4Interface(f"{ks_l_ip}/32"),
+                interfaces=[TopogenInterface(
+                    address=IPv4Interface(f"{ks_g_ip}/16"),
+                    description="=== GETVPN Key Server ===",
+                    slot=0,
+                )],
+            )
+
+            import jinja2 as _jinja2
+            from pathlib import Path as _Path
+            _ks_tpl_dir = _Path(__file__).parent / "templates"
+            ks_tpl = _jinja2.Environment(
+                loader=_jinja2.FileSystemLoader(_ks_tpl_dir),
+            ).get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
+
+            ks_mgmt_ctx = None
+            if enable_mgmt:
+                ks_mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(self.args, "mgmt_gw", None),
+                }
+            ks_ntp_ctx = None
+            if getattr(self.args, "ntp_server", None):
+                ks_ntp_ctx = {
+                    "server": self.args.ntp_server,
+                    "vrf": getattr(self.args, "ntp_vrf", None),
+                }
+            ks_ntp_oob_ctx = None
+            if getattr(self.args, "ntp_oob_server", None):
+                ks_ntp_oob_ctx = {
+                    "server": self.args.ntp_oob_server,
+                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+
+            ks_config = ks_tpl.render(
+                config=self.config,
+                node=ks_node,
+                date=datetime.now(timezone.utc),
+                origin="",
+                mgmt=ks_mgmt_ctx,
+                ntp=ks_ntp_ctx,
+                ntp_oob=ks_ntp_oob_ctx,
+                getvpn_protocol=getattr(self.args, "getvpn_protocol", "gdoi"),
+                getvpn_group_id=getattr(self.args, "getvpn_group_id", 1),
+                getvpn_rekey_interval=getattr(self.args, "getvpn_rekey_interval", 86400),
+                getvpn_ks_ip=ks_g_ip,
+            )
+            if getattr(self.args, "pki_enabled", False):
+                ca_url = f"http://{g_base}.255.254:80"
+                ks_config = _inject_pki_client_trustpoint(
+                    ks_config, ks_label, self.config.domainname, ca_url
+                )
+            ks_router.configuration = ks_config  # type: ignore[method-assign]
+            _LOGGER.warning("GET VPN Key Server created: %s at %s", ks_label, ks_g_ip)
 
         _LOGGER.warning("Flat management network created")
         # Get lab definition size (and optionally export to file) so we can log size for online create
