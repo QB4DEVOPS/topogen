@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.27
-Date Modified: 2026-03-16
+Doc Version: v1.6.28
+Date Modified: 2026-03-19
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -120,6 +120,7 @@ Recent completions:
 - [x] Add external-connector bridge support for OOB management (offline modes) (see CHANGES.md)
 - [x] OOB management network for flat, flat-pair, and DMVPN modes (see CHANGES.md)
 - [x] Coordinate scaling bug fix: `offline_flat_yaml` / `offline_flat_pair_yaml` auto-scale x/y to stay within CML's 15000-coordinate limit (see CHANGES.md)
+- [x] GET VPN (Group Encrypted Transport VPN) support: `--getvpn` flag with `--getvpn-protocol {gdoi,gikev2}`, KS node (csr-getvpn-ks.jinja2), GM config injection on all routers, requires `--pki`. Works with flat, flat-pair, and dmvpn modes. See CHANGES.md.
 
 ## Future ideas
 
@@ -221,12 +222,6 @@ Recent completions:
 
 - [ ] Named OSPF support (feature)
   - Add an intentional named OSPF config model (VRF + GRT where applicable)
-
-- [ ] GET VPN (Group Encrypted Transport VPN) support
-  - Why: Enterprise WAN encryption without tunnels — preserves original IP headers (multicast, MPLS-friendly). Pairs well with existing PKI infrastructure (`--pki`) and future 3-level CA hierarchy.
-  - Components: Key Server (KS) node, Group Members (GMs) on routers, GDOI group policy, cooperative KS for redundancy.
-  - Requires: KS template (CSR1000v), GM config in router templates, `--getvpn` flag, PKI for KS/GM authentication.
-  - Blast radius: main.py (argparse), render.py (KS node creation + GM config injection), templates (KS + GM GDOI blocks).
 
 - [ ] Add CLI to select routing protocol configuration model (named EIGRP / named OSPF vs classic/numeric)
   - Why: avoid mixed-mode confusion; make the chosen model explicit

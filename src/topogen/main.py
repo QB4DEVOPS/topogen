@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.2
-# Date Modified: 2026-03-16
+# Doc Version: v1.3.0
+# Date Modified: 2026-03-19
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -423,6 +423,46 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="Enable config archive and rundiff alias on routers (archive log config, path flash:, write-memory)",
     )
     parser.add_argument(
+        "--getvpn",
+        dest="getvpn_enabled",
+        action="store_true",
+        default=False,
+        help="Enable GET VPN (Group Encrypted Transport VPN) with a Key Server and all routers as Group Members (requires --pki)",
+    )
+    parser.add_argument(
+        "--getvpn-group-id",
+        dest="getvpn_group_id",
+        type=int,
+        default=1,
+        help="GET VPN GDOI/GKM group identity number, default %(default)d",
+    )
+    parser.add_argument(
+        "--getvpn-rekey-interval",
+        dest="getvpn_rekey_interval",
+        type=int,
+        default=86400,
+        help="GET VPN rekey lifetime in seconds, default %(default)d (24h)",
+    )
+    if is_gooey:
+        parser.add_argument(
+            "--getvpn-protocol",
+            dest="getvpn_protocol",
+            type=str,
+            choices=("gdoi", "gikev2"),
+            default="gdoi",
+            help='GET VPN control plane protocol: gdoi (ISAKMP/IKEv1) or gikev2 (IKEv2), default "%(default)s"',
+            gooey_options={"widget": "Dropdown"},
+        )
+    else:
+        parser.add_argument(
+            "--getvpn-protocol",
+            dest="getvpn_protocol",
+            type=str,
+            choices=("gdoi", "gikev2"),
+            default="gdoi",
+            help='GET VPN control plane protocol: gdoi (ISAKMP/IKEv1) or gikev2 (IKEv2), default "%(default)s"',
+        )
+    parser.add_argument(
         "--pki-enroll",
         dest="pki_enroll_mode",
         type=str,
@@ -691,6 +731,13 @@ def main():
                     parser.error(
                         f"Invalid combination: nodes={args.nodes}, group_size={args.flat_group_size} requires more than 32 access switches (core ports). Increase --flat-group-size."
                     )
+        # Validate GET VPN flags
+        if getattr(args, "getvpn_enabled", False):
+            if not getattr(args, "pki_enabled", False):
+                parser.error("--getvpn requires --pki (PKI certificate authentication)")
+            if args.mode not in ("flat", "flat-pair", "dmvpn"):
+                parser.error("--getvpn requires mode flat, flat-pair, or dmvpn")
+
         # Validate mgmt flags
         if getattr(args, "enable_mgmt", False):
             from ipaddress import IPv4Network

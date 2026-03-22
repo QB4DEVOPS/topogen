@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.4.15
-Date Modified: 2026-03-16
+Doc Version: v1.5.0
+Date Modified: 2026-03-19
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -517,6 +517,19 @@ topogen --cml-version 0.3.0 -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --d
 
 ```powershell
 topogen -m dmvpn --dmvpn-underlay flat-pair -T csr-dmvpn --device-template csr1000v --eigrp-stub -L IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314 --offline-yaml out\IOSXE-DMVPN-FLAT-PAIR-EIGRP-N314.yaml --overwrite 314
+```
+
+- Offline YAML (GET VPN with GDOI): 4 routers as Group Members, Key Server (KS), CA-ROOT for PKI. Uses ISAKMP/IKEv1 control plane (legacy GDOI).
+
+```powershell
+# GDOI (default)
+topogen -m flat -T iosv-eigrp --pki --getvpn --offline-yaml out\GETVPN-GDOI-N4.yaml --overwrite 4
+
+# G-IKEv2 (modern IKEv2-based)
+topogen -m flat -T iosv-eigrp --pki --getvpn --getvpn-protocol gikev2 --offline-yaml out\GETVPN-GIKEV2-N4.yaml --overwrite 4
+
+# GETVPN with DMVPN underlay
+topogen -m dmvpn -T csr-dmvpn --device-template csr1000v --pki --getvpn --offline-yaml out\GETVPN-DMVPN-N4.yaml --overwrite 4
 ```
 
 Notes:
