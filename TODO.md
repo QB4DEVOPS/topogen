@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.29
+Doc Version: v1.6.30
 Date Modified: 2026-03-22
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -77,8 +77,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [x] ~~**Task: Determine CML 2.10 lab schema version and add to `--cml-version` choices.**~~ Done — schema is `0.3.1`; `--cml-version` choices updated; DEVELOPER.md has the full field mapping. See DEVELOPER.md "CML lab schema versions."
 
-- [ ] **Bug: `iosv.jinja2` missing NTP support — PKI requires NTP.** `iosv.jinja2` has no `ntp server` block; `--ntp` / `--ntp-inband` flags are silently ignored for all IOSv routers. Only the CA-ROOT (CSR1000v, csr-ospf.jinja2) gets NTP config. Since PKI enrollment depends on correct time, IOSv routers using `--pki` will have clock issues at enrollment. Fix: add NTP block to `iosv.jinja2` matching the pattern in `csr-ospf.jinja2` (`ntp server [vrf <vrf>] <ip>`). Also audit all other templates (iosv-eigrp, iosv-eigrp-stub, iosv-eigrp-nonflat, iosv-dmvpn) for the same gap.
-  - Blast radius: `src/topogen/templates/iosv.jinja2` and related iosv templates; render.py (verify ntp context is passed for flat mode).
+- [x] ~~**Bug: `iosv.jinja2` missing NTP support — PKI requires NTP.**~~ Fixed. Added NTP block to `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, and `iol-xe.jinja2`. See `CHANGES.md` Unreleased entry.
 
 - [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block.** Observed: `%HA_EM-6-FMPD_EEM_CONFIG: CA-ROOT-SET-CLOCK: "end" action found outside of conditional block`. EEM applet CA-ROOT-SET-CLOCK (and client CLIENT-PKI-SET-CLOCK) use `action X.Y end` to close if blocks; on some IOS-XE versions the parser reports "end" outside conditional. Fix: ensure `end` actions are indented so the parser associates them with the correct if block (e.g. ` action 1.10 end` → `  action 1.10 end` for CA-ROOT; client has ` action 1.99 end`). See render.py `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()`.
 

@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.24
+Doc Version: v1.2.25
 Date Modified: 2026-03-22
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(ntp): add NTP support to 4 templates that were silently ignoring `--ntp`
+    - `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iol-xe.jinja2` now emit `ntp server` (with optional VRF and OOB NTP)
+    - Files: src/topogen/templates/iosv.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iol-xe.jinja2 (rev v1.1.1 → v1.1.2), CHANGES.md (rev v1.2.24 → v1.2.25), TODO.md (rev v1.6.29 → v1.6.30)
   - feat(staging): add `--staging` flag for CML 2.10 node staging (boot ordering)
     - New CLI flag: `--staging` (requires `--cml-version >= 0.3.1`)
     - Emits `lab.node_staging` block (`enabled: true`, `start_remaining: true`, `abort_on_failure: true`)
