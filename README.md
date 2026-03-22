@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.3
+Doc Version: v1.5.5
 Date Modified: 2026-03-22
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -199,7 +199,7 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--yaml FILE] [--offline-yaml FILE] [--overwrite]
                [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
                [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
-               [--allow-oversubscribe]
+               [--allow-oversubscribe] [--blank]
                [nodes]
 
 Generate test topology files and configurations for CML2
@@ -336,6 +336,8 @@ options:
   --allow-oversubscribe
                         Bypass the recommended 520-node lab limit (use with
                         caution)
+  --blank               Topology only: emit nodes and links but omit router
+                        configurations (enables CML Bootstrap Lab)
 
 configuration:
   -c CONFIGFILE, --config CONFIGFILE
@@ -847,6 +849,49 @@ topogen --cml-version 0.3.0 -L "Flat-Dual-NTP-10" -T iosv-eigrp --device-templat
   --flat-group-size 5 --mgmt --mgmt-vrf Mgmt-vrf --ntp 10.10.255.254 --ntp-inband \
   --ntp-oob 192.168.1.10 --offline-yaml out/flat-dual-ntp-10.yaml 10
 ```
+
+### Blank Mode (Bootstrap Lab)
+
+Use `--blank` to generate a topology (nodes, links, switches, coordinates) with empty configuration on all router nodes. This makes the lab eligible for CML's **Bootstrap Lab** feature, which auto-generates stub configs (hostname, `no shutdown` on interfaces, default credentials) for every node.
+
+Works for both offline YAML generation and online lab creation via the CML API.
+
+**When to use:** You want CML to provide its own default configs instead of TopoGen-rendered startup configs — for example, to get a working topology quickly without protocol-specific configuration, or to use Bootstrap Lab as a starting point for manual config.
+
+**Process (offline):**
+
+1. Generate a blank topology YAML:
+
+```powershell
+python -m topogen -T iosv -m flat --device-template iosv --blank --offline-yaml out\blank-flat.yaml --overwrite 4
+```
+
+2. Import the YAML into CML (or use `--import` to do it in one step):
+
+```powershell
+python -m topogen --import-yaml out\blank-flat.yaml --import -i
+```
+
+3. In CML Workbench, open the imported lab, then go to **Lab → Bootstrap Lab**. CML detects that nodes have empty configs and offers to generate stub configs for each node.
+
+4. Start the lab. Each router boots with CML-generated defaults (hostname matching the node label, interfaces up, console/VTY access).
+
+**Process (online):**
+
+1. Create a blank lab directly on the CML controller:
+
+```powershell
+$env:VIRL2_URL="https://controller/"; $env:VIRL2_USER="user"; $env:VIRL2_PASS="pass"
+python -m topogen -T iosv -m nx --device-template iosv --blank -i -L "blank-nx-10" 10
+```
+
+2. Open the lab in CML Workbench, then go to **Lab → Bootstrap Lab** to generate stub configs.
+
+**Notes:**
+- `--blank` works with simple, nx, flat, and flat-pair modes. It is not supported with DMVPN mode.
+- `--blank` cannot be combined with `--pki` or `--getvpn` (Bootstrap Lab cannot generate PKI or GET VPN configs).
+- Unmanaged switches and external connectors are not affected — they never carry configuration.
+- Combine with other topology flags (`--mgmt`, `--mgmt-bridge`, etc.) to get the full node/link/switch layout without the rendered configs.
 
 ## Examples
 

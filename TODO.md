@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.30
+Doc Version: v1.6.33
 Date Modified: 2026-03-22
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -92,6 +92,8 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [ ] **Task: Investigate CML 2.10 named-file configuration format.** CML 2.10 exports `configuration` as a list of `{name: "ios_config.txt", content: "..."}` objects instead of a plain string. CML 2.10 accepts the old plain-string format on import (confirmed), so this is not blocking. Future work: when `--cml-version >= 0.3.1`, optionally emit the named-file format for full round-trip fidelity. Low priority — current format works.
 
+- [ ] **Bug: Offline NX mode produces flat topology instead of all-to-all NX graph.** In `main.py` line ~848, both `simple` and `nx` modes fall into the same `else` branch and call `offline_flat_yaml()`. There is no `offline_nx_yaml()` function, so offline NX silently produces a flat hierarchical switch-fabric topology identical to flat mode. The online path (`render_node_network` / `create_nx_network`) correctly uses `networkx` with `kamada_kawai_layout` to build the true all-to-all graph. Fix: implement `offline_nx_yaml()` that mirrors the online NX graph logic (or serialises the networkx output to offline YAML), and add an `elif args.mode == "nx":` branch in `main.py` to call it.
+
 ## Done
 
 See `CHANGES.md` and `README.md` for completed features.
@@ -120,6 +122,7 @@ Recent completions:
 - [x] OOB management network for flat, flat-pair, and DMVPN modes (see CHANGES.md)
 - [x] Coordinate scaling bug fix: `offline_flat_yaml` / `offline_flat_pair_yaml` auto-scale x/y to stay within CML's 15000-coordinate limit (see CHANGES.md)
 - [x] GET VPN (Group Encrypted Transport VPN) support: `--getvpn` flag with `--getvpn-protocol {gdoi,gikev2}`, KS node (csr-getvpn-ks.jinja2), GM config injection on all routers, requires `--pki`. Works with flat, flat-pair, and dmvpn modes. See CHANGES.md.
+- [x] `--blank` flag: topology-only labs with empty configuration on all router nodes; enables CML Bootstrap Lab. Works offline and online for simple, nx, flat, and flat-pair modes. Not supported with DMVPN, `--pki`, or `--getvpn`. See CHANGES.md.
 
 ## Future ideas
 
@@ -312,12 +315,6 @@ Recent completions:
   - Format: `ARTIFACT_YAML=out/lab.yaml bytes=862312 kind=flat-pair nodes=520`
   - When: Implement when a CI/CD pipeline or automation script needs to consume the output programmatically.
   - Blast radius: render.py (4 offline write paths), no behavior change to existing log lines.
-
-- [ ] Add `--blank` flag: topology only, no/minimal node config (medium effort).
-  - Why: Generated lab has nodes with empty/default config so that after import to CML, CML's **Bootstrap Lab** (Workbench → Lab → Bootstrap Lab) can run and generate stub configs (hostname, interface up, default users). Without --blank, TopoGen injects full configs and Bootstrap Lab will not run.
-  - Behavior: When `--blank`, emit topology (nodes, links) but omit or minimalize node configuration (routers, CA, etc.) so CML treats nodes as "blank" and Bootstrap Lab is eligible.
-  - Blast radius: main.py (argparse), render.py (~18 sites where node config is set: online flat/flat-pair/dmvpn, offline YAML for same modes).
-  - LoE note: AI implementation ~45–60 min (add flag, thread through renderer, gate each config assignment); user testing required (import to CML, run Bootstrap Lab) to validate.
 
 - [ ] Trim and reorganize README.md for readability (low effort).
   - Why: README has grown large with inline help output, detailed examples, and mixed audiences (end-users vs contributors). Makes it harder to scan and find what you need.

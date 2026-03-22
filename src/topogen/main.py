@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.1
+# Doc Version: v1.3.4
 # Date Modified: 2026-03-22
 #
 """
@@ -590,6 +590,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         action="store_true",
         help="Bypass the recommended 520-node lab limit (use with caution)",
     )
+    parser.add_argument(
+        "--blank",
+        dest="blank",
+        action="store_true",
+        default=False,
+        help="Topology only: emit nodes and links but omit router configurations (enables CML Bootstrap Lab)",
+    )
     return parser
 
 
@@ -820,6 +827,15 @@ def main():
             and not getattr(args, "do_import", False)
         ):
             _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller; use --import to import then start")
+
+        # Validate --blank is not used with DMVPN, --pki, or --getvpn
+        if getattr(args, "blank", False):
+            if args.mode == "dmvpn":
+                parser.error("--blank is not supported with DMVPN mode (use flat, flat-pair, simple, or nx)")
+            if getattr(args, "pki_enabled", False):
+                parser.error("--blank cannot be combined with --pki (Bootstrap Lab cannot generate PKI configs)")
+            if getattr(args, "getvpn_enabled", False):
+                parser.error("--blank cannot be combined with --getvpn (Bootstrap Lab cannot generate GET VPN configs)")
 
         # Import-only path: existing YAML, no generation
         if getattr(args, "import_yaml", None) and getattr(args, "do_import", False):

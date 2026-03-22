@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.25
+Doc Version: v1.2.27
 Date Modified: 2026-03-22
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,15 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(blank): add `--blank` flag for topology-only labs (CML Bootstrap Lab)
+    - When `--blank` is set, all router nodes emit empty configuration instead of full startup configs
+    - Works for both offline YAML generation and online lab creation via the CML API
+    - Topology (nodes, links, switches, coordinates) is generated normally; only device configuration is omitted
+    - Enables CML's "Bootstrap Lab" feature to generate stub configs after import
+    - Supported modes: simple, nx, flat, flat-pair (not DMVPN)
+    - Cannot be combined with `--pki` or `--getvpn` (Bootstrap Lab cannot generate PKI/GET VPN configs)
+    - Unmanaged switches and external connectors are not affected
+    - Files: src/topogen/main.py (rev v1.3.2 → v1.3.4), src/topogen/render.py (rev v1.1.4 → v1.1.6), CHANGES.md (rev v1.2.25 → v1.2.27), TODO.md (rev v1.6.30 → v1.6.33), README.md (rev v1.5.3 → v1.5.5)
   - fix(ntp): add NTP support to 4 templates that were silently ignoring `--ntp`
     - `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iol-xe.jinja2` now emit `ntp server` (with optional VRF and OOB NTP)
     - Files: src/topogen/templates/iosv.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iol-xe.jinja2 (rev v1.1.1 → v1.1.2), CHANGES.md (rev v1.2.24 → v1.2.25), TODO.md (rev v1.6.29 → v1.6.30)

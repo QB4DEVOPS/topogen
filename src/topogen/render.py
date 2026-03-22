@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.4
+# Doc Version: v1.1.6
 # Date Modified: 2026-03-22
 #
 # - Called by: src/topogen/main.py
@@ -202,6 +202,16 @@ def _node_staging_lines(abort_on_failure: bool = True) -> list[str]:
 def _staging_version_ok(version: str) -> bool:
     """Return True if schema version supports node staging (>= 0.3.1)."""
     return tuple(int(x) for x in version.split(".")) >= (0, 3, 1)
+
+
+def _emit_config(lines: list[str], rendered: str, blank: bool) -> None:
+    """Append configuration YAML lines. If blank, emit empty config for CML Bootstrap Lab."""
+    if blank:
+        lines.append('    configuration: ""')
+    else:
+        lines.append("    configuration: |-")
+        for ln in rendered.splitlines():
+            lines.append(f"      {ln}")
 
 
 def get_templates() -> list[str]:
@@ -1268,8 +1278,10 @@ class Renderer:
             )
             if cmlnode is None:
                 continue
+            if getattr(self.args, "blank", False):
+                cmlnode.configuration = ""  # type: ignore[method-assign]
             # this is a special one-off for the LXC / frr variannt
-            if self.args.template == "lxc":
+            elif self.args.template == "lxc":
                 nameserver = (
                     self.config.nameserver if self.config.nameserver else dns_addr.ip
                 )
@@ -1885,7 +1897,10 @@ class Renderer:
                 origin="",
                 archive=getattr(self.args, "archive", False),
             )
-            cml_router.configuration = config  # type: ignore[method-assign]
+            if getattr(self.args, "blank", False):
+                cml_router.configuration = ""  # type: ignore[method-assign]
+            else:
+                cml_router.configuration = config  # type: ignore[method-assign]
 
             # Only odd routers connect Gi0/0 to access switch
             if (idx + 1) % 2 == 1:
@@ -2378,9 +2393,7 @@ class Renderer:
                     lines.append(f"        slot: {mgmt_slot}")
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, rendered, getattr(args, "blank", False))
 
             if ticks:
                 ticks.update()  # type: ignore
@@ -2452,9 +2465,7 @@ class Renderer:
                 lines.append(f"        slot: {csr_slot}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ks_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ks_rendered, getattr(args, "blank", False))
 
         # CA-ROOT node (if --pki enabled)
         if getattr(args, "pki_enabled", False):
@@ -2570,9 +2581,7 @@ class Renderer:
                 lines.append(f"        slot: {ca_mgmt_slot_id}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ca_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ca_rendered, getattr(args, "blank", False))
 
         # Links
         lines.append("links:")
@@ -3181,9 +3190,7 @@ class Renderer:
                     lines.append(f"        slot: {mgmt_slot}")
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, rendered, getattr(args, "blank", False))
 
         # GET VPN Key Server node (if --getvpn enabled)
         if getvpn_enabled:
@@ -3248,9 +3255,7 @@ class Renderer:
                 lines.append(f"        slot: {csr_slot}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ks_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ks_rendered, getattr(args, "blank", False))
 
         # CA-ROOT node (if --pki enabled)
         if getattr(args, "pki_enabled", False):
@@ -3386,9 +3391,7 @@ class Renderer:
                 lines.append(f"        slot: {ca_mgmt_slot_id}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ca_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ca_rendered, getattr(args, "blank", False))
 
         lines.append("links:")
         lid = 0
@@ -3904,9 +3907,7 @@ class Renderer:
                     lines.append(f"        slot: {mgmt_slot}")
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, rendered, getattr(args, "blank", False))
 
         # Create GET VPN Key Server if --getvpn enabled
         if getvpn_enabled:
@@ -3988,9 +3989,7 @@ class Renderer:
                 lines.append(f"        slot: {csr_slot}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ks_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ks_rendered, getattr(args, "blank", False))
 
         # Create PKI Root CA router if --pki enabled
         if getattr(args, "pki_enabled", False):
@@ -4134,9 +4133,7 @@ class Renderer:
                     lines.append(f"        slot: {mgmt_slot}")
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ca_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ca_rendered, getattr(args, "blank", False))
 
         # Links section
         lines.append("links:")
@@ -4658,9 +4655,7 @@ class Renderer:
                     lines.append(f"        slot: {mgmt_slot}")
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, rendered, getattr(args, "blank", False))
 
         # Create GET VPN Key Server if --getvpn enabled
         if getvpn_enabled:
@@ -4724,9 +4719,7 @@ class Renderer:
                 lines.append(f"        slot: {csr_slot}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ks_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ks_rendered, getattr(args, "blank", False))
 
         # CA-ROOT node (if --pki enabled)
         if getattr(args, "pki_enabled", False):
@@ -4869,9 +4862,7 @@ class Renderer:
                 lines.append(f"        slot: {ca_mgmt_slot_id}")
                 lines.append(f"        label: GigabitEthernet{mgmt_slot}")
                 lines.append("        type: physical")
-            lines.append("    configuration: |-")
-            for ln in ca_rendered.splitlines():
-                lines.append(f"      {ln}")
+            _emit_config(lines, ca_rendered, getattr(args, "blank", False))
 
         # Links
         lines.append("links:")
@@ -5175,7 +5166,10 @@ class Renderer:
                 config = _inject_pki_client_trustpoint(
                     config, router_label, self.config.domainname, ca_url
                 )
-            cml_router.configuration = config  # type: ignore[method-assign]
+            if getattr(self.args, "blank", False):
+                cml_router.configuration = ""  # type: ignore[method-assign]
+            else:
+                cml_router.configuration = config  # type: ignore[method-assign]
 
         # Create PKI Root CA router if --pki enabled
         if getattr(self.args, "pki_enabled", False):
