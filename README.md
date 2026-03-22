@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.0
-Date Modified: 2026-03-19
+Doc Version: v1.5.1
+Date Modified: 2026-03-20
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -191,8 +191,11 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--mgmt-gw MGMT_GW] [--mgmt-slot MGMT_SLOT]
                [--mgmt-vrf MGMT_VRF] [--mgmt-bridge] [--ntp NTP_SERVER]
                [--ntp-vrf NTP_VRF] [--ntp-inband] [--ntp-oob NTP_OOB_SERVER]
-               [--pki] [--archive] [--pki-enroll {scep,cli}] [--start]
-               [--yaml FILE] [--offline-yaml FILE] [--overwrite]
+               [--pki] [--archive] [--getvpn]
+               [--getvpn-group-id GETVPN_GROUP_ID]
+               [--getvpn-rekey-interval GETVPN_REKEY_INTERVAL]
+               [--getvpn-protocol {gdoi,gikev2}] [--pki-enroll {scep,cli}]
+               [--start] [--yaml FILE] [--offline-yaml FILE] [--overwrite]
                [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
                [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
                [--allow-oversubscribe]
@@ -272,12 +275,12 @@ options:
                         router mgmt interfaces)
   --mgmt-cidr MGMT_CIDR
                         Management network CIDR, default "10.254.0.0/16"
-  --mgmt-gw MGMT_GW    Management network gateway IP (optional); adds a
+  --mgmt-gw MGMT_GW     Management network gateway IP (optional); adds a
                         default route in the mgmt VRF if set
   --mgmt-slot MGMT_SLOT
                         Interface slot for management (IOSv Gi0/N, CSR GiN),
                         default 5
-  --mgmt-vrf MGMT_VRF  VRF name for management interface (default: "Mgmt-
+  --mgmt-vrf MGMT_VRF   VRF name for management interface (default: "Mgmt-
                         vrf"); use "global" for global routing table
   --mgmt-bridge         Add external-connector to bridge OOB management
                         network to external network (requires --mgmt)
@@ -293,6 +296,16 @@ options:
                         certificate services)
   --archive             Enable config archive and rundiff alias on routers
                         (archive log config, path flash:, write-memory)
+  --getvpn              Enable GET VPN (Group Encrypted Transport VPN) with a
+                        Key Server and all routers as Group Members (requires
+                        --pki)
+  --getvpn-group-id GETVPN_GROUP_ID
+                        GET VPN GDOI/GKM group identity number, default 1
+  --getvpn-rekey-interval GETVPN_REKEY_INTERVAL
+                        GET VPN rekey lifetime in seconds, default 86400 (24h)
+  --getvpn-protocol {gdoi,gikev2}
+                        GET VPN control plane protocol: gdoi (ISAKMP/IKEv1) or
+                        gikev2 (IKEv2), default "gdoi"
   --pki-enroll {scep,cli}
                         PKI enrollment mode: scep (auto via SCEP) or cli
                         (manual CLI enrollment for external CA)

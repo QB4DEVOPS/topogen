@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.21
+Doc Version: v1.2.22
 Date Modified: 2026-03-20
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,8 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - docs(readme): refresh `--help` output block to include GET VPN flags (`--getvpn`, `--getvpn-protocol`, `--getvpn-group-id`, `--getvpn-rekey-interval`)
+    - Files: README.md (rev v1.5.0 → v1.5.1), CHANGES.md (rev v1.2.21 → v1.2.22)
   - fix(getvpn): correct KS IP calculation (broadcast - 4) and enable GM config on all flat-pair routers
     - KS IP in flat and DMVPN-flat modes used `broadcast_address - 2` which collided with CA-ROOT addressing; fixed to `broadcast_address - 4`
     - Flat-pair mode incorrectly applied GM config only to odd-numbered routers; now all routers receive GM config
