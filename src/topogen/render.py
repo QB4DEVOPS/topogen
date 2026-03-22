@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.1
+# Doc Version: v1.1.2
 # Date Modified: 2026-03-20
 #
 # - Called by: src/topogen/main.py
@@ -2288,7 +2288,7 @@ class Renderer:
                 archive=getattr(args, "archive", False),
             )
             if getvpn_enabled:
-                ks_ip = str(nbma_net.broadcast_address - 2)
+                ks_ip = str(nbma_net.broadcast_address - 4)
                 gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
                 rendered = _inject_getvpn_gm_config(
                     rendered, label, cfg.domainname,
@@ -3065,7 +3065,7 @@ class Renderer:
                     archive=getattr(args, "archive", False),
                 )
             if getvpn_enabled:
-                ks_ip = str(nbma_net.broadcast_address - 2)
+                ks_ip = str(nbma_net.broadcast_address - 4)
                 gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
                 rendered = _inject_getvpn_gm_config(
                     rendered, label, cfg.domainname,
@@ -3772,8 +3772,7 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
-            is_odd = n % 2 == 1
-            if getvpn_enabled and is_odd:
+            if getvpn_enabled:
                 ks_ip = f"{g_base}.255.251"
                 gm_wan = "GigabitEthernet1" if dev_def == "csr1000v" else "GigabitEthernet0/0"
                 rendered = _inject_getvpn_gm_config(

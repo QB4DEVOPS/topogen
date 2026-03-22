@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.20
-Date Modified: 2026-03-19
+Doc Version: v1.2.21
+Date Modified: 2026-03-20
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(getvpn): correct KS IP calculation (broadcast - 4) and enable GM config on all flat-pair routers
+    - KS IP in flat and DMVPN-flat modes used `broadcast_address - 2` which collided with CA-ROOT addressing; fixed to `broadcast_address - 4`
+    - Flat-pair mode incorrectly applied GM config only to odd-numbered routers; now all routers receive GM config
+    - Files: src/topogen/render.py (rev v1.1.1 → v1.1.2), CHANGES.md (rev v1.2.20 → v1.2.21)
   - feat(getvpn): add GET VPN (Group Encrypted Transport VPN) support with GDOI and G-IKEv2 protocols
     - New CLI flags: `--getvpn` (enable), `--getvpn-protocol {gdoi,gikev2}` (default: gdoi), `--getvpn-group-id N` (default: 1), `--getvpn-rekey-interval N` (default: 86400)
     - Key Server (KS) node: CSR1000v with `csr-getvpn-ks.jinja2` template; GDOI `server local` or G-IKEv2 `gikev2` profile; encryption ACL pushed to GMs
