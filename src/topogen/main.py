@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.4
+# Doc Version: v1.3.5
 # Date Modified: 2026-03-22
 #
 """
@@ -828,7 +828,7 @@ def main():
         ):
             _LOGGER.warning("--start ignored: offline mode (--offline-yaml) does not create a lab on a controller; use --import to import then start")
 
-        # Validate --blank is not used with DMVPN, --pki, or --getvpn
+        # Validate --blank: reject flags that create special nodes or only affect config content
         if getattr(args, "blank", False):
             if args.mode == "dmvpn":
                 parser.error("--blank is not supported with DMVPN mode (use flat, flat-pair, simple, or nx)")
@@ -836,6 +836,28 @@ def main():
                 parser.error("--blank cannot be combined with --pki (Bootstrap Lab cannot generate PKI configs)")
             if getattr(args, "getvpn_enabled", False):
                 parser.error("--blank cannot be combined with --getvpn (Bootstrap Lab cannot generate GET VPN configs)")
+            _blank_rejected: list[str] = []
+            if getattr(args, "ntp_server", None):
+                _blank_rejected.append("--ntp")
+            if getattr(args, "ntp_vrf", None):
+                _blank_rejected.append("--ntp-vrf")
+            if getattr(args, "ntp_inband", False):
+                _blank_rejected.append("--ntp-inband")
+            if getattr(args, "ntp_oob_server", None):
+                _blank_rejected.append("--ntp-oob")
+            if getattr(args, "archive", False):
+                _blank_rejected.append("--archive")
+            if getattr(args, "eigrp_stub", False):
+                _blank_rejected.append("--eigrp-stub")
+            if getattr(args, "enable_vrf", False):
+                _blank_rejected.append("--vrf")
+            if getattr(args, "pair_vrf", None) and args.pair_vrf != "tenant":
+                _blank_rejected.append("--pair-vrf")
+            if _blank_rejected:
+                parser.error(
+                    f"--blank cannot be combined with {', '.join(_blank_rejected)} "
+                    "(no configs are rendered)"
+                )
 
         # Import-only path: existing YAML, no generation
         if getattr(args, "import_yaml", None) and getattr(args, "do_import", False):

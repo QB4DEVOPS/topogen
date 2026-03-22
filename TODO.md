@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.33
+Doc Version: v1.6.34
 Date Modified: 2026-03-22
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -122,7 +122,7 @@ Recent completions:
 - [x] OOB management network for flat, flat-pair, and DMVPN modes (see CHANGES.md)
 - [x] Coordinate scaling bug fix: `offline_flat_yaml` / `offline_flat_pair_yaml` auto-scale x/y to stay within CML's 15000-coordinate limit (see CHANGES.md)
 - [x] GET VPN (Group Encrypted Transport VPN) support: `--getvpn` flag with `--getvpn-protocol {gdoi,gikev2}`, KS node (csr-getvpn-ks.jinja2), GM config injection on all routers, requires `--pki`. Works with flat, flat-pair, and dmvpn modes. See CHANGES.md.
-- [x] `--blank` flag: topology-only labs with empty configuration on all router nodes; enables CML Bootstrap Lab. Works offline and online for simple, nx, flat, and flat-pair modes. Not supported with DMVPN, `--pki`, or `--getvpn`. See CHANGES.md.
+- [x] `--blank` flag: topology-only labs with empty configuration on all router nodes; enables CML Bootstrap Lab. Works offline and online for simple, nx, flat, and flat-pair modes. Not supported with DMVPN, `--pki`, `--getvpn`, or config-only flags (`--ntp`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf`). See CHANGES.md.
 
 ## Future ideas
 

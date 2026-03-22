@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.27
+Doc Version: v1.2.28
 Date Modified: 2026-03-22
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -26,9 +26,11 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - Topology (nodes, links, switches, coordinates) is generated normally; only device configuration is omitted
     - Enables CML's "Bootstrap Lab" feature to generate stub configs after import
     - Supported modes: simple, nx, flat, flat-pair (not DMVPN)
-    - Cannot be combined with `--pki` or `--getvpn` (Bootstrap Lab cannot generate PKI/GET VPN configs)
+    - Cannot be combined with `--pki`, `--getvpn`, or DMVPN mode (Bootstrap Lab cannot generate those configs)
+    - Config-only flags are also rejected: `--ntp`, `--ntp-vrf`, `--ntp-inband`, `--ntp-oob`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf` (no configs are rendered)
+    - Topology flags (`--mgmt`, `--mgmt-bridge`, `--flat-group-size`, `--staging`, etc.) remain allowed
     - Unmanaged switches and external connectors are not affected
-    - Files: src/topogen/main.py (rev v1.3.2 → v1.3.4), src/topogen/render.py (rev v1.1.4 → v1.1.6), CHANGES.md (rev v1.2.25 → v1.2.27), TODO.md (rev v1.6.30 → v1.6.33), README.md (rev v1.5.3 → v1.5.5)
+    - Files: src/topogen/main.py (rev v1.3.2 → v1.3.5), src/topogen/render.py (rev v1.1.4 → v1.1.6), CHANGES.md (rev v1.2.25 → v1.2.28), TODO.md (rev v1.6.30 → v1.6.34), README.md (rev v1.5.3 → v1.5.6)
   - fix(ntp): add NTP support to 4 templates that were silently ignoring `--ntp`
     - `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iol-xe.jinja2` now emit `ntp server` (with optional VRF and OOB NTP)
     - Files: src/topogen/templates/iosv.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.1.1 → v1.1.2), src/topogen/templates/iol-xe.jinja2 (rev v1.1.1 → v1.1.2), CHANGES.md (rev v1.2.24 → v1.2.25), TODO.md (rev v1.6.29 → v1.6.30)

@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.5
+Doc Version: v1.5.6
 Date Modified: 2026-03-22
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -890,8 +890,9 @@ python -m topogen -T iosv -m nx --device-template iosv --blank -i -L "blank-nx-1
 **Notes:**
 - `--blank` works with simple, nx, flat, and flat-pair modes. It is not supported with DMVPN mode.
 - `--blank` cannot be combined with `--pki` or `--getvpn` (Bootstrap Lab cannot generate PKI or GET VPN configs).
+- Config-only flags are also rejected: `--ntp`, `--ntp-vrf`, `--ntp-inband`, `--ntp-oob`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf` (no configs are rendered, so these have no effect).
+- Topology flags (`--mgmt`, `--mgmt-bridge`, `--flat-group-size`, `--staging`, `--distance`, etc.) remain allowed.
 - Unmanaged switches and external connectors are not affected — they never carry configuration.
-- Combine with other topology flags (`--mgmt`, `--mgmt-bridge`, etc.) to get the full node/link/switch layout without the rendered configs.
 
 ## Examples
 
