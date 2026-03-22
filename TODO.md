@@ -77,7 +77,6 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [x] ~~**Task: Determine CML 2.10 lab schema version and add to `--cml-version` choices.**~~ Done — schema is `0.3.1`; `--cml-version` choices updated; DEVELOPER.md has the full field mapping. See DEVELOPER.md "CML lab schema versions."
 
-- [x] ~~**Bug: `iosv.jinja2` missing NTP support — PKI requires NTP.**~~ Fixed. Added NTP block to `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, and `iol-xe.jinja2`. See `CHANGES.md` Unreleased entry.
 
 - [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block.** Observed: `%HA_EM-6-FMPD_EEM_CONFIG: CA-ROOT-SET-CLOCK: "end" action found outside of conditional block`. EEM applet CA-ROOT-SET-CLOCK (and client CLIENT-PKI-SET-CLOCK) use `action X.Y end` to close if blocks; on some IOS-XE versions the parser reports "end" outside conditional. Fix: ensure `end` actions are indented so the parser associates them with the correct if block (e.g. ` action 1.10 end` → `  action 1.10 end` for CA-ROOT; client has ` action 1.99 end`). See render.py `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()`.
 
@@ -98,6 +97,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] NTP bug: added NTP block to `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iol-xe.jinja2` — `--ntp` was silently ignored for these templates. See CHANGES.md.
 - [x] `--cml-version` backward compat: omit `smart_annotations` for schema `<= 0.2.2` (CML 2.5–2.7); `notes:` safe on all versions. Schema version mapping added to DEVELOPER.md and README.md. See CHANGES.md.
 - [x] `--import-yaml` reads `title:` from YAML when `-L` is not provided (PoLA, closes #36; see CHANGES.md)
 - [x] NHRP authentication: `ip nhrp authentication DMVPNKEY` added to iosv-dmvpn.jinja2 and csr-dmvpn.jinja2 (hub and spoke, all phases, all security modes)
