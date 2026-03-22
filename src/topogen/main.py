@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
-# Date Modified: 2026-03-19
+# Doc Version: v1.3.1
+# Date Modified: 2026-03-22
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -463,6 +463,20 @@ def create_argparser(parser_class=argparse.ArgumentParser):
             help='GET VPN control plane protocol: gdoi (ISAKMP/IKEv1) or gikev2 (IKEv2), default "%(default)s"',
         )
     parser.add_argument(
+        "--staging",
+        dest="staging",
+        action="store_true",
+        default=False,
+        help="Enable CML 2.10 node staging for boot ordering (requires --cml-version >= 0.3.1)",
+    )
+    parser.add_argument(
+        "--no-abort-on-failure",
+        dest="staging_no_abort",
+        action="store_true",
+        default=False,
+        help="With --staging, disable abort-on-failure so all nodes attempt to boot even if a higher-priority node fails",
+    )
+    parser.add_argument(
         "--pki-enroll",
         dest="pki_enroll_mode",
         type=str,
@@ -615,11 +629,11 @@ def main():
     parser = create_argparser()
     args = parser.parse_args()
     # Default lab name: when -L is not provided (None), derive from context.
-    # --offline-yaml: use filename stem. --import-yaml: leave None (let YAML title: take effect). Online: "topogen lab".
+    # --offline-yaml: use filename stem. --import-yaml / --up: leave None (let YAML title: take effect). Online: "topogen lab".
     if args.labname is None:
         if getattr(args, "offline_yaml", None):
             args.labname = os.path.splitext(os.path.basename(args.offline_yaml))[0]
-        elif not getattr(args, "import_yaml", None):
+        elif not getattr(args, "import_yaml", None) and not getattr(args, "up", None):
             args.labname = "topogen lab"
     if getattr(args, "quiet", False):
         args.loglevel = "ERROR"
@@ -737,6 +751,12 @@ def main():
                 parser.error("--getvpn requires --pki (PKI certificate authentication)")
             if args.mode not in ("flat", "flat-pair", "dmvpn"):
                 parser.error("--getvpn requires mode flat, flat-pair, or dmvpn")
+
+        # Validate --staging flags
+        if getattr(args, "staging", False):
+            if tuple(int(x) for x in getattr(args, "cml_version", "0.3.0").split(".")) < (0, 3, 1):
+                _LOGGER.warning("--staging ignored: requires --cml-version >= 0.3.1")
+                args.staging = False
 
         # Validate mgmt flags
         if getattr(args, "enable_mgmt", False):

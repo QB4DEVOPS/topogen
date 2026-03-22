@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.2
-# Date Modified: 2026-03-20
+# Doc Version: v1.1.4
+# Date Modified: 2026-03-22
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -181,6 +181,27 @@ def _intent_notes_lines(intent: str) -> list[str]:
         "  notes: |-",
         f"    {hidden_span}",
     ]
+
+
+STAGING_PRIORITY_EXT_CONN_OOB = 1000
+STAGING_PRIORITY_DATA_SWITCH = 950
+STAGING_PRIORITY_CA_ROOT = 900
+STAGING_PRIORITY_HUB_KS = 800
+
+
+def _node_staging_lines(abort_on_failure: bool = True) -> list[str]:
+    """Return YAML lines for the lab-level node_staging block (CML 2.10 / schema 0.3.1+)."""
+    return [
+        "  node_staging:",
+        "    enabled: true",
+        "    start_remaining: true",
+        f"    abort_on_failure: {'true' if abort_on_failure else 'false'}",
+    ]
+
+
+def _staging_version_ok(version: str) -> bool:
+    """Return True if schema version supports node staging (>= 0.3.1)."""
+    return tuple(int(x) for x in version.split(".")) >= (0, 3, 1)
 
 
 def get_templates() -> list[str]:
@@ -903,6 +924,19 @@ class Renderer:
             lab = client.import_lab_from_path(path, title=labname)
         else:
             lab = client.import_lab_from_path(path)
+        if getattr(args, "staging", False) and _staging_version_ok(getattr(args, "cml_version", "0.0.0")):
+            abort = not getattr(args, "staging_no_abort", False)
+            try:
+                lab._set_properties({
+                    "node_staging": {
+                        "enabled": True,
+                        "start_remaining": True,
+                        "abort_on_failure": abort,
+                    }
+                })
+                _LOGGER.warning("Node staging enabled (CML 2.10)")
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.warning("Could not enable node staging via API: %s", exc)
         base_url = os.environ.get(
             "VIRL2_URL",
             client.url if hasattr(client, "url") else "http://localhost",
@@ -1999,6 +2033,9 @@ class Renderer:
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
         if getattr(args, "ntp_oob_server", None):
             args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        if staging:
+            args_bits.append("--staging")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
 
@@ -2012,6 +2049,8 @@ class Renderer:
         lines.append(f"  description: \"{desc}\"")
         lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
+        if staging:
+            lines.extend(_node_staging_lines(abort_on_failure=not getattr(args, "staging_no_abort", False)))
         lines.append("nodes:")
 
         getvpn_enabled = getattr(args, "getvpn_enabled", False)
@@ -2081,6 +2120,8 @@ class Renderer:
         lines.append(f"  - id: {node_ids['SWnbma0']}")
         lines.append("    label: SWnbma0")
         lines.append("    node_definition: unmanaged_switch")
+        if staging:
+            lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
         lines.append("    x: 0")
         lines.append("    y: 0")
         lines.append("    interfaces:")
@@ -2103,6 +2144,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[sw_label]}")
             lines.append(f"    label: {sw_label}")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
             lines.append(f"    x: {sx}")
             lines.append("    y: 0")
             lines.append("    interfaces:")
@@ -2132,6 +2175,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
                 lines.append("    label: ext-conn-mgmt")
                 lines.append("    node_definition: external_connector")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    x: -440")
                 lines.append("    y: 0")
                 lines.append("    configuration:")
@@ -2153,6 +2198,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids['SWoob0']}")
             lines.append("    label: SWoob0")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
             lines.append("    hide_links: true")
             lines.append("    x: -200")
             lines.append("    y: 0")
@@ -2184,6 +2231,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids[oob_label]}")
                 lines.append(f"    label: {oob_label}")
                 lines.append("    node_definition: unmanaged_switch")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    hide_links: true")
                 lines.append(f"    x: {ox}")
                 lines.append(f"    y: {oy}")
@@ -2309,6 +2358,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
+            if staging and n in hub_set:
+                lines.append(f"    priority: {STAGING_PRIORITY_HUB_KS}")
             lines.append(f"    x: {x}")
             lines.append(f"    y: {y}")
             lines.append("    interfaces:")
@@ -2386,6 +2437,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ks_label]}")
             lines.append(f"    label: {ks_label}")
             lines.append(f"    node_definition: {ks_dev_def}")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_HUB_KS}")
             lines.append(f"    x: {ks_x}")
             lines.append(f"    y: {ks_y}")
             lines.append("    interfaces:")
@@ -2502,6 +2555,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ca_label]}")
             lines.append(f"    label: {ca_label}")
             lines.append("    node_definition: csr1000v")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_CA_ROOT}")
             lines.append(f"    x: {ca_x}")
             lines.append(f"    y: {ca_y}")
             lines.append("    interfaces:")
@@ -2805,6 +2860,9 @@ class Renderer:
                 args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
         if getattr(args, "ntp_oob_server", None):
             args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        if staging:
+            args_bits.append("--staging")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -2817,6 +2875,8 @@ class Renderer:
         lines.append(f"  description: \"{desc}\"")
         lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
+        if staging:
+            lines.extend(_node_staging_lines(abort_on_failure=not getattr(args, "staging_no_abort", False)))
         lines.append("nodes:")
 
         getvpn_enabled = getattr(args, "getvpn_enabled", False)
@@ -2827,6 +2887,8 @@ class Renderer:
         lines.append(f"  - id: {node_ids['SWnbma0']}")
         lines.append("    label: SWnbma0")
         lines.append("    node_definition: unmanaged_switch")
+        if staging:
+            lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
         lines.append("    x: 0")
         lines.append("    y: 0")
         # Core interfaces: one per access switch + 1 extra for CA-ROOT if --pki enabled
@@ -2850,6 +2912,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[sw_label]}")
             lines.append(f"    label: {sw_label}")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
             lines.append(f"    x: {sx}")
             lines.append("    y: 0")
             lines.append("    interfaces:")
@@ -2878,6 +2942,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
                 lines.append("    label: ext-conn-mgmt")
                 lines.append("    node_definition: external_connector")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    x: -440")
                 lines.append("    y: 0")
                 lines.append("    configuration:")
@@ -2894,6 +2960,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids['SWoob0']}")
             lines.append("    label: SWoob0")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
             lines.append("    hide_links: true")
             lines.append("    x: -200")
             lines.append("    y: 0")
@@ -2928,6 +2996,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids[oob_label]}")
                 lines.append(f"    label: {oob_label}")
                 lines.append("    node_definition: unmanaged_switch")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    hide_links: true")
                 lines.append(f"    x: {ox}")
                 lines.append(f"    y: {oy}")
@@ -3086,6 +3156,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append(f"    node_definition: {dev_def}")
+            if staging and rnum in hub_set:
+                lines.append(f"    priority: {STAGING_PRIORITY_HUB_KS}")
             lines.append(f"    x: {x}")
             lines.append(f"    y: {y}")
             lines.append("    interfaces:")
@@ -3161,6 +3233,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ks_label]}")
             lines.append(f"    label: {ks_label}")
             lines.append(f"    node_definition: {ks_dev_def}")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_HUB_KS}")
             lines.append(f"    x: {ks_x}")
             lines.append(f"    y: {ks_y}")
             lines.append("    interfaces:")
@@ -3297,6 +3371,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ca_label]}")
             lines.append(f"    label: {ca_label}")
             lines.append("    node_definition: csr1000v")  # CA is always CSR
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_CA_ROOT}")
             lines.append(f"    x: {ca_x}")
             lines.append(f"    y: {ca_y}")
             lines.append("    interfaces:")
@@ -3569,6 +3645,9 @@ class Renderer:
             args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         if getattr(args, "archive", False):
             args_bits.append("--archive")
+        staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        if staging:
+            args_bits.append("--staging")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -3581,6 +3660,8 @@ class Renderer:
         lines.append(f'  description: "{desc}"')
         lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
+        if staging:
+            lines.extend(_node_staging_lines(abort_on_failure=not getattr(args, "staging_no_abort", False)))
         lines.append("nodes:")
 
         getvpn_enabled = getattr(args, "getvpn_enabled", False)
@@ -3592,6 +3673,8 @@ class Renderer:
         lines.append(f"  - id: {node_ids['SW0']}")
         lines.append("    label: SW0")
         lines.append("    node_definition: unmanaged_switch")
+        if staging:
+            lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
         lines.append("    x: 0")
         lines.append("    y: 0")
 
@@ -3625,6 +3708,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
             lines.append(f"    x: {x}")
             lines.append("    y: 0")
             # Each access switch: 1 uplink + ports for attached routers
@@ -3659,6 +3744,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
                 lines.append("    label: ext-conn-mgmt")
                 lines.append("    node_definition: external_connector")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    x: -440")
                 lines.append("    y: 0")
                 lines.append("    configuration:")
@@ -3675,6 +3762,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids['SWoob0']}")
             lines.append("    label: SWoob0")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
             lines.append("    hide_links: true")
             lines.append("    x: -200")
             lines.append("    y: 0")
@@ -3707,6 +3796,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids[oob_label]}")
                 lines.append(f"    label: {oob_label}")
                 lines.append("    node_definition: unmanaged_switch")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    hide_links: true")
                 lines.append(f"    x: {ox}")
                 lines.append(f"    y: {(i + 1) * args.distance}")
@@ -3882,6 +3973,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ks_label]}")
             lines.append(f"    label: {ks_label}")
             lines.append(f"    node_definition: {ks_dev_def}")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_HUB_KS}")
             lines.append(f"    x: {ks_x}")
             lines.append(f"    y: {args.distance}")
             lines.append("    interfaces:")
@@ -4018,6 +4111,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ca_label]}")
             lines.append(f"    label: {ca_label}")
             lines.append(f"    node_definition: {ca_dev_def}")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_CA_ROOT}")
             lines.append(f"    x: {ca_x}")
             lines.append("    y: 0")
             lines.append("    interfaces:")
@@ -4255,6 +4350,9 @@ class Renderer:
         version = getattr(args, "cml_version", "0.3.0")
         if version:
             args_bits.append(f"--cml-version {version}")
+        staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        if staging:
+            args_bits.append("--staging")
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -4267,6 +4365,8 @@ class Renderer:
         lines.append(f'  description: "{desc}"')
         lines.extend(_intent_notes_lines(desc))
         lines.append(f"  version: '{version}'")
+        if staging:
+            lines.extend(_node_staging_lines(abort_on_failure=not getattr(args, "staging_no_abort", False)))
         lines.append("nodes:")
 
         getvpn_enabled = getattr(args, "getvpn_enabled", False)
@@ -4278,6 +4378,8 @@ class Renderer:
         lines.append(f"  - id: {node_ids['SW0']}")
         lines.append("    label: SW0")
         lines.append("    node_definition: unmanaged_switch")
+        if staging:
+            lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
         lines.append("    x: 0")
         lines.append("    y: 0")
 
@@ -4310,6 +4412,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_DATA_SWITCH}")
             lines.append(f"    x: {x}")
             lines.append("    y: 0")
             # 1 uplink + ports for all routers in the group (unchanged)
@@ -4344,6 +4448,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
                 lines.append("    label: ext-conn-mgmt")
                 lines.append("    node_definition: external_connector")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    x: -440")
                 lines.append("    y: 0")
                 lines.append("    configuration:")
@@ -4360,6 +4466,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids['SWoob0']}")
             lines.append("    label: SWoob0")
             lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
             lines.append("    hide_links: true")
             lines.append("    x: -200")
             lines.append("    y: 0")
@@ -4392,6 +4500,8 @@ class Renderer:
                 lines.append(f"  - id: {node_ids[oob_label]}")
                 lines.append(f"    label: {oob_label}")
                 lines.append("    node_definition: unmanaged_switch")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
                 lines.append("    hide_links: true")
                 lines.append(f"    x: {ox}")
                 lines.append(f"    y: {(i + 1) * args.distance}")
@@ -4599,6 +4709,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ks_label]}")
             lines.append(f"    label: {ks_label}")
             lines.append(f"    node_definition: {ks_dev_def}")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_HUB_KS}")
             lines.append(f"    x: {ks_x}")
             lines.append(f"    y: {args.distance}")
             lines.append("    interfaces:")
@@ -4742,6 +4854,8 @@ class Renderer:
             lines.append(f"  - id: {node_ids[ca_label]}")
             lines.append(f"    label: {ca_label}")
             lines.append("    node_definition: csr1000v")  # CA is always CSR
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_CA_ROOT}")
             lines.append(f"    x: {ca_x}")
             lines.append(f"    y: {ca_y}")
             lines.append("    interfaces:")

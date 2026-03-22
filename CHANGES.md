@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.22
-Date Modified: 2026-03-20
+Doc Version: v1.2.24
+Date Modified: 2026-03-22
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,12 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(staging): add `--staging` flag for CML 2.10 node staging (boot ordering)
+    - New CLI flag: `--staging` (requires `--cml-version >= 0.3.1`)
+    - Emits `lab.node_staging` block (`enabled: true`, `start_remaining: true`, `abort_on_failure: true`)
+    - Per-node `priority:` in offline YAML: ext-conn/OOB switches (1000), data switches (950), CA-ROOT (900), KS/hubs (800); regular routers get no priority (boot via "Start Remaining Nodes")
+    - Applied to all 4 offline renderers: flat, flat-pair, DMVPN flat, DMVPN flat-pair
+    - Files: src/topogen/main.py (rev v1.3.0 → v1.3.1), src/topogen/render.py (rev v1.1.2 → v1.1.4), CHANGES.md (rev v1.2.22 → v1.2.24), TODO.md (rev v1.6.28 → v1.6.29), README.md (rev v1.5.1 → v1.5.3)
   - docs(readme): refresh `--help` output block to include GET VPN flags (`--getvpn`, `--getvpn-protocol`, `--getvpn-group-id`, `--getvpn-rekey-interval`)
     - Files: README.md (rev v1.5.0 → v1.5.1), CHANGES.md (rev v1.2.21 → v1.2.22)
   - fix(getvpn): correct KS IP calculation (broadcast - 4) and enable GM config on all flat-pair routers

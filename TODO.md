@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.28
-Date Modified: 2026-03-19
+Doc Version: v1.6.29
+Date Modified: 2026-03-22
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -90,7 +90,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [ ] **Fix next:** CA-ROOT time EEM (CA-ROOT-SET-CLOCK) missing when lab is created online. Offline flat/DMVPN/flat-pair inject _pki_ca_clock_eem_lines() into CA config; online flat builds CA from csr-pki-ca.jinja2 only (no EEM). User expects PKI/clock behavior to work the same whether lab is created offline or online. Add CA clock EEM to online flat CA build in render_flat_network() (e.g. append _pki_ca_clock_eem_lines() before assigning ca_router.configuration).
 
-- [ ] **Feature: CML 2.10 node staging (`--staging`) for PKI boot ordering.** CML 2.10 (schema `0.3.1`) supports `lab.node_staging` and per-node `priority` for staged boot. When `--cml-version >= 0.3.1` and `--pki` is enabled, TopoGen should automatically set boot priorities: CA-ROOT and switches at `priority: 100`, hubs at `90`, spokes at `80`. Emit `lab.node_staging: {enabled: true, start_remaining: true, abort_on_failure: false}`. Optional: `--pki-boot-delay N` to insert N dummy IOSv nodes (no config, no interfaces) at `priority: 100` to extend tier-1 boot time, giving CA-ROOT time to initialize. Blast radius: all offline renderers (4 sites), `_intent_annotation_lines()` pattern for version gating, lab footer assembly. See DEVELOPER.md "CML lab schema versions" for field reference.
+- [x] ~~**Feature: CML 2.10 node staging (`--staging`) for PKI boot ordering.**~~ Implemented. See `CHANGES.md` Unreleased entry.
 
 - [ ] **Task: Investigate CML 2.10 named-file configuration format.** CML 2.10 exports `configuration` as a list of `{name: "ios_config.txt", content: "..."}` objects instead of a plain string. CML 2.10 accepts the old plain-string format on import (confirmed), so this is not blocking. Future work: when `--cml-version >= 0.3.1`, optionally emit the named-file format for full round-trip fidelity. Low priority — current format works.
 

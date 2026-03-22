@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.1
-Date Modified: 2026-03-20
+Doc Version: v1.5.3
+Date Modified: 2026-03-22
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -194,8 +194,9 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--pki] [--archive] [--getvpn]
                [--getvpn-group-id GETVPN_GROUP_ID]
                [--getvpn-rekey-interval GETVPN_REKEY_INTERVAL]
-               [--getvpn-protocol {gdoi,gikev2}] [--pki-enroll {scep,cli}]
-               [--start] [--yaml FILE] [--offline-yaml FILE] [--overwrite]
+               [--getvpn-protocol {gdoi,gikev2}] [--staging]
+               [--no-abort-on-failure] [--pki-enroll {scep,cli}] [--start]
+               [--yaml FILE] [--offline-yaml FILE] [--overwrite]
                [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
                [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
                [--allow-oversubscribe]
@@ -306,6 +307,11 @@ options:
   --getvpn-protocol {gdoi,gikev2}
                         GET VPN control plane protocol: gdoi (ISAKMP/IKEv1) or
                         gikev2 (IKEv2), default "gdoi"
+  --staging             Enable CML 2.10 node staging for boot ordering
+                        (requires --cml-version >= 0.3.1)
+  --no-abort-on-failure
+                        With --staging, disable abort-on-failure so all nodes
+                        attempt to boot even if a higher-priority node fails
   --pki-enroll {scep,cli}
                         PKI enrollment mode: scep (auto via SCEP) or cli
                         (manual CLI enrollment for external CA)
@@ -693,6 +699,26 @@ Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are r
 **PKI:** PKI (CA-ROOT) is validated. DMVPN with `--dmvpn-security ikev2-pki` and `--pki` brings up tunnels with IKEv2 certificate-based authentication. Manual certificate enrollment is required on first boot (see **PKI client EEM** below).
 
 **CA server boot order:** When using `--pki`, bring the CA-ROOT node online first. Once the root CA is available (certificate server enabled), start the rest of the lab (R1..R*n*). Clients need the CA to be up for SCEP enrollment and authentication.
+
+**Node staging (`--staging`):** CML 2.10 (schema `0.3.1`) supports automated boot ordering via node staging. Use `--staging` with `--cml-version 0.3.1` to embed boot priorities in the offline YAML. Priority tiers (higher boots first):
+
+| Priority | Node type |
+|----------|-----------|
+| 1000 | External connectors, OOB switches |
+| 950 | Data switches (SW0, SW1, SWnbma*) |
+| 900 | CA-ROOT (when `--pki`) |
+| 800 | Key Server (KS, when `--getvpn`), DMVPN hubs |
+| *(none)* | All other routers — boot via "Start Remaining Nodes" |
+
+Example:
+
+```powershell
+topogen -m flat-pair -T iosv-eigrp --cml-version 0.3.1 --staging --offline-yaml out/staging-lab.yaml 10
+```
+
+When `--staging` is used with `--cml-version < 0.3.1`, a warning is logged and the flag is ignored.
+
+> **CML 2.10 import note:** CML includes `node_staging` in exported YAML but does not apply the lab-level enable switch on import — per-node priorities are imported, but "Enable Node Staging" remains off. When using `--up` or `--import`, topogen enables node staging automatically via the CML API after import. For manual UI imports, enable "Node Staging" in the lab settings dialog after importing.
 
 **DMVPN with IKEv2 PKI: bring-up order** — For DMVPN labs using `--dmvpn-security ikev2-pki` and `--pki`, start nodes in this order so crypto and NHRP come up cleanly:
 
