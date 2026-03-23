@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.28
-Date Modified: 2026-03-22
+Doc Version: v1.2.32
+Date Modified: 2026-03-23
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,30 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(oob): two-tier OOB management for all online modes matching offline reference
+    - Online `render_node_network` (NX), `render_node_sequence` (simple), and `render_flat_network` (flat) now create a two-tier OOB switch fabric: SWoob0 (aggregation) + SWoob1..N (access, one per `--flat-group-size` routers, default 20)
+    - Previously, these online modes used a single SWoob0 switch which cannot scale beyond ~48 routers
+    - ext-conn-mgmt links to SWoob0 (when `--mgmt-bridge`); each SWoobN uplinks to SWoob0; routers connect to their group's access switch via `idx // oob_group`
+    - Matches the offline YAML generators which already used this design
+    - CA-ROOT and KS (GET VPN key server) nodes in flat mode now connect to SWoob1 instead of the old single switch
+    - Files: src/topogen/render.py (rev v1.1.9 → v1.2.0), CHANGES.md (rev v1.2.31 → v1.2.32), DEVELOPER.md (rev v1.7.13 → v1.7.14)
+  - fix(templates): add OOB management VRF block to 4 templates that were missing it
+    - `iosv.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iosv-eigrp-stub.jinja2`, `iol-xe.jinja2` now emit `ip vrf <vrf>`, management interface with VRF forwarding + DHCP, and VRF default route when `--mgmt` is used
+    - Previously, these templates had no `mgmt` block, so the management interface was created and linked but never configured in the router startup config
+    - Files: src/topogen/templates/iosv.jinja2 (rev v1.1.2 → v1.1.3), src/topogen/templates/iosv-eigrp-nonflat.jinja2 (rev v1.1.2 → v1.1.3), src/topogen/templates/iosv-eigrp-stub.jinja2 (rev v1.1.2 → v1.1.3), src/topogen/templates/iol-xe.jinja2 (rev v1.1.2 → v1.1.3)
+  - fix(nx,simple): offline NX and simple modes now generate correct topologies matching online
+    - Previously, `--mode nx --offline-yaml` and `--mode simple --offline-yaml` silently fell through to `offline_flat_yaml()` and produced a flat switch-fabric topology identical to flat mode
+    - NX mode: new `offline_nx_yaml()` uses `networkx.random_shell_graph` + `kamada_kawai_layout` to produce a partially-meshed random graph with direct router-to-router p2p links (no data-plane switches); coordinates auto-scaled to CML's 15000-coordinate limit
+    - Simple mode: new `offline_simple_yaml()` produces a sequential chain (R1-R2-R3-...-Rn) with square spiral coordinates matching the online `render_node_sequence` layout; slot 0 = forward link, slot 1 = backward link
+    - Both now include ext-conn-0 (external_connector) and dns-host (Alpine Linux DNS/NAT gateway) exactly mirroring their online counterparts (`render_node_network` and `render_node_sequence`)
+    - dns-host eth0 links to ext-conn-0; eth1 links to the core router (NX: highest degree centrality, simple: R1)
+    - Core/R1 gets `ip route 0.0.0.0 0.0.0.0 <dns-host-ip>` and OSPF `default-information originate`
+    - dns-host boot script: dnsmasq for DNS, iptables NAT for internet, static routes to loopback/p2p nets, /etc/hosts for all lab routers
+    - Both use direct router-to-router p2p /30 links from cfg.p2pnets and /32 loopbacks from cfg.loopbacks (no data-plane switches)
+    - Online paths remain unchanged
+    - Supports: `--mgmt`, `--mgmt-bridge`, `--blank`, `--staging`, `--ntp`, `--archive`, `--cml-version`
+    - main.py offline dispatch: `elif args.mode == "nx":` → `offline_nx_yaml()`, `elif args.mode == "simple":` → `offline_simple_yaml()`
+    - Files: src/topogen/main.py (rev v1.3.5 → v1.3.7), src/topogen/render.py (rev v1.1.6 → v1.1.9), CHANGES.md (rev v1.2.28 → v1.2.31), TODO.md (rev v1.6.34 → v1.6.35)
   - feat(blank): add `--blank` flag for topology-only labs (CML Bootstrap Lab)
     - When `--blank` is set, all router nodes emit empty configuration instead of full startup configs
     - Works for both offline YAML generation and online lab creation via the CML API

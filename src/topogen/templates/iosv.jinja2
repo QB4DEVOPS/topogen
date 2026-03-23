@@ -1,9 +1,9 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.2
-# Date Modified: 2026-03-22
+# Doc Version: v1.1.3
+# Date Modified: 2026-03-23
 #
 # - Called by: src/topogen/render.py (Jinja render step)
-# - Reads from: Jinja context (config, node, plus feature flags: origin, ntp, ntp_oob, archive)
+# - Reads from: Jinja context (config, node, plus feature flags: origin, mgmt, ntp, ntp_oob, archive)
 # - Writes to: Startup-config text embedded into offline YAML, or pushed to the controller (online)
 # - Calls into: None (template-only)
 #}
@@ -78,6 +78,28 @@ interface GigabitEthernet0/{{ loop.index0 }}
 !
 {%- endfor %}
 !
+{%- if mgmt and mgmt.enabled %}
+{%- if mgmt.vrf %}
+ip vrf {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+!
+{%- endif %}
+interface GigabitEthernet0/{{ mgmt.slot }}
+    description OOB Management
+    {%- if mgmt.vrf %}
+    ip vrf forwarding {{ mgmt.vrf }}
+    {%- endif %}
+    ip address dhcp
+    no shutdown
+!
+{%- if mgmt.gw %}
+{%- if mgmt.vrf %}
+ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- else %}
+ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- endif %}
+{%- endif %}
+{%- endif %}
 {%- if ntp and ntp.server %}
 {%- if ntp.vrf %}
 ntp server vrf {{ ntp.vrf }} {{ ntp.server }}

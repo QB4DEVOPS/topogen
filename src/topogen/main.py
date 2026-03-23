@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.5
+# Doc Version: v1.3.7
 # Date Modified: 2026-03-22
 #
 """
@@ -870,6 +870,10 @@ def main():
                     retval = Renderer.offline_dmvpn_flat_pair_yaml(args, cfg)
                 else:
                     retval = Renderer.offline_dmvpn_yaml(args, cfg)
+            elif args.mode == "nx":
+                retval = Renderer.offline_nx_yaml(args, cfg)
+            elif args.mode == "simple":
+                retval = Renderer.offline_simple_yaml(args, cfg)
             elif args.mode == "flat-pair":
                 retval = Renderer.offline_flat_pair_yaml(args, cfg)
             else:

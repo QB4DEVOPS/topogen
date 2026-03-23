@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.13
-Date Modified: 2026-03-16
+Doc Version: v1.7.14
+Date Modified: 2026-03-23
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -1006,7 +1006,7 @@ Jinja2:
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.0.18
+- **Doc Version:** v1.2.0
 
 - **Called by**
 

@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.34
-Date Modified: 2026-03-22
+Doc Version: v1.6.36
+Date Modified: 2026-03-23
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -92,13 +92,15 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [ ] **Task: Investigate CML 2.10 named-file configuration format.** CML 2.10 exports `configuration` as a list of `{name: "ios_config.txt", content: "..."}` objects instead of a plain string. CML 2.10 accepts the old plain-string format on import (confirmed), so this is not blocking. Future work: when `--cml-version >= 0.3.1`, optionally emit the named-file format for full round-trip fidelity. Low priority — current format works.
 
-- [ ] **Bug: Offline NX mode produces flat topology instead of all-to-all NX graph.** In `main.py` line ~848, both `simple` and `nx` modes fall into the same `else` branch and call `offline_flat_yaml()`. There is no `offline_nx_yaml()` function, so offline NX silently produces a flat hierarchical switch-fabric topology identical to flat mode. The online path (`render_node_network` / `create_nx_network`) correctly uses `networkx` with `kamada_kawai_layout` to build the true all-to-all graph. Fix: implement `offline_nx_yaml()` that mirrors the online NX graph logic (or serialises the networkx output to offline YAML), and add an `elif args.mode == "nx":` branch in `main.py` to call it.
+- [x] ~~**Bug: Offline NX mode produces flat topology instead of all-to-all NX graph.**~~ Fixed — `offline_nx_yaml()` for NX (random graph) and `offline_simple_yaml()` for simple (chain topology) with ext-conn + dns-host matching online. See CHANGES.md.
 
 ## Done
 
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] Two-tier OOB management for all online modes: `render_node_network` (NX), `render_node_sequence` (simple), and `render_flat_network` (flat) now use SWoob0 (aggregation) + SWoob1..N (access) matching offline reference. Previously used a single switch that couldn't scale. See CHANGES.md.
+- [x] OOB management VRF block added to `iosv.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iosv-eigrp-stub.jinja2`, `iol-xe.jinja2` — these templates previously had no mgmt block so `--mgmt` was silently ignored in the router config. See CHANGES.md.
 - [x] NTP bug: added NTP block to `iosv.jinja2`, `iosv-eigrp-stub.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iol-xe.jinja2` — `--ntp` was silently ignored for these templates. See CHANGES.md.
 - [x] `--cml-version` backward compat: omit `smart_annotations` for schema `<= 0.2.2` (CML 2.5–2.7); `notes:` safe on all versions. Schema version mapping added to DEVELOPER.md and README.md. See CHANGES.md.
 - [x] `--import-yaml` reads `title:` from YAML when `-L` is not provided (PoLA, closes #36; see CHANGES.md)

@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.2
-# Date Modified: 2026-03-22
+# Doc Version: v1.1.3
+# Date Modified: 2026-03-23
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, ntp_oob, archive)
@@ -82,6 +82,28 @@ interface Ethernet{{ loop.index0 // 4 }}/{{ loop.index0 % 4 }}
 !
 {%- endfor %}
 !
+{%- if mgmt and mgmt.enabled %}
+{%- if mgmt.vrf %}
+ip vrf {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+!
+{%- endif %}
+interface Ethernet{{ mgmt.slot // 4 }}/{{ mgmt.slot % 4 }}
+    description OOB Management
+    {%- if mgmt.vrf %}
+    ip vrf forwarding {{ mgmt.vrf }}
+    {%- endif %}
+    ip address dhcp
+    no shutdown
+!
+{%- if mgmt.gw %}
+{%- if mgmt.vrf %}
+ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- else %}
+ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- endif %}
+{%- endif %}
+{%- endif %}
 {%- if ntp and ntp.server %}
 {%- if ntp.vrf %}
 ntp server vrf {{ ntp.vrf }} {{ ntp.server }}

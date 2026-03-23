@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.6
-# Date Modified: 2026-03-22
+# Doc Version: v1.2.0
+# Date Modified: 2026-03-23
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -54,8 +54,9 @@ KEY METHODS (Renderer class):
     - render_dmvpn(): DMVPN hub-spoke (online)
 
     Offline (YAML) static methods:
-    - offline_simple_yaml(): Simple/NX star topology (offline YAML)
     - offline_flat_yaml(): Flat hierarchical topology (offline YAML)
+    - offline_nx_yaml(): NX random shell graph topology (offline YAML)
+    - offline_simple_yaml(): Simple chain (sequential) topology (offline YAML)
     - offline_flat_pair_yaml(): Flat-pair topology (offline YAML)
     - offline_dmvpn_yaml(): DMVPN with flat underlay (offline YAML)
     - offline_dmvpn_flat_pair_yaml(): DMVPN with flat-pair underlay (offline YAML)
@@ -68,11 +69,12 @@ ARCHITECTURE:
     - Layout: Deterministic X/Y coordinates for visual topology in CML
 
 TOPOLOGY MODES:
-    1. Simple/NX: Central switch + N routers (star topology)
-    2. Flat: Core switch + access switches + N routers (hierarchical)
-    3. Flat-pair: Odd routers paired with even routers + switch fabric
-    4. DMVPN flat: Hub-spoke DMVPN with flat underlay switches
-    5. DMVPN flat-pair: Hub-spoke DMVPN with flat-pair underlay
+    1. Simple: Chain (R1-R2-...-Rn) with ext-conn + dns-host + spiral coords
+    2. NX: Random shell graph + kamada_kawai layout with ext-conn + dns-host
+    3. Flat: Core switch + access switches + N routers (hierarchical)
+    4. Flat-pair: Odd routers paired with even routers + switch fabric
+    5. DMVPN flat: Hub-spoke DMVPN with flat underlay switches
+    6. DMVPN flat-pair: Hub-spoke DMVPN with flat-pair underlay
 
 OOB MANAGEMENT:
     All modes support optional OOB management network (--mgmt):
@@ -1080,29 +1082,44 @@ class Renderer:
         # OOB management network setup (declare early so it's available in edge loop)
         enable_mgmt = getattr(self.args, "enable_mgmt", False)
         mgmt_slot = getattr(self.args, "mgmt_slot", 5)
-        oob_switch = None
+        oob_switches: list = []
+        oob_agg = None
         mgmt_ext_conn = None
+        oob_group = max(1, int(getattr(self.args, "flat_group_size", 20)))
 
-        # Create OOB management infrastructure BEFORE edge loop (if --mgmt enabled)
+        # Two-tier OOB: SWoob0 (aggregation) + SWoob1..N (access, one per group)
         if enable_mgmt:
-            # Create OOB management switch
-            oob_switch = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
-            if hasattr(oob_switch, "hide_links"):
-                oob_switch.hide_links = True
-            _LOGGER.warning("OOB management switch: %s", oob_switch.label)
+            total = self.args.nodes
+            num_oob_sw = math.ceil(total / oob_group)
+            distance = int(getattr(self.args, "distance", 200))
 
-            # Create external connector for management bridge (if --mgmt-bridge enabled)
             mgmt_bridge = getattr(self.args, "mgmt_bridge", False)
             if mgmt_bridge:
                 mgmt_ext_conn = self.create_node("ext-conn-mgmt", "external_connector", Point(-440, 0))
                 mgmt_ext_conn.configuration = "System Bridge"
-                # Link external connector to OOB switch
+                _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
+
+            oob_agg = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
+            if hasattr(oob_agg, "hide_links"):
+                oob_agg.hide_links = True
+            _LOGGER.warning("OOB aggregation switch: %s", oob_agg.label)
+
+            if mgmt_bridge:
                 self.lab.create_link(
                     mgmt_ext_conn.get_interface_by_slot(0),
-                    oob_switch.get_interface_by_slot(0),
+                    self.new_interface(oob_agg),
                 )
-                _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
                 _LOGGER.warning("Creating mgmt ext-conn link")
+
+            for i in range(num_oob_sw):
+                ox = -200 - (i + 1) * distance
+                oy = (i + 1) * distance
+                acc = self.create_node(f"SWoob{i + 1}", "unmanaged_switch", Point(ox, oy))
+                if hasattr(acc, "hide_links"):
+                    acc.hide_links = True
+                self.lab.create_link(self.new_interface(acc), self.new_interface(oob_agg))
+                oob_switches.append(acc)
+                _LOGGER.warning("OOB access switch: %s", acc.label)
 
         _LOGGER.warning("Creating edges and nodes")
         for edge in graph.edges:
@@ -1117,14 +1134,14 @@ class Renderer:
                     _LOGGER.info("router: %s", cml2node.label)
                     node["cml2node"] = cml2node
 
-                    # Connect mgmt interface immediately after router creation (before data plane)
-                    if enable_mgmt and oob_switch is not None:
+                    if enable_mgmt and oob_switches:
                         dev_def = getattr(self.args, "dev_template", self.args.template)
                         router_mgmt_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
                         mgmt_if = cml2node.create_interface(slot=router_mgmt_slot)
-                        oob_if = self.new_interface(oob_switch)
+                        sw_idx = node_index // oob_group
+                        oob_if = self.new_interface(oob_switches[sw_idx])
                         self.lab.create_link(mgmt_if, oob_if)
-                        _LOGGER.warning("mgmt-link: %s slot %d -> %s", cml2node.label, router_mgmt_slot, oob_switch.label)
+                        _LOGGER.warning("mgmt-link: %s slot %d -> %s", cml2node.label, router_mgmt_slot, oob_switches[sw_idx].label)
 
                     if self.args.progress:
                         eprog.update()  # type:ignore
@@ -5014,6 +5031,924 @@ class Renderer:
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
         return 0
+
+    @staticmethod
+    def offline_nx_yaml(args: Namespace, cfg: Config) -> int:
+        """Generate a CML-compatible YAML file locally for NX mode.
+
+        Uses NetworkX random_shell_graph + kamada_kawai_layout to produce a
+        partially-meshed random topology with direct router-to-router p2p links.
+        Mirrors the online render_node_network topology exactly.
+
+        Topology:
+        - ext-conn-0 (external_connector) for outbound connectivity
+        - dns-host (Alpine Linux) — DNS/NAT gateway connected to ext-conn-0
+        - dns-host eth1 links to the core router (highest degree centrality)
+        - Core router gets default route + OSPF default-information originate
+        - Routers R1..R<n> with point-to-point /30 links derived from the graph edges
+        - Loopback0 addresses from cfg.loopbacks (/32)
+        - Optional OOB management switch fabric (--mgmt)
+        """
+
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        try:
+            tpl = env.get_template(f"{args.template}{Renderer.J2SUFFIX}")
+        except TemplateNotFound as exc:
+            raise TopogenError(f"template does not exist: {args.template}") from exc
+
+        total = int(args.nodes)
+        distance = int(getattr(args, "distance", 200))
+
+        # --- Generate NX graph (mirrors create_nx_network) ---
+        size = int(total / 8)
+        size = max(size, 20)
+        clusters = int(total / size)
+        remain = total - clusters * size
+        dimensions = int(math.sqrt(total) * distance)
+
+        constructor = [
+            (size, size * 2, 0.999) if a < clusters else (remain, remain * 2, 0.999)
+            for a in range(clusters + (1 if remain > 0 else 0))
+        ]
+
+        graph = nx.random_shell_graph(constructor)
+
+        if not nx.is_connected(graph):
+            complement = list(nx.k_edge_augmentation(graph, k=1))
+            graph.add_edges_from(complement)
+
+        pos = nx.kamada_kawai_layout(graph, scale=dimensions)
+
+        # Scale coordinates to stay within CML's 15000-coordinate limit
+        max_coord = 15000
+        raw_coords = {k: (int(v[0]), int(v[1])) for k, v in pos.items()}
+        if raw_coords:
+            extent = max(
+                max(abs(c) for pair in raw_coords.values() for c in pair),
+                1,
+            )
+            scale = min(1.0, (max_coord - 100) / extent)
+        else:
+            scale = 1.0
+        node_coords = {k: (int(v[0] * scale), int(v[1] * scale)) for k, v in raw_coords.items()}
+
+        # --- Allocate p2p /30 subnets for each edge ---
+        p2pnets_iter = IPv4Network(cfg.p2pnets).subnets(
+            prefixlen_diff=IPV4LENGTH - cfg.p2pnets.prefixlen - 2
+        )
+
+        # Reserve first /30 for ext-conn ↔ dns-host ↔ core-router link
+        # Online uses set() unpacking which assigns dns_addr=.2, dns_via=.1
+        # for CPython small-int set iteration order; we match that.
+        dns_prefix = next(p2pnets_iter)
+        dns_hosts = list(dns_prefix.hosts())
+        dns_addr = IPv4Interface(f"{dns_hosts[1]}/{dns_prefix.prefixlen}")
+        dns_via = IPv4Interface(f"{dns_hosts[0]}/{dns_prefix.prefixlen}")
+
+        # Identify core node (highest degree centrality, mirrors online)
+        core = sorted(
+            nx.degree_centrality(graph).items(), key=lambda e: e[1], reverse=True
+        )[0][0]
+
+        edge_info: dict[tuple[int, int], tuple[IPv4Network, IPv4Address, IPv4Address]] = {}
+        for edge in graph.edges:
+            prefix = next(p2pnets_iter)
+            hosts = list(prefix.hosts())
+            edge_info[edge] = (prefix, hosts[0], hosts[1])
+
+        # --- Build per-node interface lists (sorted by neighbor for determinism) ---
+        node_ifaces: dict[int, list[dict[str, Any]]] = {}
+        for node_index in graph.nodes:
+            ifaces: list[dict[str, Any]] = []
+            slot = 0
+            for neighbor in sorted(graph.adj[node_index]):
+                canonical = (min(node_index, neighbor), max(node_index, neighbor))
+                prefix, host0, host1 = edge_info[canonical]
+                if node_index == canonical[0]:
+                    ip = host0
+                else:
+                    ip = host1
+                ifaces.append({
+                    "slot": slot,
+                    "neighbor": neighbor,
+                    "address": IPv4Interface(f"{ip}/{prefix.prefixlen}"),
+                })
+                slot += 1
+            # Core node gets an extra interface for the DNS host link
+            if node_index == core:
+                ifaces.append({
+                    "slot": slot,
+                    "neighbor": -1,
+                    "address": dns_via,
+                    "dns_link": True,
+                })
+            node_ifaces[node_index] = ifaces
+
+        # Update cfg.nameserver so templates reference the DNS host IP
+        cfg.nameserver = str(dns_addr.ip)
+
+        # --- Allocate loopbacks (/32) from cfg.loopbacks, skip .0 ---
+        loopback_iter = IPv4Network(cfg.loopbacks).subnets(
+            prefixlen_diff=IPV4LENGTH - cfg.loopbacks.prefixlen
+        )
+        next(loopback_iter)  # skip .0
+        node_loopbacks: dict[int, IPv4Interface] = {}
+        for node_index in sorted(graph.nodes):
+            node_loopbacks[node_index] = IPv4Interface(next(loopback_iter))
+
+        # --- Common flag reads ---
+        dev_def = getattr(args, "dev_template", args.template)
+        enable_mgmt = getattr(args, "enable_mgmt", False)
+        mgmt_slot = getattr(args, "mgmt_slot", 5)
+        version = getattr(args, "cml_version", "0.3.0")
+        staging = getattr(args, "staging", False) and _staging_version_ok(version)
+
+        # --- Build YAML header ---
+        lines: list[str] = []
+        lines.append("lab:")
+        lines.append(f"  title: {args.labname}")
+
+        args_bits: list[str] = [f"nodes={total}", f"-m {args.mode}", f"-T {args.template}"]
+        if dev_def != args.template:
+            args_bits.append(f"--device-template {dev_def}")
+        if version:
+            args_bits.append(f"--cml-version {version}")
+        if enable_mgmt:
+            args_bits.append("--mgmt")
+            args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")
+            if getattr(args, "mgmt_gw", None):
+                args_bits.append(f"--mgmt-gw {args.mgmt_gw}")
+            args_bits.append(f"--mgmt-slot {args.mgmt_slot}")
+            if getattr(args, "mgmt_vrf", None):
+                args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+            if getattr(args, "mgmt_bridge", False):
+                args_bits.append("--mgmt-bridge")
+        if getattr(args, "ntp_server", None):
+            args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
+            if getattr(args, "ntp_vrf", None):
+                args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
+        if staging:
+            args_bits.append("--staging")
+        args_bits.append(f"-L {args.labname}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
+        desc = (
+            f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, nx) | args: "
+            + " ".join(args_bits)
+        )
+        if getattr(args, "remark", None):
+            desc += f" | remark: {args.remark}"
+        lines.append(f'  description: "{desc}"')
+        lines.extend(_intent_notes_lines(desc))
+        lines.append(f"  version: '{version}'")
+        if staging:
+            lines.extend(_node_staging_lines(abort_on_failure=not getattr(args, "staging_no_abort", False)))
+        lines.append("nodes:")
+
+        node_ids: dict[str, str] = {}
+        nid = 0
+
+        # --- External connector (ext-conn-0) ---
+        node_ids[EXT_CON_NAME] = f"n{nid}"; nid += 1
+        lines.append(f"  - id: {node_ids[EXT_CON_NAME]}")
+        lines.append(f"    label: {EXT_CON_NAME}")
+        lines.append("    node_definition: external_connector")
+        lines.append("    x: 0")
+        lines.append("    y: 0")
+        lines.append("    interfaces:")
+        lines.append("      - id: i0")
+        lines.append("        slot: 0")
+        lines.append("        label: port")
+        lines.append("        type: physical")
+
+        # Reserve DNS host node ID (emitted after routers once dns_zone is built)
+        node_ids[DNS_HOST_NAME] = f"n{nid}"; nid += 1
+
+        # --- OOB management infrastructure (if --mgmt) ---
+        oob_group = max(1, int(getattr(args, "flat_group_size", 20)))
+        num_oob_sw = 0
+        oob_per_sw_counts: list[int] = []
+        if enable_mgmt:
+            num_oob_sw = math.ceil(total / oob_group)
+            for i in range(num_oob_sw):
+                start = i * oob_group + 1
+                end = min((i + 1) * oob_group, total)
+                oob_per_sw_counts.append(max(0, end - start + 1))
+
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                node_ids["ext-conn-mgmt"] = f"n{nid}"; nid += 1
+                lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
+                lines.append("    label: ext-conn-mgmt")
+                lines.append("    node_definition: external_connector")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
+                lines.append("    x: -440")
+                lines.append("    y: 0")
+                lines.append("    configuration:")
+                lines.append("      - name: default")
+                lines.append("        content: System Bridge")
+                lines.append("    interfaces:")
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port")
+                lines.append("        type: physical")
+
+            node_ids["SWoob0"] = f"n{nid}"; nid += 1
+            lines.append(f"  - id: {node_ids['SWoob0']}")
+            lines.append("    label: SWoob0")
+            lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
+            lines.append("    hide_links: true")
+            lines.append("    x: -200")
+            lines.append("    y: 0")
+            lines.append("    interfaces:")
+            port_offset = 1 if mgmt_bridge else 0
+            if mgmt_bridge:
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port0")
+                lines.append("        type: physical")
+            for p in range(num_oob_sw):
+                port_num = p + port_offset
+                lines.append(f"      - id: i{port_num}")
+                lines.append(f"        slot: {port_num}")
+                lines.append(f"        label: port{port_num}")
+                lines.append(f"        type: physical")
+
+            for i in range(num_oob_sw):
+                oob_label = f"SWoob{i + 1}"
+                node_ids[oob_label] = f"n{nid}"; nid += 1
+                ox = -200 - (i + 1) * distance
+                lines.append(f"  - id: {node_ids[oob_label]}")
+                lines.append(f"    label: {oob_label}")
+                lines.append("    node_definition: unmanaged_switch")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
+                lines.append("    hide_links: true")
+                lines.append(f"    x: {ox}")
+                lines.append(f"    y: {(i + 1) * distance}")
+                oob_if_count = 1 + oob_per_sw_counts[i]
+                lines.append("    interfaces:")
+                for p in range(oob_if_count):
+                    lines.append(f"      - id: i{p}")
+                    lines.append(f"        slot: {p}")
+                    lines.append(f"        label: port{p}")
+                    lines.append(f"        type: physical")
+
+        # --- Router nodes ---
+        dns_zone: list[DNShost] = []
+        for node_index in sorted(graph.nodes):
+            label = f"R{node_index + 1}"
+            node_ids[label] = f"n{nid}"; nid += 1
+            x, y = node_coords[node_index]
+            ifaces = node_ifaces[node_index]
+            loopback = node_loopbacks[node_index]
+
+            topo_ifaces = []
+            for iface in ifaces:
+                if iface.get("dns_link"):
+                    desc = f"to {DNS_HOST_NAME}"
+                else:
+                    desc = f"to R{iface['neighbor'] + 1}"
+                topo_ifaces.append(TopogenInterface(
+                    address=iface["address"],
+                    description=desc,
+                    slot=iface["slot"],
+                ))
+            topo_ifaces.sort(key=lambda xi: xi.slot)
+
+            node_obj = TopogenNode(
+                hostname=label,
+                loopback=loopback,
+                interfaces=topo_ifaces,
+            )
+
+            mgmt_ctx = None
+            if enable_mgmt:
+                mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+
+            is_core = node_index == core
+            rendered = tpl.render(
+                config=cfg,
+                node=node_obj,
+                date=datetime.now(timezone.utc),
+                origin=dns_addr if is_core else "",
+                mgmt=mgmt_ctx,
+                ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+            )
+
+            lines.append(f"  - id: {node_ids[label]}")
+            lines.append(f"    label: {label}")
+            lines.append(f"    node_definition: {dev_def}")
+            lines.append(f"    x: {x}")
+            lines.append(f"    y: {y}")
+            lines.append("    interfaces:")
+            for iface in ifaces:
+                s = iface["slot"]
+                if dev_def == "csr1000v":
+                    iface_label = f"GigabitEthernet{s + 1}"
+                else:
+                    iface_label = f"GigabitEthernet0/{s}"
+                lines.append(f"      - id: i{s}")
+                lines.append(f"        slot: {s}")
+                lines.append(f"        label: {iface_label}")
+                lines.append(f"        type: physical")
+            if enable_mgmt:
+                if dev_def == "csr1000v":
+                    csr_slot = mgmt_slot - 1
+                    lines.append(f"      - id: i{csr_slot}")
+                    lines.append(f"        slot: {csr_slot}")
+                    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                else:
+                    lines.append(f"      - id: i{mgmt_slot}")
+                    lines.append(f"        slot: {mgmt_slot}")
+                    lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
+                lines.append("        type: physical")
+            _emit_config(lines, rendered, getattr(args, "blank", False))
+            dns_zone.append(DNShost(label.lower(), loopback.ip))
+
+        # --- DNS / NAT host node (alpine, emitted after routers so dns_zone is complete) ---
+        dns_zone.append(DNShost(f"{DNS_HOST_NAME}-eth1", dns_addr.ip))
+        dns_node = TopogenNode(
+            hostname=DNS_HOST_NAME,
+            loopback=None,
+            interfaces=[
+                TopogenInterface(address=dns_addr),
+                TopogenInterface(address=dns_via),
+            ],
+        )
+        dns_config = dnshostconfig(cfg, dns_node, dns_zone)
+        lines.append(f"  - id: {node_ids[DNS_HOST_NAME]}")
+        lines.append(f"    label: {DNS_HOST_NAME}")
+        lines.append("    node_definition: alpine")
+        lines.append(f"    x: {distance}")
+        lines.append("    y: 0")
+        lines.append("    interfaces:")
+        lines.append("      - id: i0")
+        lines.append("        slot: 0")
+        lines.append("        label: eth0")
+        lines.append("        type: physical")
+        lines.append("      - id: i1")
+        lines.append("        slot: 1")
+        lines.append("        label: eth1")
+        lines.append("        type: physical")
+        _emit_config(lines, dns_config, getattr(args, "blank", False))
+
+        # --- Links section ---
+        lines.append("links:")
+        lid = 0
+
+        # ext-conn-0 ↔ dns-host (eth0)
+        lines.append(f"  - id: l{lid}"); lid += 1
+        lines.append(f"    n1: {node_ids[EXT_CON_NAME]}")
+        lines.append("    i1: i0")
+        lines.append(f"    n2: {node_ids[DNS_HOST_NAME]}")
+        lines.append("    i2: i0")
+
+        # dns-host (eth1) ↔ core router (dns_link slot)
+        core_label = f"R{core + 1}"
+        dns_slot = next(i["slot"] for i in node_ifaces[core] if i.get("dns_link"))
+        lines.append(f"  - id: l{lid}"); lid += 1
+        lines.append(f"    n1: {node_ids[DNS_HOST_NAME]}")
+        lines.append("    i1: i1")
+        lines.append(f"    n2: {node_ids[core_label]}")
+        lines.append(f"    i2: i{dns_slot}")
+
+        # Build (node, neighbor) -> slot lookup
+        slot_lookup: dict[tuple[int, int], int] = {}
+        for ni, ifaces_list in node_ifaces.items():
+            for iface in ifaces_list:
+                slot_lookup[(ni, iface["neighbor"])] = iface["slot"]
+
+        for edge in graph.edges:
+            src, dst = edge
+            src_label = f"R{src + 1}"
+            dst_label = f"R{dst + 1}"
+            src_slot = slot_lookup[(src, dst)]
+            dst_slot = slot_lookup[(dst, src)]
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[src_label]}")
+            lines.append(f"    i1: i{src_slot}")
+            lines.append(f"    n2: {node_ids[dst_label]}")
+            lines.append(f"    i2: i{dst_slot}")
+
+        # OOB management links (if --mgmt)
+        if enable_mgmt:
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['ext-conn-mgmt']}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append("    i2: i0")
+
+            port_offset = 1 if mgmt_bridge else 0
+            for i in range(num_oob_sw):
+                oob_acc = f"SWoob{i + 1}"
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[oob_acc]}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{i + port_offset}")
+
+            router_mgmt_iface_id = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+            oob_per_sw_next_port = [1 for _ in range(num_oob_sw)]
+            for idx in range(total):
+                n = idx + 1
+                rlabel = f"R{n}"
+                oob_sw_index = idx // oob_group
+                oob_acc = f"SWoob{oob_sw_index + 1}"
+                oob_acc_port = oob_per_sw_next_port[oob_sw_index]
+                oob_per_sw_next_port[oob_sw_index] += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[rlabel]}")
+                lines.append(f"    i1: i{router_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids[oob_acc]}")
+                lines.append(f"    i2: i{oob_acc_port}")
+
+        # --- Write file ---
+        outfile = Path(getattr(args, "offline_yaml"))
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        if outfile.exists() and not getattr(args, "overwrite", False):
+            raise TopogenError(
+                f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
+            )
+        if outfile.exists() and getattr(args, "overwrite", False):
+            _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
+        lines = _intent_annotation_lines(desc, version) + lines
+        outfile.write_text("\n".join(lines), encoding="utf-8")
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning(
+            "Offline YAML (nx, %d nodes, %d edges) written to %s (%.1f KB)",
+            graph.number_of_nodes(), graph.number_of_edges(), outfile, size_kb,
+        )
+        return 0
+
+    @staticmethod
+    def offline_simple_yaml(args: Namespace, cfg: Config) -> int:
+        """Generate a CML-compatible YAML file locally for simple (chain) mode.
+
+        Produces a linear chain topology R1-R2-R3-...-Rn with square spiral
+        coordinates (matching the online render_node_sequence layout).
+        Mirrors the online render_node_sequence topology exactly.
+
+        Topology:
+        - ext-conn-0 (external_connector) for outbound connectivity
+        - dns-host (Alpine Linux) — DNS/NAT gateway connected to ext-conn-0
+        - dns-host eth1 links to R1's backward interface (slot 1)
+        - R1 gets default route + OSPF default-information originate
+        - Routers R1..R<n> in a sequential chain
+        - Point-to-point /30 links between consecutive routers
+        - Loopback0 addresses from cfg.loopbacks (/32)
+        - Optional OOB management switch fabric (--mgmt)
+        """
+
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        try:
+            tpl = env.get_template(f"{args.template}{Renderer.J2SUFFIX}")
+        except TemplateNotFound as exc:
+            raise TopogenError(f"template does not exist: {args.template}") from exc
+
+        total = int(args.nodes)
+        distance = int(getattr(args, "distance", 200))
+
+        # --- Generate square spiral coordinates (mirrors CoordsGenerator) ---
+        # Online render_node_sequence consumes first coord for dns-host,
+        # then subsequent coords for routers R1..Rn
+        coords_gen = CoordsGenerator(distance=distance)
+        coords_iter = iter(coords_gen)
+        dns_host_coord = next(coords_iter)
+        dns_host_xy = (dns_host_coord.x, dns_host_coord.y)
+        node_coords: dict[int, tuple[int, int]] = {}
+        for idx in range(total):
+            pt = next(coords_iter)
+            node_coords[idx] = (pt.x, pt.y)
+
+        # --- Allocate p2p /30 subnets ---
+        p2pnets_iter = IPv4Network(cfg.p2pnets).subnets(
+            prefixlen_diff=IPV4LENGTH - cfg.p2pnets.prefixlen - 2
+        )
+
+        # First /30 is for ext-conn ↔ dns-host ↔ R1 (mirrors online render_node_sequence)
+        # Online uses set() unpacking which assigns dns_iface=.2, prev_iface=.1
+        # for CPython small-int set iteration order; we match that.
+        dns_prefix = next(p2pnets_iter)
+        dns_hosts_list = list(dns_prefix.hosts())
+        dns_addr = IPv4Interface(f"{dns_hosts_list[1]}/{dns_prefix.prefixlen}")
+        dns_via = IPv4Interface(f"{dns_hosts_list[0]}/{dns_prefix.prefixlen}")
+        cfg.nameserver = str(dns_addr.ip)
+
+        # Allocate one /30 per router (mirrors online: src_iface, dst_iface = self.next_network())
+        # Online uses set() unpacking: src_iface=.2, dst_iface=.1
+        # Each router gets: slot 0 = fwd (src_iface), slot 1 = bwd (prev_iface)
+        node_ifaces: dict[int, list[dict[str, Any]]] = {}
+        prev_iface = dns_via
+        for idx in range(total):
+            prefix = next(p2pnets_iter)
+            hosts = list(prefix.hosts())
+            src_iface = IPv4Interface(f"{hosts[1]}/{prefix.prefixlen}")
+            dst_iface = IPv4Interface(f"{hosts[0]}/{prefix.prefixlen}")
+            is_r1 = idx == 0
+            node_ifaces[idx] = [
+                {"slot": 0, "neighbor": idx + 1 if idx < total - 1 else -1,
+                 "address": src_iface, "direction": "fwd"},
+                {"slot": 1, "neighbor": idx - 1 if not is_r1 else -1,
+                 "address": prev_iface, "direction": "bwd",
+                 "dns_link": is_r1},
+            ]
+            prev_iface = dst_iface
+
+        # --- Allocate loopbacks (/32) from cfg.loopbacks, skip .0 ---
+        loopback_iter = IPv4Network(cfg.loopbacks).subnets(
+            prefixlen_diff=IPV4LENGTH - cfg.loopbacks.prefixlen
+        )
+        next(loopback_iter)
+        node_loopbacks: dict[int, IPv4Interface] = {}
+        for idx in range(total):
+            node_loopbacks[idx] = IPv4Interface(next(loopback_iter))
+
+        # --- Common flag reads ---
+        dev_def = getattr(args, "dev_template", args.template)
+        enable_mgmt = getattr(args, "enable_mgmt", False)
+        mgmt_slot = getattr(args, "mgmt_slot", 5)
+        version = getattr(args, "cml_version", "0.3.0")
+        staging = getattr(args, "staging", False) and _staging_version_ok(version)
+
+        # --- Build YAML header ---
+        lines: list[str] = []
+        lines.append("lab:")
+        lines.append(f"  title: {args.labname}")
+
+        args_bits: list[str] = [f"nodes={total}", f"-m {args.mode}", f"-T {args.template}"]
+        if dev_def != args.template:
+            args_bits.append(f"--device-template {dev_def}")
+        if version:
+            args_bits.append(f"--cml-version {version}")
+        if enable_mgmt:
+            args_bits.append("--mgmt")
+            args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")
+            if getattr(args, "mgmt_gw", None):
+                args_bits.append(f"--mgmt-gw {args.mgmt_gw}")
+            args_bits.append(f"--mgmt-slot {args.mgmt_slot}")
+            if getattr(args, "mgmt_vrf", None):
+                args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+            if getattr(args, "mgmt_bridge", False):
+                args_bits.append("--mgmt-bridge")
+        if getattr(args, "ntp_server", None):
+            args_bits.append(f"--ntp {args.ntp_server}")
+            if getattr(args, "ntp_inband", False):
+                args_bits.append("--ntp-inband")
+            if getattr(args, "ntp_vrf", None):
+                args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+        if getattr(args, "ntp_oob_server", None):
+            args_bits.append(f"--ntp-oob {args.ntp_oob_server}")
+        if getattr(args, "archive", False):
+            args_bits.append("--archive")
+        if staging:
+            args_bits.append("--staging")
+        args_bits.append(f"-L {args.labname}")
+        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
+        desc = (
+            f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, simple) | args: "
+            + " ".join(args_bits)
+        )
+        if getattr(args, "remark", None):
+            desc += f" | remark: {args.remark}"
+        lines.append(f'  description: "{desc}"')
+        lines.extend(_intent_notes_lines(desc))
+        lines.append(f"  version: '{version}'")
+        if staging:
+            lines.extend(_node_staging_lines(abort_on_failure=not getattr(args, "staging_no_abort", False)))
+        lines.append("nodes:")
+
+        node_ids: dict[str, str] = {}
+        nid = 0
+
+        # --- External connector (ext-conn-0) ---
+        node_ids[EXT_CON_NAME] = f"n{nid}"; nid += 1
+        lines.append(f"  - id: {node_ids[EXT_CON_NAME]}")
+        lines.append(f"    label: {EXT_CON_NAME}")
+        lines.append("    node_definition: external_connector")
+        lines.append("    x: 0")
+        lines.append("    y: 0")
+        lines.append("    interfaces:")
+        lines.append("      - id: i0")
+        lines.append("        slot: 0")
+        lines.append("        label: port")
+        lines.append("        type: physical")
+
+        # --- DNS / NAT host (alpine, right after ext-conn to match online node order) ---
+        dns_zone_simple: list[DNShost] = []
+        for zidx in range(total):
+            dns_zone_simple.append(DNShost(f"r{zidx + 1}", node_loopbacks[zidx].ip))
+        dns_node = TopogenNode(
+            hostname=DNS_HOST_NAME,
+            loopback=None,
+            interfaces=[
+                TopogenInterface(address=dns_addr),
+                TopogenInterface(address=dns_via),
+            ],
+        )
+        dns_config = dnshostconfig(cfg, dns_node, dns_zone_simple)
+        node_ids[DNS_HOST_NAME] = f"n{nid}"; nid += 1
+        lines.append(f"  - id: {node_ids[DNS_HOST_NAME]}")
+        lines.append(f"    label: {DNS_HOST_NAME}")
+        lines.append("    node_definition: alpine")
+        lines.append(f"    x: {dns_host_xy[0]}")
+        lines.append(f"    y: {dns_host_xy[1]}")
+        lines.append("    interfaces:")
+        lines.append("      - id: i0")
+        lines.append("        slot: 0")
+        lines.append("        label: eth0")
+        lines.append("        type: physical")
+        lines.append("      - id: i1")
+        lines.append("        slot: 1")
+        lines.append("        label: eth1")
+        lines.append("        type: physical")
+        _emit_config(lines, dns_config, getattr(args, "blank", False))
+
+        # --- OOB management infrastructure (if --mgmt) ---
+        oob_group = max(1, int(getattr(args, "flat_group_size", 20)))
+        num_oob_sw = 0
+        oob_per_sw_counts: list[int] = []
+        if enable_mgmt:
+            num_oob_sw = math.ceil(total / oob_group)
+            for i in range(num_oob_sw):
+                start = i * oob_group + 1
+                end = min((i + 1) * oob_group, total)
+                oob_per_sw_counts.append(max(0, end - start + 1))
+
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                node_ids["ext-conn-mgmt"] = f"n{nid}"; nid += 1
+                lines.append(f"  - id: {node_ids['ext-conn-mgmt']}")
+                lines.append("    label: ext-conn-mgmt")
+                lines.append("    node_definition: external_connector")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
+                lines.append("    x: -440")
+                lines.append("    y: 0")
+                lines.append("    configuration:")
+                lines.append("      - name: default")
+                lines.append("        content: System Bridge")
+                lines.append("    interfaces:")
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port")
+                lines.append("        type: physical")
+
+            node_ids["SWoob0"] = f"n{nid}"; nid += 1
+            lines.append(f"  - id: {node_ids['SWoob0']}")
+            lines.append("    label: SWoob0")
+            lines.append("    node_definition: unmanaged_switch")
+            if staging:
+                lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
+            lines.append("    hide_links: true")
+            lines.append("    x: -200")
+            lines.append("    y: 0")
+            lines.append("    interfaces:")
+            port_offset = 1 if mgmt_bridge else 0
+            if mgmt_bridge:
+                lines.append("      - id: i0")
+                lines.append("        slot: 0")
+                lines.append("        label: port0")
+                lines.append("        type: physical")
+            for p in range(num_oob_sw):
+                port_num = p + port_offset
+                lines.append(f"      - id: i{port_num}")
+                lines.append(f"        slot: {port_num}")
+                lines.append(f"        label: port{port_num}")
+                lines.append(f"        type: physical")
+
+            for i in range(num_oob_sw):
+                oob_label = f"SWoob{i + 1}"
+                node_ids[oob_label] = f"n{nid}"; nid += 1
+                ox = -200 - (i + 1) * distance
+                lines.append(f"  - id: {node_ids[oob_label]}")
+                lines.append(f"    label: {oob_label}")
+                lines.append("    node_definition: unmanaged_switch")
+                if staging:
+                    lines.append(f"    priority: {STAGING_PRIORITY_EXT_CONN_OOB}")
+                lines.append("    hide_links: true")
+                lines.append(f"    x: {ox}")
+                lines.append(f"    y: {(i + 1) * distance}")
+                oob_if_count = 1 + oob_per_sw_counts[i]
+                lines.append("    interfaces:")
+                for p in range(oob_if_count):
+                    lines.append(f"      - id: i{p}")
+                    lines.append(f"        slot: {p}")
+                    lines.append(f"        label: port{p}")
+                    lines.append(f"        type: physical")
+
+        # --- Router nodes ---
+        for idx in range(total):
+            label = f"R{idx + 1}"
+            node_ids[label] = f"n{nid}"; nid += 1
+            x, y = node_coords[idx]
+            ifaces = node_ifaces[idx]
+            loopback = node_loopbacks[idx]
+
+            topo_ifaces = []
+            for iface in ifaces:
+                if iface.get("dns_link"):
+                    desc = f"to {DNS_HOST_NAME}"
+                else:
+                    desc = f"to R{iface['neighbor'] + 1}"
+                topo_ifaces.append(TopogenInterface(
+                    address=iface["address"],
+                    description=desc,
+                    slot=iface["slot"],
+                ))
+            topo_ifaces.sort(key=lambda xi: xi.slot)
+
+            node_obj = TopogenNode(
+                hostname=label,
+                loopback=loopback,
+                interfaces=topo_ifaces,
+            )
+
+            mgmt_ctx = None
+            if enable_mgmt:
+                mgmt_ctx = {
+                    "enabled": True,
+                    "slot": mgmt_slot,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                    "gw": getattr(args, "mgmt_gw", None),
+                }
+            ntp_ctx = None
+            if getattr(args, "ntp_server", None):
+                ntp_ctx = {
+                    "server": args.ntp_server,
+                    "vrf": getattr(args, "ntp_vrf", None),
+                }
+            ntp_oob_ctx = None
+            if getattr(args, "ntp_oob_server", None):
+                ntp_oob_ctx = {
+                    "server": args.ntp_oob_server,
+                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+                }
+
+            rendered = tpl.render(
+                config=cfg,
+                node=node_obj,
+                mgmt=mgmt_ctx,
+                ntp=ntp_ctx,
+                ntp_oob=ntp_oob_ctx,
+                archive=getattr(args, "archive", False),
+            )
+
+            lines.append(f"  - id: {node_ids[label]}")
+            lines.append(f"    label: {label}")
+            lines.append(f"    node_definition: {dev_def}")
+            lines.append(f"    x: {x}")
+            lines.append(f"    y: {y}")
+            lines.append("    interfaces:")
+            # i0 = Loopback0 (matches CML online export)
+            lines.append("      - id: i0")
+            lines.append("        label: Loopback0")
+            lines.append("        type: loopback")
+            for iface in ifaces:
+                s = iface["slot"]
+                iid = s + 1
+                if dev_def == "csr1000v":
+                    iface_label = f"GigabitEthernet{s + 1}"
+                else:
+                    iface_label = f"GigabitEthernet0/{s}"
+                lines.append(f"      - id: i{iid}")
+                lines.append(f"        slot: {s}")
+                lines.append(f"        label: {iface_label}")
+                lines.append(f"        type: physical")
+            if enable_mgmt:
+                if dev_def == "csr1000v":
+                    csr_slot = mgmt_slot - 1
+                    mgmt_iid = csr_slot + 1
+                    lines.append(f"      - id: i{mgmt_iid}")
+                    lines.append(f"        slot: {csr_slot}")
+                    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+                else:
+                    mgmt_iid = mgmt_slot + 1
+                    lines.append(f"      - id: i{mgmt_iid}")
+                    lines.append(f"        slot: {mgmt_slot}")
+                    lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
+                lines.append("        type: physical")
+            _emit_config(lines, rendered, getattr(args, "blank", False))
+
+        # --- Links section ---
+        lines.append("links:")
+        lid = 0
+
+        # ext-conn-0 ↔ dns-host (eth0)
+        lines.append(f"  - id: l{lid}"); lid += 1
+        lines.append(f"    n1: {node_ids[EXT_CON_NAME]}")
+        lines.append("    i1: i0")
+        lines.append(f"    n2: {node_ids[DNS_HOST_NAME]}")
+        lines.append("    i2: i0")
+
+        # dns-host (eth1) ↔ R1 (i2 = Gig0/1 = slot1, due to Loopback0 as i0)
+        lines.append(f"  - id: l{lid}"); lid += 1
+        lines.append(f"    n1: {node_ids[DNS_HOST_NAME]}")
+        lines.append("    i1: i1")
+        lines.append(f"    n2: {node_ids['R1']}")
+        lines.append("    i2: i2")
+
+        # Chain links: R1→R2, R2→R3, ..., R(n-1)→Rn
+        # i1=Gig0/0(slot0)=fwd, i2=Gig0/1(slot1)=bwd (shifted by 1 for Loopback0)
+        for src in range(total - 1):
+            dst = src + 1
+            lines.append(f"  - id: l{lid}")
+            lid += 1
+            lines.append(f"    n1: {node_ids[f'R{src + 1}']}")
+            lines.append("    i1: i1")
+            lines.append(f"    n2: {node_ids[f'R{dst + 1}']}")
+            lines.append("    i2: i2")
+
+        # OOB management links (if --mgmt)
+        if enable_mgmt:
+            mgmt_bridge = getattr(args, "mgmt_bridge", False)
+            if mgmt_bridge:
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['ext-conn-mgmt']}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append("    i2: i0")
+
+            port_offset = 1 if mgmt_bridge else 0
+            for i in range(num_oob_sw):
+                oob_acc = f"SWoob{i + 1}"
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[oob_acc]}")
+                lines.append("    i1: i0")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{i + port_offset}")
+
+            # +1 shift for Loopback0 at i0
+            router_mgmt_iface_id = (mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot) + 1
+            oob_per_sw_next_port = [1 for _ in range(num_oob_sw)]
+            for idx in range(total):
+                n = idx + 1
+                rlabel = f"R{n}"
+                oob_sw_index = idx // oob_group
+                oob_acc = f"SWoob{oob_sw_index + 1}"
+                oob_acc_port = oob_per_sw_next_port[oob_sw_index]
+                oob_per_sw_next_port[oob_sw_index] += 1
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids[rlabel]}")
+                lines.append(f"    i1: i{router_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids[oob_acc]}")
+                lines.append(f"    i2: i{oob_acc_port}")
+
+        # --- Write file ---
+        num_edges = total - 1
+        outfile = Path(getattr(args, "offline_yaml"))
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        if outfile.exists() and not getattr(args, "overwrite", False):
+            raise TopogenError(
+                f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
+            )
+        if outfile.exists() and getattr(args, "overwrite", False):
+            _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
+        lines = _intent_annotation_lines(desc, version) + lines
+        outfile.write_text("\n".join(lines), encoding="utf-8")
+        size_kb = outfile.stat().st_size / 1024
+        _LOGGER.warning(
+            "Offline YAML (simple, %d nodes, %d edges) written to %s (%.1f KB)",
+            total, num_edges, outfile, size_kb,
+        )
+        return 0
+
     def render_flat_network(self) -> int:
         """Render a flat L2 management network.
 
@@ -5042,26 +5977,41 @@ class Renderer:
         # Core switch in the middle
         core = self.create_node("SW0", "unmanaged_switch", Point(0, 0))
 
-        # OOB management switch (if --mgmt enabled)
+        # Two-tier OOB: SWoob0 (aggregation) + SWoob1..N (access, one per group)
         enable_mgmt = getattr(self.args, "enable_mgmt", False)
         mgmt_slot = getattr(self.args, "mgmt_slot", 5)
-        oob_switch = None
-        mgmt_ext_conn = None
+        oob_switches: list = []
+        oob_group = max(1, int(getattr(self.args, "flat_group_size", 20)))
         if enable_mgmt:
-            oob_switch = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
-            if hasattr(oob_switch, "hide_links"):
-                oob_switch.hide_links = True
+            num_oob_sw = math.ceil(total / oob_group)
+            distance = int(getattr(self.args, "distance", 200))
 
-            # Create external connector for management bridge (if --mgmt-bridge enabled)
             mgmt_bridge = getattr(self.args, "mgmt_bridge", False)
             if mgmt_bridge:
                 mgmt_ext_conn = self.create_node("ext-conn-mgmt", "external_connector", Point(-440, 0))
                 mgmt_ext_conn.configuration = "System Bridge"
+                _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
+
+            oob_agg = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
+            if hasattr(oob_agg, "hide_links"):
+                oob_agg.hide_links = True
+
+            if mgmt_bridge:
                 self.lab.create_link(
                     mgmt_ext_conn.get_interface_by_slot(0),
-                    oob_switch.get_interface_by_slot(0),
+                    self.new_interface(oob_agg),
                 )
-                _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
+                _LOGGER.warning("Creating mgmt ext-conn link")
+
+            for i in range(num_oob_sw):
+                ox = -200 - (i + 1) * distance
+                oy = (i + 1) * distance
+                acc = self.create_node(f"SWoob{i + 1}", "unmanaged_switch", Point(ox, oy))
+                if hasattr(acc, "hide_links"):
+                    acc.hide_links = True
+                self.lab.create_link(self.new_interface(acc), self.new_interface(oob_agg))
+                oob_switches.append(acc)
+                _LOGGER.warning("OOB access switch: %s", acc.label)
 
         # Create access switches positioned horizontally
         switches: list[Node] = []
@@ -5093,17 +6043,17 @@ class Renderer:
             self.lab.create_link(r_if, s_if)
             _LOGGER.info("link: %s Gi0/0 -> %s", cml_router.label, sw.label)
 
-            # Connect mgmt interface to OOB switch if enabled
-            if enable_mgmt and oob_switch is not None:
+            if enable_mgmt and oob_switches:
                 dev_def = getattr(self.args, "dev_template", self.args.template)
                 router_mgmt_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
                 try:
                     mgmt_if = cml_router.get_interface_by_slot(router_mgmt_slot)
                 except Exception:
                     mgmt_if = cml_router.create_interface(slot=router_mgmt_slot)
-                oob_if = self.new_interface(oob_switch)
+                sw_idx = idx // oob_group
+                oob_if = self.new_interface(oob_switches[sw_idx])
                 self.lab.create_link(mgmt_if, oob_if)
-                _LOGGER.info("mgmt-link: %s slot %d -> %s", cml_router.label, router_mgmt_slot, oob_switch.label)
+                _LOGGER.info("mgmt-link: %s slot %d -> %s", cml_router.label, router_mgmt_slot, oob_switches[sw_idx].label)
 
             # Deterministic addressing (1-based index encoded in last 16 bits)
             ridx = idx + 1
@@ -5184,17 +6134,16 @@ class Renderer:
             self.lab.create_link(ca_if, core_if)
             _LOGGER.info("CA link: %s Gi0/0 -> %s", ca_label, core.label)
 
-            # Connect CA to OOB switch if enabled
-            if enable_mgmt and oob_switch is not None:
+            if enable_mgmt and oob_switches:
                 dev_def = getattr(self.args, "dev_template", self.args.template)
                 ca_mgmt_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
                 try:
                     ca_mgmt_if = ca_router.get_interface_by_slot(ca_mgmt_slot)
                 except Exception:
                     ca_mgmt_if = ca_router.create_interface(slot=ca_mgmt_slot)
-                oob_ca_if = self.new_interface(oob_switch)
+                oob_ca_if = self.new_interface(oob_switches[0])
                 self.lab.create_link(ca_mgmt_if, oob_ca_if)
-                _LOGGER.info("CA mgmt-link: %s slot %d -> %s", ca_label, ca_mgmt_slot, oob_switch.label)
+                _LOGGER.info("CA mgmt-link: %s slot %d -> %s", ca_label, ca_mgmt_slot, oob_switches[0].label)
 
             # Assign last usable IP in the flat CIDR (e.g., 10.10.255.254/16)
             g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
@@ -5264,15 +6213,15 @@ class Renderer:
             self.lab.create_link(ks_if, core_ks_if)
             _LOGGER.info("KS link: %s Gi1 -> %s", ks_label, core.label)
 
-            if enable_mgmt and oob_switch is not None:
+            if enable_mgmt and oob_switches:
                 ks_mgmt_slot = mgmt_slot - 1
                 try:
                     ks_mgmt_if = ks_router.get_interface_by_slot(ks_mgmt_slot)
                 except Exception:
                     ks_mgmt_if = ks_router.create_interface(slot=ks_mgmt_slot)
-                oob_ks_if = self.new_interface(oob_switch)
+                oob_ks_if = self.new_interface(oob_switches[0])
                 self.lab.create_link(ks_mgmt_if, oob_ks_if)
-                _LOGGER.info("KS mgmt-link: %s slot %d -> %s", ks_label, ks_mgmt_slot, oob_switch.label)
+                _LOGGER.info("KS mgmt-link: %s slot %d -> %s", ks_label, ks_mgmt_slot, oob_switches[0].label)
 
             g_base = "10.0" if getattr(self.args, "gi0_zero", False) else "10.10"
             l_base = "10.255" if getattr(self.args, "loopback_255", False) else "10.20"
@@ -5417,30 +6366,42 @@ class Renderer:
         )
         _LOGGER.info("ext-conn link")
 
-        # OOB management network (if --mgmt enabled)
+        # Two-tier OOB: SWoob0 (aggregation) + SWoob1..N (access, one per group)
         enable_mgmt = getattr(self.args, "enable_mgmt", False)
         mgmt_slot = getattr(self.args, "mgmt_slot", 5)
-        oob_switch = None
-        mgmt_ext_conn = None
+        oob_switches: list = []
+        oob_group = max(1, int(getattr(self.args, "flat_group_size", 20)))
         if enable_mgmt:
-            # Create OOB management switch (use explicit coords to avoid spiral generator issues)
-            oob_switch = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
-            if hasattr(oob_switch, "hide_links"):
-                oob_switch.hide_links = True
-            _LOGGER.warning("OOB management switch: %s", oob_switch.label)
+            num_oob_sw = math.ceil(self.args.nodes / oob_group)
+            distance = int(getattr(self.args, "distance", 200))
 
-            # Create external connector for management bridge (if --mgmt-bridge enabled)
             mgmt_bridge = getattr(self.args, "mgmt_bridge", False)
             if mgmt_bridge:
                 mgmt_ext_conn = self.create_node("ext-conn-mgmt", "external_connector", Point(-440, 0))
                 mgmt_ext_conn.configuration = "System Bridge"
                 _LOGGER.warning("Management external connector: %s", mgmt_ext_conn.label)
-                # Link external connector to OOB switch
+
+            oob_agg = self.create_node("SWoob0", "unmanaged_switch", Point(-200, 0))
+            if hasattr(oob_agg, "hide_links"):
+                oob_agg.hide_links = True
+            _LOGGER.warning("OOB aggregation switch: %s", oob_agg.label)
+
+            if mgmt_bridge:
                 self.lab.create_link(
                     mgmt_ext_conn.get_interface_by_slot(0),
-                    oob_switch.get_interface_by_slot(0),
+                    self.new_interface(oob_agg),
                 )
                 _LOGGER.warning("Creating mgmt ext-conn link")
+
+            for i in range(num_oob_sw):
+                ox = -200 - (i + 1) * distance
+                oy = (i + 1) * distance
+                acc = self.create_node(f"SWoob{i + 1}", "unmanaged_switch", Point(ox, oy))
+                if hasattr(acc, "hide_links"):
+                    acc.hide_links = True
+                self.lab.create_link(self.new_interface(acc), self.new_interface(oob_agg))
+                oob_switches.append(acc)
+                _LOGGER.warning("OOB access switch: %s", acc.label)
 
         for idx in range(self.args.nodes):
             loopback = IPv4Interface(next(self.loopbacks))
@@ -5495,15 +6456,14 @@ class Renderer:
             _LOGGER.info("link %s", prev_cml2iface.label)
             prev_cml2iface = cml2_node.get_interface_by_slot(0)
 
-            # Connect mgmt interface to OOB switch if enabled
-            if enable_mgmt and oob_switch is not None:
+            if enable_mgmt and oob_switches:
                 dev_def = getattr(self.args, "dev_template", self.args.template)
                 router_mgmt_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
-                # Always create a new interface for management at the specified slot
                 mgmt_if = cml2_node.create_interface(slot=router_mgmt_slot)
-                oob_if = self.new_interface(oob_switch)
+                sw_idx = idx // oob_group
+                oob_if = self.new_interface(oob_switches[sw_idx])
                 self.lab.create_link(mgmt_if, oob_if)
-                _LOGGER.warning("mgmt-link: %s slot %d -> %s", cml2_node.label, router_mgmt_slot, oob_switch.label)
+                _LOGGER.warning("mgmt-link: %s slot %d -> %s", cml2_node.label, router_mgmt_slot, oob_switches[sw_idx].label)
             dns_zone.append(DNShost(node.hostname.lower(), loopback.ip))
             prev_iface = dst_iface
             if self.args.progress:
