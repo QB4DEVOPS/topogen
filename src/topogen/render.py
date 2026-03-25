@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.3
-# Date Modified: 2026-03-24
+# Doc Version: v1.2.4
+# Date Modified: 2026-03-25
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -651,6 +651,7 @@ def _inject_pki_client_trustpoint(
         "ip http secure-trustpoint CA-ROOT-SELF",
         "!",
         "alias configure authc crypto pki authenticate CA-ROOT-SELF",
+        "alias exec checkcert show crypto pki certificates CA-ROOT-SELF",
         "!",
     ]
     lines = rendered.splitlines()

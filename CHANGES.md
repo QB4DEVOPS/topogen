@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.33
-Date Modified: 2026-03-23
+Doc Version: v1.2.34
+Date Modified: 2026-03-25
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(pki): add `checkcert` alias to PKI client routers (TG-106)
+    - Adds `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to all PKI client routers so operators can quickly verify certificate enrollment status
+    - Mirrors the CA-ROOT `servcerts` alias pattern; injected via `_inject_pki_client_trustpoint()` alongside the existing `authc` alias
+    - Files: src/topogen/render.py (rev v1.2.3 → v1.2.4), CHANGES.md (rev v1.2.33 → v1.2.34), TODO.md (rev v1.6.39 → v1.6.40)
   - fix(pki): fix CA-ROOT boot order — CA server now starts before auto-enroll (TG-60)
     - Regression: `csr-pki-ca.jinja2` (online template) had `crypto pki trustpoint CA-ROOT-SELF` with `auto-enroll 70 regenerate` placed BEFORE `crypto pki server CA-ROOT / no shutdown`; CVAC applied config sequentially so auto-enroll fired before the CA server was running
     - Fix: reordered template to match offline assembly path — CA server starts first, then clock set (backdated 1 day), then key generation, then trustpoint with auto-enroll

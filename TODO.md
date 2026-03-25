@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.39
-Date Modified: 2026-03-24
+Doc Version: v1.6.40
+Date Modified: 2026-03-25
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -65,7 +65,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 - [x] **Fix CA-ROOT boot: CVAC rejects `ip http secure-trustpoint CA-ROOT-SELF`** — reordered `csr-pki-ca.jinja2` so CA server starts before trustpoint with auto-enroll; added CA-ROOT-AUTHENTICATE EEM applet; added `pki_clock_set` context to online render path (TG-60, see CHANGES.md).
 - [ ] **Fix next: CA-ROOT time EEM missing when lab created online** — offline flat/DMVPN/flat-pair get `_pki_ca_clock_eem_lines()`; online flat builds CA from csr-pki-ca.jinja2 only. Add CA clock EEM to online flat CA build in `render_flat_network()` (e.g. append `_pki_ca_clock_eem_lines()` before assigning `ca_router.configuration`).
 
-- [ ] **Add cert-check alias to PKI client routers** — add `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to client routers (similar to CA-ROOT's `alias exec servcerts`). Makes it easy to verify a client got its certificate from the CA.
+- [x] **Add cert-check alias to PKI client routers** — add `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to client routers (similar to CA-ROOT's `alias exec servcerts`). Makes it easy to verify a client got its certificate from the CA. (TG-106, done)
 
 **Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
 
