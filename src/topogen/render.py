@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.0
-# Date Modified: 2026-03-23
+# Doc Version: v1.2.3
+# Date Modified: 2026-03-24
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -581,15 +581,14 @@ def _pki_client_wait_for_ca_eem_lines() -> list[str]:
 
 
 def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url: str) -> list[str]:
-    """Return CA self-enrollment block lines (do clock set, then ip http secure-server, trustpoint CA-ROOT-SELF).
-    do clock set placed after crypto pki server CA-ROOT block and before CA-ROOT-SELF key/trustpoint (working order)."""
+    """Return CA self-enrollment block lines for CA-ROOT-SELF trustpoint.
+
+    Order: clock set → key generation → trustpoint definition → ip http trustpoint.
+    The trustpoint must exist before 'ip http secure-trustpoint' references it."""
     fqdn = f"{hostname}.{domainname}"
     return [
         "!",
         f"do clock set {_pki_clock_set_today(backdate_days=1)}",
-        "!",
-        "ip http secure-server",
-        "ip http secure-server trustpoint CA-ROOT-SELF",
         "!",
         "crypto key generate rsa modulus 2048 label CA-ROOT-SELF",
         "!",
@@ -602,6 +601,9 @@ def _pki_ca_self_enroll_block_lines(hostname: str, domainname: str, ca_scep_url:
         f" subject-alt-name {fqdn}",
         " revocation-check none",
         " rsakeypair CA-ROOT-SELF",
+        "!",
+        "ip http secure-server",
+        "ip http secure-trustpoint CA-ROOT-SELF",
         "!",
     ]
 
@@ -633,9 +635,6 @@ def _inject_pki_client_trustpoint(
         "!",
         f"do clock set {_pki_clock_set_today()}",
         "!",
-        "ip http secure-server",
-        "ip http secure-server trustpoint CA-ROOT-SELF",
-        "!",
         f"crypto key generate rsa modulus 2048 label {key_label}",
         "!",
         "crypto pki trustpoint CA-ROOT-SELF",
@@ -647,6 +646,9 @@ def _inject_pki_client_trustpoint(
         f" subject-name cn={fqdn}",
         f" subject-alt-name {fqdn}",
         " auto-enroll 70 regenerate",
+        "!",
+        "ip http secure-server",
+        "ip http secure-trustpoint CA-ROOT-SELF",
         "!",
         "alias configure authc crypto pki authenticate CA-ROOT-SELF",
         "!",
@@ -2539,8 +2541,6 @@ class Renderer:
                 "ntp master 6",
                 "!",
                 "ip http server",
-                "ip http secure-server",
-                "ip http secure-server trustpoint CA-ROOT-SELF",
                 "!",
                 "crypto pki server CA-ROOT",
                 " database level complete",
@@ -3341,8 +3341,6 @@ class Renderer:
                 "ntp master 6",
                 "!",
                 "ip http server",
-                "ip http secure-server",
-                "ip http secure-server trustpoint CA-ROOT-SELF",
                 "!",
                 "crypto pki server CA-ROOT",
                 " database level complete",
@@ -4093,8 +4091,6 @@ class Renderer:
                 "ntp master 6",
                 "!",
                 "ip http server",
-                "ip http secure-server",
-                "ip http secure-server trustpoint CA-ROOT-SELF",
                 "!",
                 "crypto pki server CA-ROOT",
                 " database level complete",
@@ -4812,8 +4808,6 @@ class Renderer:
                 "ntp master 6",
                 "!",
                 "ip http server",
-                "ip http secure-server",
-                "ip http secure-server trustpoint CA-ROOT-SELF",
                 "!",
                 "crypto pki server CA-ROOT",
                 " database level complete",
@@ -6195,8 +6189,10 @@ class Renderer:
                 mgmt=ca_mgmt_ctx,
                 ntp=ca_ntp_ctx,
                 ntp_oob=ca_ntp_oob_ctx,
-                pki_ca_key="",  # Empty for now; will be filled once key is exported
-                pki_enrollment_url=str(ca_g_addr.ip),  # CA's own data interface IP
+                pki_ca_key="",
+                pki_enrollment_url=str(ca_g_addr.ip),
+                pki_clock_set=_pki_clock_set_today(backdate_days=1),
+                archive=getattr(self.args, "archive", False),
             )
             ca_router.configuration = ca_config  # type: ignore[method-assign]
             _LOGGER.warning("PKI Root CA created: %s at %s", ca_label, ca_g_addr.ip)

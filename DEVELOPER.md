@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.14
-Date Modified: 2026-03-23
+Doc Version: v1.7.15
+Date Modified: 2026-03-24
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -535,7 +535,17 @@ Unless a task explicitly requires otherwise:
 
 - **Verify every change:** After making any code or config change, **grep** (or `Select-String`) the modified file(s) and/or generated output to confirm the change is present before reporting done. Do not consider a task complete until verification is done.
 
+- **Shell syntax:** This repo is developed on Windows with PowerShell. **Bash heredoc (`<<'EOF'`) does not work in PowerShell.** Use PowerShell here-strings instead:
 
+  ```powershell
+  $msg = @"
+  First line
+  Second line
+  "@
+  git commit -m $msg
+  ```
+
+  Do not attempt bash heredoc syntax. It will fail every time.
 
 ## Common tasks -> file chain (LLM-friendly)
 
@@ -1006,7 +1016,7 @@ Jinja2:
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.2.0
+- **Doc Version:** v1.2.2
 
 - **Called by**
 

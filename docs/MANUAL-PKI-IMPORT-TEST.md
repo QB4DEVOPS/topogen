@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.7
-Date Modified: 2026-02-21
+Doc Version: v1.0.8
+Date Modified: 2026-03-24
 
 - Called by: Developers and users testing manual PKI import (PEM terminal) on IOS/IOS-XE
 - Reads from: PKI.md, tools/gen_pki_openssl.ps1, tools/gen_pki_openssl.sh, tools/gen_pki_manual_test.py
@@ -278,7 +278,7 @@ crypto pki server CA-ROOT
  shutdown
 !
 ip http secure-server
-ip http secure-server trustpoint CA-ROOT-SELF
+ip http secure-trustpoint CA-ROOT-SELF
 !
 crypto pki trustpoint CA-ROOT-SELF
  enrollment terminal

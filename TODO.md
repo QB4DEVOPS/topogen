@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.36
-Date Modified: 2026-03-23
+Doc Version: v1.6.39
+Date Modified: 2026-03-24
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -62,8 +62,10 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 **Work items** (details in Promote to Issues):
 
 - [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block** — indent `end` actions in CA-ROOT-SET-CLOCK and CLIENT-PKI-SET-CLOCK so parser associates them with the correct if block (`_pki_ca_clock_eem_lines`, `_pki_client_clock_eem_lines` in render.py).
-- [ ] **Fix CA-ROOT boot: CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`** — reorder config so trustpoint (and key/self-enroll) exist before `ip http secure-server` / `ip http secure-server trustpoint` in all CA and client PKI blocks; remove duplicates from inline pki_config_lines.
+- [x] **Fix CA-ROOT boot: CVAC rejects `ip http secure-trustpoint CA-ROOT-SELF`** — reordered `csr-pki-ca.jinja2` so CA server starts before trustpoint with auto-enroll; added CA-ROOT-AUTHENTICATE EEM applet; added `pki_clock_set` context to online render path (TG-60, see CHANGES.md).
 - [ ] **Fix next: CA-ROOT time EEM missing when lab created online** — offline flat/DMVPN/flat-pair get `_pki_ca_clock_eem_lines()`; online flat builds CA from csr-pki-ca.jinja2 only. Add CA clock EEM to online flat CA build in `render_flat_network()` (e.g. append `_pki_ca_clock_eem_lines()` before assigning `ca_router.configuration`).
+
+- [ ] **Add cert-check alias to PKI client routers** — add `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to client routers (similar to CA-ROOT's `alias exec servcerts`). Makes it easy to verify a client got its certificate from the CA.
 
 **Related:** EEM scripts (PKI) table above (CLIENT-PKI-AUTHENTICATE, CLIENT-PKI-ENROLL, etc.). **Future:** `--pki-ca-fingerprint` (Future ideas) for non-interactive CA auth and auto-enroll at scale.
 
@@ -80,13 +82,17 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [ ] **Fix CA-ROOT boot: EEM "end" action outside conditional block.** Observed: `%HA_EM-6-FMPD_EEM_CONFIG: CA-ROOT-SET-CLOCK: "end" action found outside of conditional block`. EEM applet CA-ROOT-SET-CLOCK (and client CLIENT-PKI-SET-CLOCK) use `action X.Y end` to close if blocks; on some IOS-XE versions the parser reports "end" outside conditional. Fix: ensure `end` actions are indented so the parser associates them with the correct if block (e.g. ` action 1.10 end` → `  action 1.10 end` for CA-ROOT; client has ` action 1.99 end`). See render.py `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()`.
 
-- [ ] **Fix CA-ROOT boot: CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`.** Observed: `%CVAC-4-CLI_FAILURE: Configuration command failure: 'ip http secure-server trustpoint CA-ROOT-SELF' was rejected` (twice). Consequence: "Failed to generate persistent self-signed certificate. Secure server will use temporary self-signed certificate." Cause: config is applied in order; the trustpoint CA-ROOT-SELF does not exist yet when `ip http secure-server trustpoint CA-ROOT-SELF` is applied. Fix: reorder so `crypto key generate rsa ... CA-ROOT-SELF` and `crypto pki trustpoint CA-ROOT-SELF` (and subcommands) appear before `ip http secure-server` and `ip http secure-server trustpoint CA-ROOT-SELF` in all CA and client PKI blocks. Remove duplicate `ip http secure-server` / `ip http secure-server trustpoint` from inline pki_config_lines in render.py (they should only come from _pki_ca_self_enroll_block_lines / client block after trustpoint is defined).
+- [x] ~~**Fix CA-ROOT boot: CVAC rejects `ip http secure-trustpoint CA-ROOT-SELF`.**~~ Fixed — reordered `csr-pki-ca.jinja2` so CA server starts before trustpoint with auto-enroll; added CA-ROOT-AUTHENTICATE EEM applet to online template; added `pki_clock_set` context variable. See CHANGES.md TG-60 entry.
 
 - [ ] Online lab creation: show lab definition size (X.X KB) when upload succeeds
   - Current: render_flat_network() calls export_lab() after "Flat management network created"; if content is None we log "Lab created - uploaded to controller" (no size). When export_lab returns data we log "Lab created (%.1f KB) - uploaded to controller".
   - Observed: online flat run showed "Lab created - uploaded to controller" (no size), so export_lab returned None or failed. Investigate virl2_client export_lab behavior so size is shown for online create (same UX as offline YAML file size).
 
 - [ ] **Fix next:** CA-ROOT time EEM (CA-ROOT-SET-CLOCK) missing when lab is created online. Offline flat/DMVPN/flat-pair inject _pki_ca_clock_eem_lines() into CA config; online flat builds CA from csr-pki-ca.jinja2 only (no EEM). User expects PKI/clock behavior to work the same whether lab is created offline or online. Add CA clock EEM to online flat CA build in render_flat_network() (e.g. append _pki_ca_clock_eem_lines() before assigning ca_router.configuration).
+
+- [ ] **Fix: `do clock set` must come before CA server starts and before first key generation.** Currently both online (`csr-pki-ca.jinja2`) and offline (`_pki_ca_self_enroll_block_lines` in render.py) place `do clock set` AFTER `crypto pki server CA-ROOT / no shutdown`. The CA root certificate is generated when the server starts with `no shutdown`, so its `notBefore` uses whatever clock the device had at boot (often wrong). Fix: move `do clock set` (backdated 1 day) to before `crypto key generate rsa modulus 2048 label CA-ROOT.server` in the template, and before `pki_config_lines` in the offline assembly. Affects both `csr-pki-ca.jinja2` and all four offline assembly sites in `render.py` that use `pki_config_lines` + `_pki_ca_self_enroll_block_lines`.
+
+- [ ] **Fix: Online lab creation missing notes and off-canvas annotation.** Offline YAML embeds intent/metadata in three places: `description`, `notes` (hidden span), and an off-canvas annotation at x=-9999 y=-9999 with the full CLI args. Online mode only sets `description`; `notes` and annotation are never emitted. Add notes and off-canvas annotation to online lab creation in `render_flat_network()` (and other online renderers) so online and offline labs have the same metadata for CI/CD grep and reproducibility.
 
 - [x] ~~**Feature: CML 2.10 node staging (`--staging`) for PKI boot ordering.**~~ Implemented. See `CHANGES.md` Unreleased entry.
 

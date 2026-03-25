@@ -8,8 +8,8 @@
 #            Future TODO: Support IOSv if PKI server works on IOSv platform.
 #
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.1
-# Date Modified: 2026-03-14
+# Doc Version: v1.3.4
+# Date Modified: 2026-03-24
 #
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, pki_enabled)
@@ -176,8 +176,6 @@ ntp server vrf {{ ntp_oob.vrf }} {{ ntp_oob.server }}
 ntp master 6
 !
 ip http server
-ip http secure-server
-ip http secure-server trustpoint CA-ROOT-SELF
 !
 crypto pki server CA-ROOT
  database level complete
@@ -187,6 +185,25 @@ crypto pki server CA-ROOT
  lifetime ca-certificate 7300
  database url flash:
  no shutdown
+!
+do clock set {{ pki_clock_set }}
+!
+crypto key generate rsa modulus 2048 label CA-ROOT-SELF
+!
+crypto pki trustpoint CA-ROOT-SELF
+ enrollment url http://{{ pki_enrollment_url }}:80
+ enrollment retry count 15
+ enrollment retry period 60
+ auto-enroll 70 regenerate
+ subject-name cn={{ node.hostname }}.{{ config.domainname }}
+ subject-alt-name {{ node.hostname }}.{{ config.domainname }}
+ revocation-check none
+ rsakeypair CA-ROOT-SELF
+!
+ip http secure-server
+ip http secure-trustpoint CA-ROOT-SELF
+!
+alias exec servcerts sh crypto pki server CA-ROOT cer
 !
 {%- if archive %}
 archive
@@ -201,8 +218,6 @@ archive
 alias exec rundiff show archive config differences system:running-config
 !
 {%- endif %}
-alias exec servcerts sh crypto pki server CA-ROOT cer
-!
 line vty 0 4
     transport input ssh telnet
     exec-timeout 0 0
@@ -230,5 +245,26 @@ event manager applet TOPOGEN-NOSHUT authorization bypass
  action {{ ns_eem.n }}.0 cli command "end"
 {%- set ns_eem.n = ns_eem.n + 1 %}
  action {{ ns_eem.n }}.0 syslog msg "TOPOGEN-NOSHUT: interfaces initialized"
+!
+event manager applet CA-ROOT-AUTHENTICATE authorization bypass
+ event syslog pattern "Certificate server now enabled"
+ action 0.1 cli command "enable"
+ action 0.2 cli command "terminal length 0"
+ action 0.3 cli command "show crypto pki certificates CA-ROOT-SELF"
+ action 0.4 regexp "CA Certificate" "$_cli_result" match
+ action 0.5 if $_regexp_result eq "1"
+  action 0.6  exit
+  action 0.7 end
+ action 0.8 cli command "configure terminal"
+ action 0.9 cli command "crypto pki authenticate CA-ROOT-SELF" pattern "yes/no"
+ action 0.91 wait 2
+ action 0.92 cli command "yes" pattern ".*"
+ action 0.93 cli command " "
+ action 0.94 cli command "end"
+ action 0.95 cli command "write memory"
+ action 0.96 cli command "configure terminal"
+ action 0.97 cli command "no event manager applet CA-ROOT-AUTHENTICATE"
+ action 0.98 cli command "end"
+ action 0.99 cli command "write memory"
 !
 end

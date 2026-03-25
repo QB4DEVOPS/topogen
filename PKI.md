@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.1
-Date Modified: 2026-02-20
+Doc Version: v1.0.2
+Date Modified: 2026-03-24
 
 - Called by: Users and developers using or troubleshooting TopoGen PKI (--pki, DMVPN IKEv2 PKI)
 - Reads from: README.md, TODO.md, CHANGES.md, examples/eem-*.txt, render.py PKI helpers
@@ -39,7 +39,7 @@ CA IP is derived from the NBMA/addressing (e.g. last usable in NBMA CIDR). See [
 - **CA-ROOT**: Node definition is CSR1000v; template `csr-pki-ca.jinja2`. Connects to the NBMA (and OOB switch if `--mgmt`). Self-signed trustpoint **CA-ROOT-SELF**; PKI server enabled; EEM **CA-ROOT-SET-CLOCK** sets clock so the CA cert is valid.
 - **Clients**: Each non-CA router gets `crypto pki trustpoint CA-ROOT-SELF` (and related config) injected by `render.py`; IKEv2 profile references the same trustpoint when using `--dmvpn-security ikev2-pki`. EEM applets **CLIENT-PKI-SET-CLOCK**, **CLIENT-PKI-AUTHENTICATE**, **CLIENT-PKI-ENROLL**, etc. run on clients to set clock and attempt authenticate/enroll.
 
-Trustpoint and IKEv2/crypto blocks must be ordered so the trustpoint is defined before any reference (e.g. `ip http secure-server trustpoint`, IKEv2 profile). See [Known issues and fixes](#known-issues-and-fixes) below.
+Trustpoint and IKEv2/crypto blocks must be ordered so the trustpoint is defined before any reference (e.g. `ip http secure-trustpoint`, IKEv2 profile). See [Known issues and fixes](#known-issues-and-fixes) below.
 
 ## EEM applets (PKI)
 
@@ -62,8 +62,8 @@ Goal: **auto-deploy PKI/certs** — CA and clients deploy and enroll without man
 1. **EEM "end" action outside conditional block**  
    On some IOS-XE versions, CA-ROOT-SET-CLOCK and CLIENT-PKI-SET-CLOCK report `"end" action found outside of conditional block`. Fix: indent `action X.Y end` so the parser associates `end` with the correct if block. See `_pki_ca_clock_eem_lines()` and `_pki_client_clock_eem_lines()` in `render.py`.
 
-2. **CVAC rejects `ip http secure-server trustpoint CA-ROOT-SELF`**  
-   The trustpoint must exist before `ip http secure-server trustpoint CA-ROOT-SELF`. Fix: reorder so `crypto key generate rsa` and `crypto pki trustpoint CA-ROOT-SELF` (and subcommands) appear before `ip http secure-server` / `ip http secure-server trustpoint` in all CA and client PKI blocks; remove duplicate `ip http secure-server` from inline pki_config_lines.
+2. **CVAC rejects `ip http secure-trustpoint CA-ROOT-SELF`**  
+   Root cause: wrong command syntax — IOS/IOS-XE uses `ip http secure-trustpoint`, not `ip http secure-server trustpoint`. Also reorder so `crypto key generate rsa` and `crypto pki trustpoint CA-ROOT-SELF` (and subcommands) appear before `ip http secure-trustpoint` in all CA and client PKI blocks; remove duplicate lines from inline pki_config_lines.
 
 3. **CA-ROOT time EEM missing when lab is created online**  
    Offline flat/DMVPN/flat-pair get `_pki_ca_clock_eem_lines()` in the CA config; **online flat** builds CA from `csr-pki-ca.jinja2` only (no EEM). Fix: add CA clock EEM to the online flat CA build in `render_flat_network()` (e.g. append `_pki_ca_clock_eem_lines()` before assigning `ca_router.configuration`).
@@ -90,23 +90,23 @@ Also ensure any other `end` that closes an `if` in that applet uses two leading 
 
 Same for any `end` closing an `if` in the client clock applet. In CLIENT-PKI-AUTHENTICATE, ` action 1.8  end` and similar: use two spaces before `action` for the line that closes the `if` block.
 
-### Fix 2: Trustpoint before `ip http secure-server trustpoint` (CVAC order)
+### Fix 2: Correct command syntax and ordering for `ip http secure-trustpoint` (CVAC)
 
-The trustpoint and RSA key must exist before `ip http secure-server trustpoint CA-ROOT-SELF`. Reorder blocks so key + trustpoint come first, then HTTP.
+The correct IOS/IOS-XE command is `ip http secure-trustpoint` (not `ip http secure-server trustpoint`). The trustpoint and RSA key must also exist before the reference. Reorder blocks so key + trustpoint come first, then HTTP.
 
-**CA self-enroll block** (`_pki_ca_self_enroll_block_lines()`). Current (wrong) order:
+**CA self-enroll block** (`_pki_ca_self_enroll_block_lines()`). Current (wrong) order and syntax:
 
 ```
 do clock set ...
 ip http secure-server
-ip http secure-server trustpoint CA-ROOT-SELF
+ip http secure-server trustpoint CA-ROOT-SELF   ← wrong command
 crypto key generate rsa ...
 crypto pki trustpoint CA-ROOT-SELF
   enrollment url ...
   ...
 ```
 
-**Target (correct) order:**
+**Target (correct) order and syntax:**
 
 ```
 do clock set ...
@@ -116,10 +116,10 @@ crypto pki trustpoint CA-ROOT-SELF
   rsakeypair CA-ROOT-SELF
   ...
 ip http secure-server
-ip http secure-server trustpoint CA-ROOT-SELF
+ip http secure-trustpoint CA-ROOT-SELF           ← correct command
 ```
 
-Apply the same order in any inline CA or client PKI block that emits `ip http secure-server trustpoint` (e.g. `_inject_pki_client_trustpoint` trustpoint_block, and any pki_config_lines in render.py that contain that line). Remove duplicate `ip http secure-server` / `ip http secure-server trustpoint` so they appear only once, after the trustpoint is defined.
+Apply the same order and syntax in any inline CA or client PKI block that emits `ip http secure-trustpoint` (e.g. `_inject_pki_client_trustpoint` trustpoint_block, and any pki_config_lines in render.py that contain that line). Remove duplicate lines so they appear only once, after the trustpoint is defined.
 
 ### Fix 3: Online flat — inject CA clock EEM before assigning CA config
 
