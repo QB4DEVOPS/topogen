@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.40
+Doc Version: v1.6.41
 Date Modified: 2026-03-25
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -133,6 +133,16 @@ Recent completions:
 - [x] `--blank` flag: topology-only labs with empty configuration on all router nodes; enables CML Bootstrap Lab. Works offline and online for simple, nx, flat, and flat-pair modes. Not supported with DMVPN, `--pki`, `--getvpn`, or config-only flags (`--ntp`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf`). See CHANGES.md.
 
 ## Future ideas
+
+- [ ] **TG-109: New feature: FlexVPN** — add FlexVPN (IKEv2-native) hub-and-spoke overlay support
+  - FlexVPN is the IKEv2-native replacement for DMVPN (no GRE/NHRP, pure IKEv2 + IPsec with virtual-template and route injection via IKEv2 routing or BGP)
+  - **Not a new mode** — reuses existing underlay topologies (flat, flat-pair via `--mode dmvpn --dmvpn-underlay`). Only the overlay config changes (IKEv2 virtual-template instead of GRE/NHRP Tunnel0). All existing underlay, addressing, PKI, NTP, mgmt infrastructure is shared.
+  - Approach: new flag on the existing DMVPN mode, e.g. `--dmvpn-type {dmvpn,flexvpn}` or `--vpn-type {dmvpn,flexvpn}`, selecting which overlay to render
+  - New templates: `csr-flexvpn` (IOS-XE required; IOSv support is limited)
+  - Server/client model: hub = FlexVPN server (virtual-template), spokes = FlexVPN clients
+  - Auth: PSK and/or PKI (reuse existing `--pki` and `--dmvpn-security` for cert-based)
+  - Blast radius: main.py (new flag), render.py (overlay config selection), new templates, README.md, CHANGES.md
+  - Related: CNSA 2.0 readiness — FlexVPN is the recommended IKEv2 VPN architecture for post-quantum migration
 
 - [ ] Add `--clock-set` to opt-in to `do clock set` in PKI configs; default to not using `do` command for time
   - Why: Today PKI injects `do clock set ...` so the clock is authoritative and PKI comes up quickly. Some users prefer NTP or external automation to set time and do not want TopoGen to inject clock-set.
