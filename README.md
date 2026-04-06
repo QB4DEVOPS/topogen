@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.6
-Date Modified: 2026-03-22
+Doc Version: v1.5.7
+Date Modified: 2026-03-25
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -187,7 +187,9 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--dmvpn-tunnel-key DMVPN_TUNNEL_KEY] [--dmvpn-hubs DMVPN_HUBS]
                [--flat-group-size FLAT_GROUP_SIZE] [--loopback-255]
                [--gi0-zero] [--vrf] [--pair-vrf PAIR_VRF]
-               [--dmvpn-fvrf DMVPN_FVRF] [--mgmt] [--mgmt-cidr MGMT_CIDR]
+               [--dmvpn-fvrf DMVPN_FVRF]
+               [--dmvpn-ipsec-mode {transport,tunnel}]
+               [--mgmt] [--mgmt-cidr MGMT_CIDR]
                [--mgmt-gw MGMT_GW] [--mgmt-slot MGMT_SLOT]
                [--mgmt-vrf MGMT_VRF] [--mgmt-bridge] [--ntp NTP_SERVER]
                [--ntp-vrf NTP_VRF] [--ntp-inband] [--ntp-oob NTP_OOB_SERVER]
@@ -272,6 +274,9 @@ options:
                         the named transport VRF (e.g. INTERNET). Adds tunnel
                         vrf, match fvrf to IKEv2, and ip tcp adjust-mss 1360
                         on Tunnel0.
+  --dmvpn-ipsec-mode {transport,tunnel}
+                        DMVPN IPsec transform-set mode: transport (default,
+                        recommended for GRE) or tunnel, default "transport"
   --mgmt                Enable a dedicated OOB management network (SWmgmt0 +
                         router mgmt interfaces)
   --mgmt-cidr MGMT_CIDR
@@ -422,7 +427,7 @@ graph TD
   - Optional: set `--dmvpn-tunnel-key` to configure a GRE tunnel key (default: 10).
   - Optional: set `--dmvpn-security ikev2-psk` to protect DMVPN with IKEv2+PSK.
     - Requires `--dmvpn-psk <key>`.
-    - Uses IPsec transport mode with `tunnel protection ipsec profile ...` on `Tunnel0`.
+    - Uses IPsec transport mode by default with `tunnel protection ipsec profile ...` on `Tunnel0`. Use `--dmvpn-ipsec-mode tunnel` to switch to tunnel mode.
     - **Important:** if you set `--dmvpn-security ikev2-psk` but omit `--dmvpn-psk`, TopoGen exits with an error.
   - Optional: set `--dmvpn-security ikev2-pki` to protect DMVPN with IKEv2 and certificate-based auth (PKI).
     - Requires `--pki` (adds CA-ROOT and injects trustpoint CA-ROOT-SELF on non-CA routers).

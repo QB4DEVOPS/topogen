@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.0
-# Date Modified: 2026-02-26
+# Doc Version: v1.4.1
+# Date Modified: 2026-03-25
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, dmvpn settings, feature flags: mgmt, ntp, pki)
@@ -67,7 +67,7 @@ crypto ikev2 profile TOPGEN-IKEV2
  keyring local TOPGEN-KR
 !
 crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
- mode transport
+ mode {{ ipsec_mode|default("transport") }}
 !
 crypto ipsec profile TOPGEN-IPSEC
  set transform-set TOPGEN-TS
@@ -97,7 +97,7 @@ crypto ikev2 profile TOPGEN-IKEV2
  pki trustpoint {{ dmvpn_trustpoint }}
 !
 crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
- mode transport
+ mode {{ ipsec_mode|default("transport") }}
 !
 crypto ipsec profile TOPGEN-IPSEC
  set transform-set TOPGEN-TS
@@ -127,7 +127,7 @@ crypto ikev2 profile TOPGEN-IKEV2
  pki trustpoint {{ dmvpn_trustpoint }}
 !
 crypto ipsec transform-set TOPGEN-TS esp-aes 256 esp-sha256-hmac
- mode transport
+ mode {{ ipsec_mode|default("transport") }}
 !
 crypto ipsec profile TOPGEN-IPSEC
  set transform-set TOPGEN-TS

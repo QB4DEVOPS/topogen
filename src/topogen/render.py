@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.4
+# Doc Version: v1.2.5
 # Date Modified: 2026-03-25
 #
 # - Called by: src/topogen/main.py
@@ -1536,6 +1536,7 @@ class Renderer:
                     dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                     dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                    ipsec_mode=getattr(self.args, "dmvpn_ipsec_mode", "transport"),
                     archive=getattr(self.args, "archive", False),
                 )
                 if getattr(self.args, "pki_enabled", False):
@@ -1741,6 +1742,7 @@ class Renderer:
                 dmvpn_security=getattr(self.args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(self.args, "dmvpn_psk", None),
                 dmvpn_trustpoint=getattr(self.args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                ipsec_mode=getattr(self.args, "dmvpn_ipsec_mode", "transport"),
                 archive=getattr(self.args, "archive", False),
             )
             if getattr(self.args, "pki_enabled", False):
@@ -2036,6 +2038,7 @@ class Renderer:
         args_bits.append(f"--dmvpn-phase {getattr(args, 'dmvpn_phase', 2)}")
         args_bits.append(f"--dmvpn-routing {getattr(args, 'dmvpn_routing', 'eigrp')}")
         args_bits.append(f"--dmvpn-security {getattr(args, 'dmvpn_security', 'none')}")
+        args_bits.append(f"--dmvpn-ipsec-mode {getattr(args, 'dmvpn_ipsec_mode', 'transport')}")
         args_bits.append(f"--dmvpn-nbma-cidr {nbma_net}")
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
         if hubs_list:
@@ -2366,6 +2369,7 @@ class Renderer:
                 dmvpn_security=getattr(args, "dmvpn_security", "none"),
                 dmvpn_psk=getattr(args, "dmvpn_psk", None),
                 dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                ipsec_mode=getattr(args, "dmvpn_ipsec_mode", "transport"),
                 mgmt=mgmt_ctx,
                 ntp=ntp_ctx,
                 ntp_oob=ntp_oob_ctx,
@@ -2855,6 +2859,7 @@ class Renderer:
         if stub_evens:
             args_bits.append("--eigrp-stub")
         args_bits.append(f"--dmvpn-security {getattr(args, 'dmvpn_security', 'none')}")
+        args_bits.append(f"--dmvpn-ipsec-mode {getattr(args, 'dmvpn_ipsec_mode', 'transport')}")
         args_bits.append(f"--dmvpn-nbma-cidr {nbma_net}")
         args_bits.append(f"--dmvpn-tunnel-cidr {tunnel_net}")
         if hubs_list:
@@ -3138,6 +3143,7 @@ class Renderer:
                     dmvpn_security=getattr(args, "dmvpn_security", "none"),
                     dmvpn_psk=getattr(args, "dmvpn_psk", None),
                     dmvpn_trustpoint=getattr(args, "dmvpn_trustpoint", "CA-ROOT-SELF"),
+                    ipsec_mode=getattr(args, "dmvpn_ipsec_mode", "transport"),
                     mgmt=mgmt_ctx,
                     ntp=ntp_ctx,
                     ntp_oob=ntp_oob_ctx,

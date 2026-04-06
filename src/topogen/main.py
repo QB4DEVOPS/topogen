@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.7
-# Date Modified: 2026-03-22
+# Doc Version: v1.3.8
+# Date Modified: 2026-03-25
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -338,6 +338,14 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         type=str,
         default=None,
         help='Enable Front Door VRF: place the NBMA interface into the named transport VRF (e.g. INTERNET). Adds tunnel vrf, match fvrf to IKEv2, and ip tcp adjust-mss 1360 on Tunnel0.',
+    )
+    parser.add_argument(
+        "--dmvpn-ipsec-mode",
+        dest="dmvpn_ipsec_mode",
+        type=str,
+        choices=("transport", "tunnel"),
+        default="transport",
+        help='DMVPN IPsec transform-set mode: transport (default, recommended for GRE) or tunnel, default "%(default)s"',
     )
     parser.add_argument(
         "--mgmt",

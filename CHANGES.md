@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.34
+Doc Version: v1.2.35
 Date Modified: 2026-03-25
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,11 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(dmvpn): add `--dmvpn-ipsec-mode` flag for transport/tunnel mode selection (TG-110)
+    - Adds `--dmvpn-ipsec-mode {transport,tunnel}` CLI flag (default: transport) to control the IPsec transform-set mode in DMVPN configurations
+    - Previously `mode transport` was hardcoded; some Cisco reference designs use `mode tunnel`
+    - Existing labs are unchanged (transport is the default)
+    - Files: src/topogen/main.py (rev v1.3.7 → v1.3.8), src/topogen/render.py (rev v1.2.4 → v1.2.5), src/topogen/templates/csr-dmvpn.jinja2 (rev v1.4.0 → v1.4.1), src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.2.0 → v1.2.1), README.md (rev v1.5.6 → v1.5.7), CHANGES.md (rev v1.2.34 → v1.2.35), TODO.md (rev v1.6.41 → v1.6.42)
   - feat(pki): add `checkcert` alias to PKI client routers (TG-106)
     - Adds `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to all PKI client routers so operators can quickly verify certificate enrollment status
     - Mirrors the CA-ROOT `servcerts` alias pattern; injected via `_inject_pki_client_trustpoint()` alongside the existing `authc` alias
