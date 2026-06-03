@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.10
+# Doc Version: v1.2.11
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/main.py
@@ -244,6 +244,26 @@ def _nac_restconf_lines() -> list[str]:
         "restconf",
         "netconf-yang",
     ]
+
+
+def _append_nac_mgmt_interface(node: TopogenNode, args: Namespace, router_index: int) -> None:
+    """Expose the CML-only OOB management interface to the NaC data model."""
+    if not getattr(args, "enable_mgmt", False):
+        return
+    mgmt_net = IPv4Network(str(getattr(args, "mgmt_cidr", "10.254.0.0/16")), strict=False)
+    mgmt_slot = int(getattr(args, "mgmt_slot", 5))
+    dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
+    model_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+    node.interfaces.append(
+        TopogenInterface(
+            address=IPv4Interface(
+                f"{mgmt_net.network_address + router_index}/{mgmt_net.prefixlen}"
+            ),
+            vrf=getattr(args, "mgmt_vrf", None),
+            description="OOB Management",
+            slot=model_slot,
+        )
+    )
 
 
 def _inject_nac_restconf_day0(rendered: str) -> str:
@@ -3919,6 +3939,7 @@ class Renderer:
                     )
                 ],
             )
+            _append_nac_mgmt_interface(node, args, n)
             nac_router_nodes.append(node)
             # Build mgmt context for template
             mgmt_ctx = None
@@ -4360,6 +4381,7 @@ class Renderer:
                 device_template=dev_def,
                 template=args.template,
                 mode=args.mode,
+                args=args,
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
@@ -4673,6 +4695,7 @@ class Renderer:
                 loopback=IPv4Interface(f"{l_ip}/32"),
                 interfaces=ifaces,
             )
+            _append_nac_mgmt_interface(node, args, n)
             nac_router_nodes.append(node)
             # Build mgmt/ntp context for template
             mgmt_ctx = None
@@ -5124,6 +5147,7 @@ class Renderer:
                 device_template=dev_def,
                 template=args.template,
                 mode=args.mode,
+                args=args,
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
@@ -5432,6 +5456,7 @@ class Renderer:
                 loopback=loopback,
                 interfaces=topo_ifaces,
             )
+            _append_nac_mgmt_interface(node_obj, args, node_index + 1)
             nac_router_nodes.append(node_obj)
 
             mgmt_ctx = None
@@ -5626,6 +5651,7 @@ class Renderer:
                 device_template=dev_def,
                 template=args.template,
                 mode=args.mode,
+                args=args,
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
@@ -5919,6 +5945,7 @@ class Renderer:
                 loopback=loopback,
                 interfaces=topo_ifaces,
             )
+            _append_nac_mgmt_interface(node_obj, args, idx + 1)
             nac_router_nodes.append(node_obj)
 
             mgmt_ctx = None
@@ -6081,6 +6108,7 @@ class Renderer:
                 device_template=dev_def,
                 template=args.template,
                 mode=args.mode,
+                args=args,
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
