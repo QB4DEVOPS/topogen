@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.1.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -10,6 +10,8 @@
 # Purpose: Build and write canonical NaC output for one-router IOS-XE MVP.
 # Blast Radius: Medium - affects NaC offline artifact generation when --nac is enabled.
 
+import json
+from ipaddress import ip_interface
 from pathlib import Path
 
 import yaml
@@ -107,6 +109,38 @@ def write_nac_yaml(model: dict, output_path: Path, overwrite: bool = False) -> P
     return output_path
 
 
+def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool = False) -> Path:
+    """Project canonical model into deterministic terraform.tfvars.json."""
+    devices = model.get("iosxe", {}).get("devices", [])
+    projected_devices = []
+    for device in sorted(devices, key=lambda d: d.get("name", "")):
+        mgmt_raw = str(device.get("mgmt", {}).get("ipv4", ""))
+        if "/" in mgmt_raw:
+            mgmt_ip = str(ip_interface(mgmt_raw).ip)
+        else:
+            mgmt_ip = mgmt_raw
+        projected_devices.append(
+            {
+                "name": device.get("name", ""),
+                "hostname": device.get("hostname", ""),
+                "platform": device.get("platform", ""),
+                "mgmt_ip": mgmt_ip,
+            }
+        )
+
+    payload = {"devices": projected_devices}
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not overwrite:
+        raise TopogenError(
+            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
+        )
+    output_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=False) + "\n",
+        encoding="utf-8",
+    )
+    return output_path
+
+
 def write_nac_tree(
     *,
     nac_root: Path,
@@ -116,7 +150,7 @@ def write_nac_tree(
     mode: str,
     overwrite: bool = False,
 ) -> Path:
-    """Orchestrate canonical NaC output write (nac.yaml only for TG-121)."""
+    """Orchestrate canonical NaC output write tree."""
     nac_root.mkdir(parents=True, exist_ok=True)
     model = build_canonical_nac_model(
         node,
@@ -124,4 +158,10 @@ def write_nac_tree(
         template=template,
         mode=mode,
     )
-    return write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
+    nac_yaml_path = write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
+    write_terraform_tfvars_json(
+        model,
+        nac_root / "terraform.tfvars.json",
+        overwrite=overwrite,
+    )
+    return nac_yaml_path
