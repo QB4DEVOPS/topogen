@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.8
-# Date Modified: 2026-03-25
+# Doc Version: v1.3.9
+# Date Modified: 2026-06-03
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -27,12 +27,12 @@ DEPENDENCIES:
 KEY EXPORTS:
     - main(): Application entry point
     - create_argparser(): Creates and configures the argument parser
-    - valid_node_count(): Validates node count argument (2-1000)
+    - valid_node_count(): Validates node count argument (1-1000 parser-level)
 
 FLOW:
     1. Parse CLI arguments (create_argparser)
     2. Load configuration from config.toml (or defaults)
-    3. Validate arguments (node count, IP addresses, flag dependencies)
+    3. Validate arguments (node count policy, IP addresses, flag dependencies)
     4. Create Renderer instance based on mode (nx, simple, flat, flat-pair, dmvpn)
     5. Execute online (CML API) or offline (YAML generation) workflow
 """
@@ -52,11 +52,49 @@ _LOGGER = logging.getLogger(__name__)
 
 def valid_node_count(value):
     ivalue = int(value)
-    if ivalue < 2 or ivalue > 1000:
+    if ivalue < 1 or ivalue > 1000:
         raise argparse.ArgumentTypeError(
-            f"invalid value {value}. Valid values are from 2-1000."
+            f"invalid value {value}. Valid values are from 1-1000."
         )
     return ivalue
+
+
+def validate_nodes_for_mode(args, parser):
+    """Validate node counts while preserving non-NaC behavior."""
+    if args.nodes is None:
+        return
+    if args.nodes > 1000:
+        parser.error(
+            f"invalid value {args.nodes}. Valid values are from 1-1000."
+        )
+    # Preserve legacy minimum for non-NaC paths.
+    if not getattr(args, "nac", False) and args.nodes < 2:
+        parser.error(
+            f"argument nodes: invalid value {args.nodes}. Valid values are from 2-1000."
+        )
+
+
+def validate_nac_mvp_guardrails(args, parser):
+    """Fail-fast guardrails for NaC MVP CLI combinations."""
+    if not getattr(args, "nac", False):
+        return
+    if not getattr(args, "offline_yaml", None):
+        parser.error("--nac requires --offline-yaml FILE (offline generation path)")
+    if args.mode != "simple" or args.nodes != 1:
+        parser.error(
+            "--nac MVP currently supports only: nodes=1 --mode simple --offline-yaml FILE"
+        )
+    supported_dev_templates = {"iosv", "csr1000v"}
+    dev_template = getattr(args, "dev_template", "iosv")
+    if dev_template not in supported_dev_templates:
+        parser.error(
+            "--nac MVP currently supports IOS-XE device templates only "
+            f"(iosv, csr1000v); received --device-template {dev_template}"
+        )
+    if getattr(args, "do_import", False) or getattr(args, "import_yaml", None) or getattr(args, "up", None):
+        parser.error("--nac MVP does not support import workflow flags (--import/--import-yaml/--up)")
+    if getattr(args, "yaml_output", None):
+        parser.error("--nac MVP does not support --yaml online export; use --offline-yaml")
 
 
 def create_argparser(parser_class=argparse.ArgumentParser):
@@ -532,6 +570,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
             help="Generate a CML-compatible YAML locally (no controller required)",
         )
     parser.add_argument(
+        "--nac",
+        dest="nac",
+        action="store_true",
+        default=False,
+        help="Enable NaC MVP guardrails (offline one-router simple path only)",
+    )
+    parser.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",
@@ -590,7 +635,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "nodes",
         nargs="?",
         type=valid_node_count,
-        help="Number of nodes to generate (2-1000)",
+        help="Number of nodes to generate (2-1000; 1 is allowed only with --nac MVP)",
     )
     parser.add_argument(
         "--allow-oversubscribe",
@@ -683,7 +728,9 @@ def main():
         return 0
 
     try:
+        validate_nodes_for_mode(args, parser)
         args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
+        validate_nac_mvp_guardrails(args, parser)
 
         if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-psk":
             psk = getattr(args, "dmvpn_psk", None)
