@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.0
+Doc Version: v1.1.1
 Date Modified: 2026-06-03
 
 - Called by: Developers implementing TG-117 NaC adapters and tests
@@ -33,7 +33,6 @@ Status values:
 | source_location | source_field | example_value | nac_target_field | status | notes |
 |---|---|---|---|---|---|
 | `src/topogen/main.py::main()` | `args.mode` | `simple` | `iosxe.devices[0].metadata.topogen.mode` | Optional | Parsed in CLI and forwarded into offline renderer path |
-| `src/topogen/render.py::Renderer.offline_simple_yaml()` | `label` (`f"R{idx+1}"`) | `R1` | `iosxe.devices[0].hostname` | Required | Canonical writer should normalize naming policy (`R1` -> `iosv-01`) deterministically |
 | `src/topogen/render.py::Renderer.offline_simple_yaml()` | `node_obj.hostname` | `R1` | `iosxe.devices[0].hostname` | Required | Built from `TopogenNode(hostname=label, ...)` |
 | `src/topogen/render.py::Renderer.offline_simple_yaml()` | `node_obj.loopback` | `10.0.0.1/32` | `iosxe.devices[0].loopbacks[0].ipv4` | Required | Direct source from `node_loopbacks[idx]` |
 | `src/topogen/render.py::Renderer.offline_simple_yaml()` | `node_obj.interfaces[*].address` | `172.16.0.6/30`, `172.16.0.1/30` | `iosxe.devices[0].interfaces[*].ipv4` | Optional | P2P link addresses are deterministic per allocation order |
@@ -56,3 +55,19 @@ Status values:
 - Emit `role` as `router` for this topology path.
 - Use deterministic naming transform for canonical fixture host key (`iosv-01`).
 - Apply documented fallback for `mgmt.ipv4` using loopback host IP when management IP is not present in source objects.
+
+## MVP fallback/default rules
+
+When source-field gaps are encountered on the audited path
+(`main.main()` -> `Renderer.offline_simple_yaml()`), use these deterministic rules:
+
+- Missing one-router runtime input (CLI requires `nodes >= 2`):
+  - Select first router object (`idx=0`, `R1`) from the minimum valid simple run.
+- Missing canonical host key:
+  - Normalize to `iosv-01` for single-router canonical fixture output.
+- Missing explicit platform field in `TopogenNode`:
+  - Map resolved `dev_def` values `iosv` and `csr1000v` to canonical `platform: iosxe`.
+- Missing explicit role field in `TopogenNode`:
+  - Emit fixed `role: router` for this path.
+- Missing management IPv4 source:
+  - Use `node_obj.loopback.ip` as canonical `mgmt.ipv4` until a dedicated management IP source is implemented.
