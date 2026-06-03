@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.7.1
+# Doc Version: v1.7.2
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -7,7 +7,7 @@
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main.main, yaml.safe_load
 #
-# Purpose: Verify TG-121 canonical NaC writer output path, keys, and deterministic rerun behavior.
+# Purpose: Verify TG-121/TG-137 canonical NaC writer output layout, keys, and deterministic rerun behavior.
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import sys
@@ -58,6 +58,8 @@ class TestNacWriter(unittest.TestCase):
             )
             self.assertEqual(rc, 0)
 
+            lab_root = Path(tmp) / "out" / "iosv-test"
+            cml_yaml = lab_root / "iosv-test.yaml"
             nac_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac.yaml"
             tfvars_json = Path(tmp) / "out" / "iosv-test" / "nac" / "terraform.tfvars.json"
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
@@ -65,6 +67,7 @@ class TestNacWriter(unittest.TestCase):
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
             devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
             metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
+            self.assertTrue(cml_yaml.exists())
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
             self.assertTrue(inventory_yaml.exists())
@@ -72,6 +75,10 @@ class TestNacWriter(unittest.TestCase):
             self.assertTrue(host_vars_yaml.exists())
             self.assertTrue(devices_yaml.exists())
             self.assertTrue(metadata_yaml.exists())
+            self.assertFalse((lab_root / "nac.yaml").exists())
+            self.assertFalse((lab_root / "inventory.yaml").exists())
+            self.assertFalse((lab_root / "group_vars").exists())
+            self.assertFalse((lab_root / "host_vars").exists())
 
             data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
             self.assertIn("iosxe", data)

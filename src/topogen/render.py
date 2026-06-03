@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.12
+# Doc Version: v1.2.13
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/main.py
@@ -222,7 +222,8 @@ def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -
     """Resolve deterministic offline output paths.
 
     Non-NaC behavior is unchanged (returns the original offline YAML path).
-    NaC MVP behavior normalizes output to:
+    NaC MVP behavior normalizes output so CML YAML stays at the lab root and
+    all NaC/Ansible artifacts share the returned nac_root:
       <parent>/<lab>/<lab>.yaml and <parent>/<lab>/nac/
     """
     raw = Path(offline_yaml)
