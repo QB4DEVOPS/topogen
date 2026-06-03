@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
+# Doc Version: v1.2.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -141,6 +141,92 @@ def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool 
     return output_path
 
 
+def write_inventory_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
+    """Project canonical model into deterministic Ansible inventory.yaml."""
+    devices = model.get("iosxe", {}).get("devices", [])
+    hosts = {}
+    for device in sorted(devices, key=lambda d: d.get("name", "")):
+        mgmt_raw = str(device.get("mgmt", {}).get("ipv4", ""))
+        if "/" in mgmt_raw:
+            ansible_host = str(ip_interface(mgmt_raw).ip)
+        else:
+            ansible_host = mgmt_raw
+        hosts[device.get("name", "")] = {
+            "ansible_host": ansible_host,
+            "platform": device.get("platform", ""),
+        }
+    payload = {"all": {"hosts": hosts}}
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not overwrite:
+        raise TopogenError(
+            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
+        )
+    with output_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(
+            payload,
+            handle,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=False,
+        )
+    return output_path
+
+
+def write_group_vars_all_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
+    """Project canonical model into deterministic group_vars/all.yaml."""
+    devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
+    platform = devices[0].get("platform", "") if devices else ""
+    payload = {
+        "nac_platform": platform,
+        "nac_device_count": len(devices),
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not overwrite:
+        raise TopogenError(
+            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
+        )
+    with output_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(
+            payload,
+            handle,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=False,
+        )
+    return output_path
+
+
+def write_host_vars_yaml(model: dict, host_vars_root: Path, overwrite: bool = False) -> list[Path]:
+    """Project canonical model into deterministic host_vars/<device>.yaml files."""
+    host_vars_root.mkdir(parents=True, exist_ok=True)
+    devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
+    written_paths: list[Path] = []
+    for device in devices:
+        out_path = host_vars_root / f"{device.get('name', '')}.yaml"
+        if out_path.exists() and not overwrite:
+            raise TopogenError(
+                f"Refusing to overwrite existing file: {out_path}. Use --overwrite to replace it."
+            )
+        payload = {
+            "hostname": device.get("hostname", ""),
+            "role": device.get("role", ""),
+            "template": device.get("template", ""),
+            "device_template": device.get("device_template", ""),
+            "loopbacks": device.get("loopbacks", []),
+            "interfaces": device.get("interfaces", []),
+        }
+        with out_path.open("w", encoding="utf-8") as handle:
+            yaml.safe_dump(
+                payload,
+                handle,
+                sort_keys=False,
+                default_flow_style=False,
+                allow_unicode=False,
+            )
+        written_paths.append(out_path)
+    return written_paths
+
+
 def write_nac_tree(
     *,
     nac_root: Path,
@@ -162,6 +248,21 @@ def write_nac_tree(
     write_terraform_tfvars_json(
         model,
         nac_root / "terraform.tfvars.json",
+        overwrite=overwrite,
+    )
+    write_inventory_yaml(
+        model,
+        nac_root / "inventory.yaml",
+        overwrite=overwrite,
+    )
+    write_group_vars_all_yaml(
+        model,
+        nac_root / "group_vars" / "all.yaml",
+        overwrite=overwrite,
+    )
+    write_host_vars_yaml(
+        model,
+        nac_root / "host_vars",
         overwrite=overwrite,
     )
     return nac_yaml_path

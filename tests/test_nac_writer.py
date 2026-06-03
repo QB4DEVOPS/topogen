@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
+# Doc Version: v1.2.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -51,8 +51,14 @@ class TestNacWriter(unittest.TestCase):
 
             nac_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac.yaml"
             tfvars_json = Path(tmp) / "out" / "iosv-test" / "nac" / "terraform.tfvars.json"
+            inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
+            group_all_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "group_vars" / "all.yaml"
+            host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
+            self.assertTrue(inventory_yaml.exists())
+            self.assertTrue(group_all_yaml.exists())
+            self.assertTrue(host_vars_yaml.exists())
 
             data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
             self.assertIn("iosxe", data)
@@ -79,6 +85,21 @@ class TestNacWriter(unittest.TestCase):
             for key in ("name", "hostname", "platform", "mgmt_ip"):
                 self.assertIn(key, tf_device)
 
+            inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
+            self.assertIn("all", inv)
+            self.assertIn("hosts", inv["all"])
+            self.assertIn("iosv-01", inv["all"]["hosts"])
+            self.assertIn("ansible_host", inv["all"]["hosts"]["iosv-01"])
+            self.assertIn("platform", inv["all"]["hosts"]["iosv-01"])
+
+            grp = yaml.safe_load(group_all_yaml.read_text(encoding="utf-8"))
+            self.assertIn("nac_platform", grp)
+            self.assertIn("nac_device_count", grp)
+
+            host_vars = yaml.safe_load(host_vars_yaml.read_text(encoding="utf-8"))
+            for key in ("hostname", "role", "template", "device_template", "loopbacks", "interfaces"):
+                self.assertIn(key, host_vars)
+
     def test_nac_rerun_is_deterministic_and_not_nested(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "iosv-test.yaml"
@@ -98,9 +119,15 @@ class TestNacWriter(unittest.TestCase):
 
             nac_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac.yaml"
             tfvars_json = Path(tmp) / "out" / "iosv-test" / "nac" / "terraform.tfvars.json"
+            inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
+            group_all_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "group_vars" / "all.yaml"
+            host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
             nested_bad = Path(tmp) / "out" / "iosv-test" / "iosv-test" / "nac" / "nac.yaml"
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
+            self.assertTrue(inventory_yaml.exists())
+            self.assertTrue(group_all_yaml.exists())
+            self.assertTrue(host_vars_yaml.exists())
             self.assertFalse(nested_bad.exists())
 
             content_a = nac_yaml.read_text(encoding="utf-8")
@@ -109,6 +136,15 @@ class TestNacWriter(unittest.TestCase):
             tf_a = tfvars_json.read_text(encoding="utf-8")
             tf_b = tfvars_json.read_text(encoding="utf-8")
             self.assertEqual(tf_a, tf_b)
+            inv_a = inventory_yaml.read_text(encoding="utf-8")
+            inv_b = inventory_yaml.read_text(encoding="utf-8")
+            self.assertEqual(inv_a, inv_b)
+            grp_a = group_all_yaml.read_text(encoding="utf-8")
+            grp_b = group_all_yaml.read_text(encoding="utf-8")
+            self.assertEqual(grp_a, grp_b)
+            hv_a = host_vars_yaml.read_text(encoding="utf-8")
+            hv_b = host_vars_yaml.read_text(encoding="utf-8")
+            self.assertEqual(hv_a, hv_b)
 
     def test_tfvars_mgmt_ip_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -128,6 +164,25 @@ class TestNacWriter(unittest.TestCase):
             write_terraform_tfvars_json(model, out_path, overwrite=True)
             tfvars = yaml.safe_load(out_path.read_text(encoding="utf-8"))
             self.assertEqual(tfvars["devices"][0]["mgmt_ip"], "10.254.0.11")
+
+    def test_inventory_ansible_host_uses_host_ip_for_cidr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "iosv-test.yaml"
+            rc = self._run_main(
+                [
+                    "1",
+                    "--mode",
+                    "simple",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
+            inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.0.0.1")
 
 
 if __name__ == "__main__":
