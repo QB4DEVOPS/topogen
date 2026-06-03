@@ -1,12 +1,12 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.0
+Doc Version: v1.1.0
 Date Modified: 2026-06-03
 
 - Called by: Developers implementing TG-116, TG-117, TG-121
 - Reads from: Canonical NaC model expectations for one-router IOS-XE output
 - Writes to: None (documentation only)
-- Calls into: tests/fixtures/nac/iosv-test/nac.yaml, docs/nac/topogen-to-nac-field-mapping.md
+- Calls into: tests/fixtures/nac/iosv-test/nac.yaml, docs/nac/topogen-to-nac-field-mapping.md, docs/nac/single-node-source-field-audit.md
 
 Purpose: Define the source-of-truth contract for one-router IOS-XE NaC output.
 Blast Radius: Contract changes affect adapter projection behavior and fixture tests.
@@ -16,6 +16,10 @@ Blast Radius: Contract changes affect adapter projection behavior and fixture te
 
 This document defines the canonical NaC contract for a single IOS-XE router and is
 the implementation target for TG-116, TG-117, and TG-121.
+
+Field-source audit companion:
+
+- `docs/nac/single-node-source-field-audit.md`
 
 ## Canonical root
 
@@ -45,6 +49,16 @@ Canonical object shape for `iosxe.devices[0]`:
   - item fields: `name` (required), `ipv4` (optional), `description` (optional), `slot` (optional)
 - `metadata` (optional, object):
   - `topogen` (optional, object): implementation metadata that does not alter adapter identity
+
+### Audited derivation rules (TG-117)
+
+The following field derivations are mandatory until dedicated source fields are
+implemented in runtime code:
+
+- `name`: deterministic canonical host key (`iosv-01`) for single-router fixture output
+- `platform`: derive `iosxe` from resolved IOS-XE device templates (`iosv`, `csr1000v`)
+- `role`: emit fixed value `router` for the simple router path
+- `mgmt.ipv4`: fallback to loopback host IP when management IP is not available in source model
 
 ## Required vs optional fields
 
