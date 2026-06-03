@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.1
+# Doc Version: v1.5.2
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -435,7 +435,6 @@ def write_nac_tree(
     overwrite: bool = False,
 ) -> Path:
     """Orchestrate canonical NaC output write tree."""
-    nac_root.mkdir(parents=True, exist_ok=True)
     selected_nodes = nodes if nodes is not None else ([node] if node is not None else [])
     if not selected_nodes:
         raise TopogenError("NaC writer requires at least one router node")
@@ -446,6 +445,7 @@ def write_nac_tree(
         mode=mode,
         args=args,
     )
+    nac_root.mkdir(parents=True, exist_ok=True)
     nac_yaml_path = write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
     write_terraform_tfvars_json(
         model,
