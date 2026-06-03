@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.7
-Date Modified: 2026-03-25
+Doc Version: v1.5.8
+Date Modified: 2026-06-03
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -51,6 +51,22 @@ controller, creating the lab, nodes and links on the fly.
 | CHANGES.md | All | Release history |
 | TODO.md | Developers | Roadmap and planned work |
 | PKI.md | Users, developers | PKI flags, CA-ROOT, EEM, auto-deploy certs, troubleshooting |
+| docs/nac/iosxe-one-router-golden-contract.md | Developers | Canonical one-router IOS-XE NaC contract (TG-116) |
+| docs/nac/topogen-to-nac-field-mapping.md | Developers | TopoGen-to-NaC field mapping matrix for adapter work |
+| tests/fixtures/nac/iosv-test/nac.yaml | Tests, developers | Deterministic golden fixture for NaC canonical output |
+
+## NaC contract artifacts (TG-116)
+
+The following artifacts are the source-of-truth for NaC implementation stories
+TG-116, TG-117, and TG-121:
+
+- `docs/nac/iosxe-one-router-golden-contract.md`
+- `docs/nac/topogen-to-nac-field-mapping.md`
+- `tests/fixtures/nac/iosv-test/nac.yaml`
+
+They define canonical shape, required fields, deterministic ordering, and field
+projection targets. Runtime CLI or adapter execution logic is intentionally out
+of scope for this documentation-only contract baseline.
 
 ## Code structure and dependencies
 
