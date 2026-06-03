@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.6.0
+# Doc Version: v1.6.1
 # Date Modified: 2026-06-03
 #
 """
@@ -44,7 +44,12 @@ import sys
 
 import topogen
 from topogen.models import TopogenError
-from topogen.render import Renderer, get_templates
+from topogen.render import (
+    Renderer,
+    SUPPORTED_NAC_DEVICE_TEMPLATES,
+    describe_nac_unsupported_nodes,
+    get_templates,
+)
 from topogen.colorlog import CustomFormatter
 
 _LOGGER = logging.getLogger(__name__)
@@ -96,12 +101,14 @@ def validate_nac_mvp_guardrails(args, parser):
             "nodes=2 --mode flat --offline-yaml FILE OR "
             "nodes=2 --mode flat-pair --offline-yaml FILE"
         )
-    supported_dev_templates = {"iosv", "csr1000v"}
     dev_template = getattr(args, "dev_template", "iosv")
-    if dev_template not in supported_dev_templates:
+    if dev_template not in SUPPORTED_NAC_DEVICE_TEMPLATES:
+        node_names = [f"R{i}" for i in range(1, int(args.nodes or 0) + 1)]
+        unsupported = describe_nac_unsupported_nodes(node_names, dev_template)
         parser.error(
-            "--nac MVP currently supports IOS-XE device templates only "
-            f"(iosv, csr1000v); received --device-template {dev_template}"
+            "--nac supports IOS-XE router nodes only; unsupported node(s): "
+            + "; ".join(unsupported)
+            + ". Supported IOS-XE device templates: iosv, csr1000v."
         )
     if getattr(args, "do_import", False) or getattr(args, "import_yaml", None) or getattr(args, "up", None):
         parser.error("--nac MVP does not support import workflow flags (--import/--import-yaml/--up)")

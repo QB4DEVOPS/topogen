@@ -1,18 +1,22 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
+# Doc Version: v1.4.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/main.py parser and validation helpers
-# - Writes to: None (test-only)
-# - Calls into: topogen.main (create_argparser, validate_nodes_for_mode, validate_nac_mvp_guardrails)
+# - Writes to: Temporary test directories only
+# - Calls into: topogen.main (main, create_argparser, validate_nodes_for_mode, validate_nac_mvp_guardrails)
 #
-# Purpose: Validate TG-119 NaC CLI guardrails and preserve non-NaC node behavior.
+# Purpose: Validate TG-119/TG-136 NaC CLI guardrails and preserve non-NaC node behavior.
 # Blast Radius: Test-only; no runtime behavior changes.
 
+import io
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +26,7 @@ if str(SRC) not in sys.path:
 
 from topogen.main import (  # pylint: disable=wrong-import-position
     create_argparser,
+    main,
     normalize_template_inputs,
     validate_nac_mvp_guardrails,
     validate_nodes_for_mode,
@@ -38,6 +43,14 @@ class TestNacCliGuardrails(unittest.TestCase):
         validate_nodes_for_mode(args, self.parser)
         validate_nac_mvp_guardrails(args, self.parser)
         return args
+
+    def _run_main_exit(self, argv):
+        stderr = io.StringIO()
+        with patch.object(sys, "argv", ["topogen", *argv]), redirect_stderr(stderr):
+            try:
+                return main(), stderr.getvalue()
+            except SystemExit as exc:
+                return exc.code, stderr.getvalue()
 
     def test_valid_nac_mvp_command_shape(self):
         args = self._parse_and_validate(
@@ -85,8 +98,18 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertEqual(args.offline_yaml, "out/two-router-flat-pair.yaml")
 
     def test_nac_requires_offline_yaml(self):
-        with self.assertRaises(SystemExit):
-            self._parse_and_validate(["1", "--mode", "simple", "--nac"])
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(["1", "--mode", "simple", "--nac"])
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--nac requires --offline-yaml FILE", stderr.getvalue())
+
+    def test_nac_without_offline_yaml_exits_nonzero_and_creates_no_nac(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, stderr = self._run_main_exit(["1", "--mode", "simple", "--nac"])
+            self.assertNotEqual(code, 0)
+            self.assertIn("--nac requires --offline-yaml FILE", stderr)
+            self.assertFalse((Path(tmp) / "nac").exists())
 
     def test_nac_rejects_unsupported_mode_or_path(self):
         with self.assertRaises(SystemExit):
@@ -103,19 +126,67 @@ class TestNacCliGuardrails(unittest.TestCase):
             )
 
     def test_nac_rejects_unsupported_platform_family(self):
-        with self.assertRaises(SystemExit):
-            self._parse_and_validate(
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "1",
+                        "--mode",
+                        "simple",
+                        "--offline-yaml",
+                        "out/iosv-test.yaml",
+                        "--device-template",
+                        "iol",
+                        "--nac",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("R1", stderr.getvalue())
+        self.assertIn("IOL is not in the supported IOS-XE MVP template set", stderr.getvalue())
+
+    def test_nac_rejects_non_iosxe_node_before_nac_tree_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "lxc-test.yaml"
+            code, stderr = self._run_main_exit(
                 [
                     "1",
                     "--mode",
                     "simple",
                     "--offline-yaml",
-                    "out/iosv-test.yaml",
+                    str(out_file),
                     "--device-template",
-                    "iol",
+                    "lxc",
                     "--nac",
                 ]
             )
+            self.assertNotEqual(code, 0)
+            self.assertIn("R1", stderr)
+            self.assertIn("FRR/LXC/Linux containers are not IOS-XE devices", stderr)
+            self.assertFalse((Path(tmp) / "out" / "lxc-test" / "nac").exists())
+
+    def test_valid_all_iosxe_nac_cli_succeeds_with_composed_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "flat-pair-csr-mgmt-vrf.yaml"
+            code, stderr = self._run_main_exit(
+                [
+                    "2",
+                    "--mode",
+                    "flat-pair",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--device-template",
+                    "csr1000v",
+                    "--mgmt",
+                    "--vrf",
+                    "--pair-vrf",
+                    "tenant-a",
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(code, 0, stderr)
+            nac_yaml = Path(tmp) / "out" / "flat-pair-csr-mgmt-vrf" / "nac" / "nac.yaml"
+            self.assertTrue(nac_yaml.exists())
 
     def test_non_nac_still_rejects_one_node(self):
         with self.assertRaises(SystemExit):

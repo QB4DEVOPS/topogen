@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.11
+# Doc Version: v1.2.12
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/main.py
@@ -127,6 +127,7 @@ _LOGGER = logging.getLogger(__name__)
 
 EXT_CON_NAME = "ext-conn-0"
 DNS_HOST_NAME = "dns-host"
+SUPPORTED_NAC_DEVICE_TEMPLATES = {"iosv", "csr1000v"}
 
 
 # Determine package version locally to avoid circular import with topogen.__init__
@@ -235,6 +236,49 @@ def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -
     else:
         lab_root = raw.parent / lab_name
     return lab_root / f"{lab_name}.yaml", lab_root / "nac"
+
+
+def _nac_unsupported_template_reason(device_template: str) -> str:
+    reasons = {
+        "asa": "ASA is not an IOS-XE device",
+        "iol": "IOL is not in the supported IOS-XE MVP template set",
+        "lxc": "FRR/LXC/Linux containers are not IOS-XE devices",
+        "ubuntu": "Ubuntu/Linux nodes are not IOS-XE devices",
+    }
+    return reasons.get(
+        str(device_template).lower(),
+        "device template is not in the supported IOS-XE MVP template set",
+    )
+
+
+def describe_nac_unsupported_nodes(
+    nodes: list[TopogenNode] | list[str],
+    device_template: str,
+) -> list[str]:
+    """Return human-readable unsupported-node details for NaC preflight errors."""
+    template = str(device_template).lower()
+    if template in SUPPORTED_NAC_DEVICE_TEMPLATES:
+        return []
+    reason = _nac_unsupported_template_reason(template)
+    details: list[str] = []
+    for node in nodes:
+        hostname = node if isinstance(node, str) else getattr(node, "hostname", "unknown")
+        details.append(f"{hostname}: {reason} (--device-template {template})")
+    return details
+
+
+def validate_nac_supported_iosxe_nodes(
+    nodes: list[TopogenNode],
+    device_template: str,
+) -> None:
+    """Abort NaC generation before any nac/ tree exists for unsupported routers."""
+    unsupported = describe_nac_unsupported_nodes(nodes, device_template)
+    if unsupported:
+        raise TopogenError(
+            "--nac supports IOS-XE router nodes only; unsupported node(s): "
+            + "; ".join(unsupported)
+            + ". Supported IOS-XE device templates: iosv, csr1000v."
+        )
 
 
 def _nac_restconf_lines() -> list[str]:
@@ -4361,6 +4405,8 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -5127,6 +5173,8 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -5628,6 +5676,8 @@ class Renderer:
                 lines.append(f"    i2: i{oob_acc_port}")
 
         # --- Write file ---
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -6085,6 +6135,8 @@ class Renderer:
 
         # --- Write file ---
         num_edges = total - 1
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
