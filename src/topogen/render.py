@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.8
+# Doc Version: v1.2.10
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/main.py
@@ -235,6 +235,41 @@ def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -
     else:
         lab_root = raw.parent / lab_name
     return lab_root / f"{lab_name}.yaml", lab_root / "nac"
+
+
+def _nac_restconf_lines() -> list[str]:
+    """RESTCONF/netconf-yang day0 commands required by the NaC MVP."""
+    return [
+        "ip http secure-server",
+        "restconf",
+        "netconf-yang",
+    ]
+
+
+def _inject_nac_restconf_day0(rendered: str) -> str:
+    """Insert NaC management transport before the final IOS-XE ``end`` line."""
+    lines = rendered.splitlines()
+    has_rsa_key = any(
+        line.strip().startswith("crypto key generate rsa")
+        for line in lines
+    )
+    block: list[str] = ["!"]
+    if not has_rsa_key:
+        # IOS-XE accepts this command in startup/day0 config; the iosv/csr1000v
+        # templates and PKI splice already use this exact form before enabling HTTPS.
+        block.extend(["crypto key generate rsa modulus 2048", "!"])
+    # With --mgmt, the NaC host can be reachable only inside Mgmt-vrf. This helper
+    # intentionally enables global services only; VRF reachability stays user-owned.
+    block.extend(_nac_restconf_lines())
+    try:
+        end_idx = next(
+            i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+        )
+        lines[end_idx:end_idx] = block
+    except StopIteration:
+        lines.extend(block)
+        lines.append("end")
+    return "\n".join(lines)
 
 
 def get_templates() -> list[str]:
@@ -3930,6 +3965,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             rx = min(max_coord, (idx // group + 1) * sw_step_x)
             ry = min(max_coord, (idx % group + 1) * router_step_y)
@@ -4682,6 +4719,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             rx = min(max_coord, (idx // group + 1) * sw_step_x)
             ry = min(max_coord, (idx % group + 1) * router_step_y)
@@ -5427,6 +5466,8 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
@@ -5909,6 +5950,8 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
