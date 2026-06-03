@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.7.2
+# Doc Version: v1.7.3
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -31,7 +31,9 @@ from topogen.models import TopogenInterface, TopogenNode  # pylint: disable=wron
 from topogen.nac import (  # pylint: disable=wrong-import-position
     _select_host,
     build_canonical_nac_model,
+    project_nac_yaml,
     write_devices_yaml,
+    write_nac_yaml,
     write_nac_tree,
     write_terraform_tfvars_json,
 )
@@ -85,18 +87,31 @@ class TestNacWriter(unittest.TestCase):
             self.assertIn("devices", data["iosxe"])
             self.assertEqual(len(data["iosxe"]["devices"]), 1)
             device = data["iosxe"]["devices"][0]
-            for key in (
-                "name",
+            self.assertEqual(list(device.keys()), ["name", "host", "configuration"])
+            self.assertEqual(device["configuration"]["system"]["hostname"], "R1")
+            for forbidden in (
                 "hostname",
                 "platform",
                 "role",
                 "template",
                 "device_template",
                 "mgmt",
+                "metadata",
                 "loopbacks",
                 "interfaces",
             ):
-                self.assertIn(key, device)
+                self.assertNotIn(forbidden, device)
+            config = device["configuration"]
+            self.assertNotIn("vrfs", config)
+            ethernet = config["interfaces"]["ethernets"][0]
+            self.assertEqual(list(ethernet.keys()), ["type", "id", "ipv4", "description"])
+            self.assertEqual(ethernet["type"], "GigabitEthernet")
+            self.assertEqual(ethernet["id"], "0/0")
+            self.assertEqual(list(ethernet["ipv4"].keys()), ["address", "address_mask"])
+            loopback = config["interfaces"]["loopbacks"][0]
+            self.assertEqual(list(loopback.keys()), ["id", "ipv4"])
+            self.assertEqual(loopback["id"], "0")
+            self.assertEqual(list(loopback["ipv4"].keys()), ["address", "address_mask"])
 
             tfvars = yaml.safe_load(tfvars_json.read_text(encoding="utf-8"))
             self.assertIn("devices", tfvars)
@@ -234,6 +249,74 @@ class TestNacWriter(unittest.TestCase):
             nac = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
             self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], nac["iosxe"]["devices"][0]["host"])
             self.assertNotEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.0.0.1")
+
+    def test_write_nac_yaml_projects_fat_model_without_mutating_other_writers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                ],
+            )
+            model = build_canonical_nac_model(
+                node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+            )
+            fat_device = model["iosxe"]["devices"][0]
+            for key in ("hostname", "platform", "role", "template", "mgmt", "metadata", "interfaces", "loopbacks"):
+                self.assertIn(key, fat_device)
+
+            nac_path = Path(tmp) / "nac.yaml"
+            write_nac_yaml(model, nac_path, overwrite=True)
+            lean_device = yaml.safe_load(nac_path.read_text(encoding="utf-8"))["iosxe"]["devices"][0]
+            self.assertEqual(list(lean_device.keys()), ["name", "host", "configuration"])
+            self.assertEqual(list(project_nac_yaml(model)["iosxe"]["devices"][0].keys()), ["name", "host", "configuration"])
+
+            devices_path = Path(tmp) / "devices.yaml"
+            write_devices_yaml(model, devices_path, overwrite=True)
+            devices_doc = yaml.safe_load(devices_path.read_text(encoding="utf-8"))
+            self.assertEqual(list(devices_doc["devices"][0].keys()), ["name", "hostname", "platform", "role", "mgmt_ip"])
+
+    def test_nac_yaml_dump_is_byte_identical_across_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), vrf="tenant", slot=1),
+                ],
+            )
+            model = build_canonical_nac_model(
+                node,
+                device_template="iosv",
+                template="iosv",
+                mode="flat-pair",
+            )
+            first = Path(tmp) / "first.yaml"
+            second = Path(tmp) / "second.yaml"
+            write_nac_yaml(model, first, overwrite=True)
+            write_nac_yaml(model, second, overwrite=True)
+            self.assertEqual(first.read_text(encoding="utf-8"), second.read_text(encoding="utf-8"))
+
+    def test_nac_yaml_projection_omits_empty_stub_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(hostname="R1", loopback=None, interfaces=[{"description": "no-address"}])
+            model = build_canonical_nac_model(
+                node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+            )
+            nac_path = Path(tmp) / "nac.yaml"
+            write_nac_yaml(model, nac_path, overwrite=True)
+            device = yaml.safe_load(nac_path.read_text(encoding="utf-8"))["iosxe"]["devices"][0]
+            self.assertEqual(list(device.keys()), ["name", "configuration"])
+            self.assertNotIn("host", device)
+            self.assertNotIn("interfaces", device["configuration"])
+            self.assertNotIn("vrfs", device["configuration"])
 
     def test_devices_yaml_mgmt_ip_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:

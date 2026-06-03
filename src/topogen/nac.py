@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.2
+# Doc Version: v1.5.3
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -225,6 +225,55 @@ def build_canonical_nac_model(
     }
 
 
+def _has_real_value(value) -> bool:
+    if value is None:
+        return False
+    if value == "":
+        return False
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_real_value(item) for item in value)
+    if isinstance(value, dict):
+        return any(_has_real_value(item) for item in value.values())
+    return True
+
+
+def _prune_empty_values(value):
+    if isinstance(value, list):
+        pruned = [_prune_empty_values(item) for item in value]
+        return [item for item in pruned if _has_real_value(item)]
+    if isinstance(value, dict):
+        pruned = {}
+        for key, item in value.items():
+            next_value = _prune_empty_values(item)
+            if _has_real_value(next_value):
+                pruned[key] = next_value
+        return pruned
+    return value
+
+
+def project_nac_yaml(model: dict) -> dict:
+    """Project the fat canonical model into the confirmed lean nac.yaml schema."""
+    devices = []
+    for device in model.get("iosxe", {}).get("devices", []):
+        projected_device = {}
+        name = device.get("name")
+        if _has_real_value(name):
+            projected_device["name"] = name
+        host = device.get("host")
+        if _has_real_value(host):
+            projected_device["host"] = host
+        configuration = _prune_empty_values(device.get("configuration", {}))
+        if _has_real_value(configuration):
+            projected_device["configuration"] = configuration
+        if _has_real_value(projected_device):
+            devices.append(projected_device)
+    return {
+        "iosxe": {
+            "devices": devices
+        }
+    }
+
+
 def write_nac_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
     """Write canonical nac.yaml with deterministic key order."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -234,7 +283,7 @@ def write_nac_yaml(model: dict, output_path: Path, overwrite: bool = False) -> P
         )
     with output_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(
-            model,
+            project_nac_yaml(model),
             handle,
             sort_keys=False,
             default_flow_style=False,
