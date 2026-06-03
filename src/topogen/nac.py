@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.0
+# Doc Version: v1.5.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -52,74 +52,89 @@ def _platform_from_device_template(device_template: str) -> str:
     )
 
 
+def _canonical_name_for_index(index: int) -> str:
+    return f"iosv-{index:02d}"
+
+
+def _as_nodes(node_or_nodes) -> list[TopogenNode]:
+    if isinstance(node_or_nodes, list):
+        return node_or_nodes
+    return [node_or_nodes]
+
+
 def build_canonical_nac_model(
-    node: TopogenNode,
+    node: TopogenNode | list[TopogenNode],
     *,
     device_template: str,
     template: str,
     mode: str,
-    canonical_name: str = "iosv-01",
 ) -> dict:
-    """Build canonical one-router NaC model rooted at iosxe.devices[0]."""
+    """Build canonical NaC model rooted at iosxe.devices[*]."""
     platform = _platform_from_device_template(device_template)
-    interfaces = []
-    node_interfaces = getattr(node, "interfaces", None) or []
-    sorted_interfaces = sorted(
-        node_interfaces,
-        key=lambda x: _get_iface_value(x, "slot", 0) if _get_iface_value(x, "slot", None) is not None else 0,
-    )
-    for iface in sorted_interfaces:
-        slot = _get_iface_value(iface, "slot", 0)
-        try:
-            slot = int(0 if slot is None else slot)
-        except (TypeError, ValueError):
-            slot = 0
-        entry = {
-            "name": _interface_label(device_template, slot),
-            "slot": slot,
-        }
-        iface_address = _get_iface_value(iface, "address", None)
-        if iface_address:
-            entry["ipv4"] = str(iface_address)
-        iface_description = _get_iface_value(iface, "description", "")
-        if iface_description:
-            entry["description"] = str(iface_description)
-        interfaces.append(entry)
-    loopback = getattr(node, "loopback", None)
-    mgmt_ipv4 = _normalize_ipv4_host(loopback.ip if loopback is not None else None)
-    loopbacks = []
-    if loopback is not None:
-        loopbacks.append(
+    devices = []
+    nodes = _as_nodes(node)
+    for index, node_obj in enumerate(nodes, start=1):
+        canonical_name = _canonical_name_for_index(index)
+        interfaces = []
+        node_interfaces = getattr(node_obj, "interfaces", None) or []
+        sorted_interfaces = sorted(
+            node_interfaces,
+            key=lambda x: _get_iface_value(x, "slot", 0) if _get_iface_value(x, "slot", None) is not None else 0,
+        )
+        for iface in sorted_interfaces:
+            slot = _get_iface_value(iface, "slot", 0)
+            try:
+                slot = int(0 if slot is None else slot)
+            except (TypeError, ValueError):
+                slot = 0
+            entry = {
+                "name": _interface_label(device_template, slot),
+                "slot": slot,
+            }
+            iface_address = _get_iface_value(iface, "address", None)
+            if iface_address:
+                entry["ipv4"] = str(iface_address)
+            iface_description = _get_iface_value(iface, "description", "")
+            if iface_description:
+                entry["description"] = str(iface_description)
+            interfaces.append(entry)
+        loopback = getattr(node_obj, "loopback", None)
+        mgmt_ipv4 = _normalize_ipv4_host(loopback.ip if loopback is not None else None)
+        loopbacks = []
+        if loopback is not None:
+            loopbacks.append(
+                {
+                    "name": "Loopback0",
+                    "ipv4": str(loopback),
+                }
+            )
+        node_id = str(getattr(node_obj, "hostname", ""))
+        devices.append(
             {
-                "name": "Loopback0",
-                "ipv4": str(loopback),
+                "name": canonical_name,
+                "hostname": canonical_name,
+                "platform": platform,
+                "role": "router",
+                "template": template,
+                "device_template": device_template,
+                "mgmt": {
+                    # TG-117 fallback: use loopback host IP until explicit mgmt source exists.
+                    "ipv4": mgmt_ipv4,
+                },
+                "loopbacks": loopbacks,
+                "interfaces": interfaces,
+                "metadata": {
+                    "topogen": {
+                        "mode": mode,
+                        "node_id": node_id,
+                    }
+                },
             }
         )
-    node_id = str(getattr(node, "hostname", ""))
-
-    device = {
-        "name": canonical_name,
-        "hostname": canonical_name,
-        "platform": platform,
-        "role": "router",
-        "template": template,
-        "device_template": device_template,
-        "mgmt": {
-            # TG-117 fallback: use loopback host IP until explicit mgmt source exists.
-            "ipv4": mgmt_ipv4,
-        },
-        "loopbacks": loopbacks,
-        "interfaces": interfaces,
-        "metadata": {
-            "topogen": {
-                "mode": mode,
-                "node_id": node_id,
-            }
-        },
-    }
+    devices = sorted(devices, key=lambda d: d.get("name", ""))
     return {
         "iosxe": {
-            "devices": [device]
+            "devices": devices
         }
     }
 
@@ -303,6 +318,7 @@ def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = Fa
         "canonical_root": "iosxe.devices[0]",
         "generator": "topogen",
         "ticket_ref": "TG-122",
+        "device_count": len(devices),
         "generated_artifacts": generated_artifacts,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -324,16 +340,20 @@ def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = Fa
 def write_nac_tree(
     *,
     nac_root: Path,
-    node: TopogenNode,
     device_template: str,
     template: str,
     mode: str,
+    node: TopogenNode | None = None,
+    nodes: list[TopogenNode] | None = None,
     overwrite: bool = False,
 ) -> Path:
     """Orchestrate canonical NaC output write tree."""
     nac_root.mkdir(parents=True, exist_ok=True)
+    selected_nodes = nodes if nodes is not None else ([node] if node is not None else [])
+    if not selected_nodes:
+        raise TopogenError("NaC writer requires at least one router node")
     model = build_canonical_nac_model(
-        node,
+        selected_nodes,
         device_template=device_template,
         template=template,
         mode=mode,

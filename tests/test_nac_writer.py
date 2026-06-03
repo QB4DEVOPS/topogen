@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.0
+# Doc Version: v1.5.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -325,6 +325,113 @@ class TestNacWriter(unittest.TestCase):
             )
             second = (nac_root / "nac.yaml").read_text(encoding="utf-8")
             self.assertEqual(first, second)
+
+    def test_two_router_flat_nac_outputs_include_both_devices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "two-router-flat.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "flat",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_root = Path(tmp) / "out" / "two-router-flat" / "nac"
+            nac_yaml = nac_root / "nac.yaml"
+            devices_yaml = nac_root / "devices.yaml"
+            tfvars_json = nac_root / "terraform.tfvars.json"
+            inventory_yaml = nac_root / "inventory.yaml"
+            group_all_yaml = nac_root / "group_vars" / "all.yaml"
+            host_vars_1 = nac_root / "host_vars" / "iosv-01.yaml"
+            host_vars_2 = nac_root / "host_vars" / "iosv-02.yaml"
+            metadata_yaml = nac_root / "nac_metadata.yaml"
+            for path in (
+                nac_yaml,
+                devices_yaml,
+                tfvars_json,
+                inventory_yaml,
+                group_all_yaml,
+                host_vars_1,
+                host_vars_2,
+                metadata_yaml,
+            ):
+                self.assertTrue(path.exists())
+
+            canonical = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(len(canonical["iosxe"]["devices"]), 2)
+            self.assertEqual(
+                [d["name"] for d in canonical["iosxe"]["devices"]],
+                ["iosv-01", "iosv-02"],
+            )
+
+            devices_doc = yaml.safe_load(devices_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(len(devices_doc["devices"]), 2)
+            self.assertEqual(
+                [d["name"] for d in devices_doc["devices"]],
+                ["iosv-01", "iosv-02"],
+            )
+
+            tfvars = yaml.safe_load(tfvars_json.read_text(encoding="utf-8"))
+            self.assertEqual(len(tfvars["devices"]), 2)
+            self.assertEqual(
+                [d["name"] for d in tfvars["devices"]],
+                ["iosv-01", "iosv-02"],
+            )
+
+            inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
+            self.assertIn("iosv-01", inv["all"]["hosts"])
+            self.assertIn("iosv-02", inv["all"]["hosts"])
+            self.assertIn("ansible_host", inv["all"]["hosts"]["iosv-01"])
+            self.assertIn("ansible_host", inv["all"]["hosts"]["iosv-02"])
+
+            grp = yaml.safe_load(group_all_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(grp["nac_device_count"], 2)
+
+            metadata = yaml.safe_load(metadata_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["device_count"], 2)
+            self.assertIn("host_vars/iosv-01.yaml", metadata["generated_artifacts"])
+            self.assertIn("host_vars/iosv-02.yaml", metadata["generated_artifacts"])
+
+    def test_two_router_flat_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "two-router-flat.yaml"
+            argv = [
+                "2",
+                "--mode",
+                "flat",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            first = self._run_main(argv)
+            second = self._run_main(argv)
+            self.assertEqual(first, 0)
+            self.assertEqual(second, 0)
+            nac_root = Path(tmp) / "out" / "two-router-flat" / "nac"
+            nested_bad = Path(tmp) / "out" / "two-router-flat" / "two-router-flat" / "nac" / "nac.yaml"
+            self.assertFalse(nested_bad.exists())
+
+            files = [
+                nac_root / "nac.yaml",
+                nac_root / "devices.yaml",
+                nac_root / "terraform.tfvars.json",
+                nac_root / "inventory.yaml",
+                nac_root / "group_vars" / "all.yaml",
+                nac_root / "host_vars" / "iosv-01.yaml",
+                nac_root / "host_vars" / "iosv-02.yaml",
+                nac_root / "nac_metadata.yaml",
+            ]
+            for path in files:
+                self.assertTrue(path.exists())
+                a = path.read_text(encoding="utf-8")
+                b = path.read_text(encoding="utf-8")
+                self.assertEqual(a, b)
 
 
 if __name__ == "__main__":

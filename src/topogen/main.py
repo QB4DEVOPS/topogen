@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.9
+# Doc Version: v1.4.0
 # Date Modified: 2026-06-03
 #
 """
@@ -80,9 +80,15 @@ def validate_nac_mvp_guardrails(args, parser):
         return
     if not getattr(args, "offline_yaml", None):
         parser.error("--nac requires --offline-yaml FILE (offline generation path)")
-    if args.mode != "simple" or args.nodes != 1:
+    allowed_shapes = {
+        ("simple", 1),
+        ("flat", 2),
+    }
+    if (args.mode, args.nodes) not in allowed_shapes:
         parser.error(
-            "--nac MVP currently supports only: nodes=1 --mode simple --offline-yaml FILE"
+            "--nac MVP currently supports only: "
+            "nodes=1 --mode simple --offline-yaml FILE OR "
+            "nodes=2 --mode flat --offline-yaml FILE"
         )
     supported_dev_templates = {"iosv", "csr1000v"}
     dev_template = getattr(args, "dev_template", "iosv")
@@ -574,7 +580,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="nac",
         action="store_true",
         default=False,
-        help="Enable NaC MVP guardrails (offline one-router simple path only)",
+        help="Enable NaC MVP guardrails (offline paths: one-router simple, two-router flat)",
     )
     parser.add_argument(
         "--overwrite",
@@ -635,7 +641,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "nodes",
         nargs="?",
         type=valid_node_count,
-        help="Number of nodes to generate (2-1000; 1 is allowed only with --nac MVP)",
+        help="Number of nodes to generate (2-1000; --nac MVP also allows nodes=1 simple and nodes=2 flat)",
     )
     parser.add_argument(
         "--allow-oversubscribe",
