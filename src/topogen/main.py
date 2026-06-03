@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.0
+# Doc Version: v1.5.0
 # Date Modified: 2026-06-03
 #
 """
@@ -82,12 +82,14 @@ def validate_nac_mvp_guardrails(args, parser):
         parser.error("--nac requires --offline-yaml FILE (offline generation path)")
     allowed_shapes = {
         ("simple", 1),
+        ("simple", 2),
         ("flat", 2),
     }
     if (args.mode, args.nodes) not in allowed_shapes:
         parser.error(
             "--nac MVP currently supports only: "
             "nodes=1 --mode simple --offline-yaml FILE OR "
+            "nodes=2 --mode simple --offline-yaml FILE OR "
             "nodes=2 --mode flat --offline-yaml FILE"
         )
     supported_dev_templates = {"iosv", "csr1000v"}

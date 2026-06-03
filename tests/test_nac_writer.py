@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.0
+# Doc Version: v1.6.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -432,6 +432,63 @@ class TestNacWriter(unittest.TestCase):
                 a = path.read_text(encoding="utf-8")
                 b = path.read_text(encoding="utf-8")
                 self.assertEqual(a, b)
+
+    def test_two_router_simple_nac_outputs_include_both_devices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "two-router-simple.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "simple",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_root = Path(tmp) / "out" / "two-router-simple" / "nac"
+            host_vars_1 = nac_root / "host_vars" / "iosv-01.yaml"
+            host_vars_2 = nac_root / "host_vars" / "iosv-02.yaml"
+            self.assertTrue((nac_root / "nac.yaml").exists())
+            self.assertTrue((nac_root / "devices.yaml").exists())
+            self.assertTrue((nac_root / "inventory.yaml").exists())
+            self.assertTrue(host_vars_1.exists())
+            self.assertTrue(host_vars_2.exists())
+
+            canonical = yaml.safe_load((nac_root / "nac.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(len(canonical["iosxe"]["devices"]), 2)
+            self.assertEqual(
+                [d["name"] for d in canonical["iosxe"]["devices"]],
+                ["iosv-01", "iosv-02"],
+            )
+
+            metadata = yaml.safe_load((nac_root / "nac_metadata.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["device_count"], 2)
+
+    def test_two_router_simple_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "two-router-simple.yaml"
+            argv = [
+                "2",
+                "--mode",
+                "simple",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            first = self._run_main(argv)
+            second = self._run_main(argv)
+            self.assertEqual(first, 0)
+            self.assertEqual(second, 0)
+            nac_root = Path(tmp) / "out" / "two-router-simple" / "nac"
+            nested_bad = Path(tmp) / "out" / "two-router-simple" / "two-router-simple" / "nac" / "nac.yaml"
+            self.assertFalse(nested_bad.exists())
+            data_a = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+            data_b = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+            self.assertEqual(data_a, data_b)
 
 
 if __name__ == "__main__":

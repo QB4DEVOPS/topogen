@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
+# Doc Version: v1.2.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -55,6 +55,15 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertEqual(args.mode, "flat")
         self.assertEqual(args.offline_yaml, "out/two-router-flat.yaml")
 
+    def test_valid_nac_two_router_simple_command_shape(self):
+        args = self._parse_and_validate(
+            ["2", "--mode", "simple", "--offline-yaml", "out/two-router-simple.yaml", "--nac"]
+        )
+        self.assertTrue(args.nac)
+        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.mode, "simple")
+        self.assertEqual(args.offline_yaml, "out/two-router-simple.yaml")
+
     def test_nac_requires_offline_yaml(self):
         with self.assertRaises(SystemExit):
             self._parse_and_validate(["1", "--mode", "simple", "--nac"])
@@ -66,7 +75,7 @@ class TestNacCliGuardrails(unittest.TestCase):
             )
         with self.assertRaises(SystemExit):
             self._parse_and_validate(
-                ["2", "--mode", "simple", "--offline-yaml", "out/two-router-simple.yaml", "--nac"]
+                ["3", "--mode", "simple", "--offline-yaml", "out/three-router-simple.yaml", "--nac"]
             )
 
     def test_nac_rejects_unsupported_platform_family(self):
