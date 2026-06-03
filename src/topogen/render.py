@@ -5225,6 +5225,7 @@ class Renderer:
         mgmt_slot = getattr(args, "mgmt_slot", 5)
         version = getattr(args, "cml_version", "0.3.0")
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        nac_router_nodes: list[TopogenNode] = []
 
         # --- Build YAML header ---
         lines: list[str] = []
@@ -5392,6 +5393,7 @@ class Renderer:
                 loopback=loopback,
                 interfaces=topo_ifaces,
             )
+            nac_router_nodes.append(node_obj)
 
             mgmt_ctx = None
             if enable_mgmt:
@@ -5576,6 +5578,16 @@ class Renderer:
             "Offline YAML (nx, %d nodes, %d edges) written to %s (%.1f KB)",
             graph.number_of_nodes(), graph.number_of_edges(), outfile, size_kb,
         )
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
         return 0
 
     @staticmethod

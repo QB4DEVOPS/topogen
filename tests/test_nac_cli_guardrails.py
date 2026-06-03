@@ -22,6 +22,7 @@ if str(SRC) not in sys.path:
 
 from topogen.main import (  # pylint: disable=wrong-import-position
     create_argparser,
+    normalize_template_inputs,
     validate_nac_mvp_guardrails,
     validate_nodes_for_mode,
 )
@@ -33,6 +34,7 @@ class TestNacCliGuardrails(unittest.TestCase):
 
     def _parse_and_validate(self, argv):
         args = self.parser.parse_args(argv)
+        normalize_template_inputs(args)
         validate_nodes_for_mode(args, self.parser)
         validate_nac_mvp_guardrails(args, self.parser)
         return args
@@ -54,6 +56,15 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertEqual(args.nodes, 2)
         self.assertEqual(args.mode, "flat")
         self.assertEqual(args.offline_yaml, "out/two-router-flat.yaml")
+
+    def test_valid_nac_two_router_nx_command_shape(self):
+        args = self._parse_and_validate(
+            ["2", "--mode", "nx", "--offline-yaml", "out/two-router-nx.yaml", "--nac"]
+        )
+        self.assertTrue(args.nac)
+        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.mode, "nx")
+        self.assertEqual(args.offline_yaml, "out/two-router-nx.yaml")
 
     def test_valid_nac_two_router_simple_command_shape(self):
         args = self._parse_and_validate(
@@ -86,6 +97,10 @@ class TestNacCliGuardrails(unittest.TestCase):
             self._parse_and_validate(
                 ["3", "--mode", "simple", "--offline-yaml", "out/three-router-simple.yaml", "--nac"]
             )
+        with self.assertRaises(SystemExit):
+            self._parse_and_validate(
+                ["3", "--mode", "nx", "--offline-yaml", "out/three-router-nx.yaml", "--nac"]
+            )
 
     def test_nac_rejects_unsupported_platform_family(self):
         with self.assertRaises(SystemExit):
@@ -105,6 +120,20 @@ class TestNacCliGuardrails(unittest.TestCase):
     def test_non_nac_still_rejects_one_node(self):
         with self.assertRaises(SystemExit):
             self._parse_and_validate(["1", "--mode", "simple", "--offline-yaml", "out/non-nac.yaml"])
+
+    def test_template_csr1000v_sets_device_template_for_nac(self):
+        args = self._parse_and_validate(
+            ["2", "--mode", "flat", "--template", "csr1000v", "--offline-yaml", "out/two-router-csr.yaml", "--nac"]
+        )
+        self.assertEqual(args.template, "csr1000v")
+        self.assertEqual(args.dev_template, "csr1000v")
+
+    def test_template_crsv_alias_normalizes_to_csr1000v(self):
+        args = self._parse_and_validate(
+            ["2", "--mode", "flat", "--template", "CRSv", "--offline-yaml", "out/two-router-csr.yaml", "--nac"]
+        )
+        self.assertEqual(args.template, "csr1000v")
+        self.assertEqual(args.dev_template, "csr1000v")
 
 
 if __name__ == "__main__":

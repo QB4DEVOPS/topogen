@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.15
-Date Modified: 2026-03-24
+Doc Version: v1.7.16
+Date Modified: 2026-06-03
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -301,6 +301,58 @@ Maintenance note:
 - Some offline YAML generation features (notably `--mgmt-bridge` external_connector emission and related OOB switch/link wiring) currently appear as repeated blocks across multiple offline renderers in `src/topogen/render.py`. This is intentional for now, but it increases maintenance cost (a future edit could fix one mode and miss another). Prefer refactoring into a shared helper when touching this area again.
 
 - **CA-ROOT config is built in two ways.** The online render path uses `csr-pki-ca.jinja2` (via Jinja render). The offline paths (`offline_dmvpn_yaml` flat and flat-pair, `offline_flat_yaml`, `offline_flat_pair_yaml`) build CA config **inline in `render.py`** by assembling `ca_config_lines` from a base template render, then splicing in PKI blocks (`_pki_ca_self_enroll_block_lines`, `_pki_ca_authenticate_eem_lines`, aliases, etc.) before `end`. Any change to CA-ROOT config (e.g. adding an alias, EEM applet, or reordering blocks) must be applied in **both** `csr-pki-ca.jinja2` and all four inline assembly sites in `render.py`.
+
+
+
+## NaC developer reference (critical)
+
+Use this section as the implementation baseline for all `--nac` work.
+
+Current MVP command shapes (guardrail-enforced):
+
+- `nodes=1, mode=simple`
+- `nodes=2, mode=simple`
+- `nodes=2, mode=nx`
+- `nodes=2, mode=flat`
+- `nodes=2, mode=flat-pair`
+
+Guardrail implementation:
+
+- `src/topogen/main.py::validate_nac_mvp_guardrails()`
+- Platform scope is IOS-XE templates only: `iosv`, `csr1000v`
+- `--nac` requires `--offline-yaml`
+
+Path/layout contract:
+
+- Resolver: `src/topogen/render.py::resolve_offline_output_paths()`
+- Input: `--offline-yaml out/<lab>.yaml --nac`
+- Output:
+  - `out/<lab>/<lab>.yaml`
+  - `out/<lab>/nac/nac.yaml`
+  - `out/<lab>/nac/{devices.yaml,terraform.tfvars.json,inventory.yaml,group_vars/all.yaml,host_vars/*.yaml,nac_metadata.yaml}`
+
+Canonical writer and adapters:
+
+- `src/topogen/nac.py`
+  - `build_canonical_nac_model(...)`
+  - `write_nac_yaml(...)`
+  - `write_nac_tree(...)`
+- Offline renderers that emit NaC trees:
+  - `offline_simple_yaml(...)`
+  - `offline_nx_yaml(...)`
+  - `offline_flat_yaml(...)`
+  - `offline_flat_pair_yaml(...)`
+
+If you extend NaC scope:
+
+1. Update guardrails first (`main.py`)
+2. Ensure renderer collects deterministic `nac_router_nodes`
+3. Emit `write_nac_tree(...)` in that path
+4. Update docs (`README.md`, `CHANGES.md`, this file)
+5. Add/adjust tests:
+   - `tests/test_nac_cli_guardrails.py`
+   - `tests/test_nac_output_paths.py`
+   - `tests/test_nac_writer.py`
 
 
 

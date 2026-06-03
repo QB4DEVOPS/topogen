@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.9
+Doc Version: v1.6.0
 Date Modified: 2026-06-03
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -69,6 +69,35 @@ TG-116, TG-117, and TG-121:
 They define canonical shape, required fields, deterministic ordering, and field
 projection targets. Runtime CLI or adapter execution logic is intentionally out
 of scope for this documentation-only contract baseline.
+
+## NaC MVP scope (TG-125)
+
+`--nac` is currently an offline MVP path that writes canonical NaC artifacts
+alongside the offline CML YAML.
+
+Current supported command shapes:
+
+- `topogen 1 --mode simple --offline-yaml out/iosv-test.yaml --nac`
+- `topogen 2 --mode simple --offline-yaml out/two-router-simple.yaml --nac`
+- `topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac`
+- `topogen 2 --mode flat --offline-yaml out/two-router-flat.yaml --nac`
+- `topogen 2 --mode flat-pair --offline-yaml out/two-router-flat-pair.yaml --nac`
+
+Platform guardrail (MVP):
+
+- Supported device templates: `iosv`, `csr1000v`
+- Unsupported combinations fail fast with actionable CLI errors
+
+For `--offline-yaml out/<lab>.yaml --nac`, output layout is:
+
+- `out/<lab>/<lab>.yaml` (offline CML YAML)
+- `out/<lab>/nac/nac.yaml` (canonical model)
+- `out/<lab>/nac/devices.yaml`
+- `out/<lab>/nac/terraform.tfvars.json`
+- `out/<lab>/nac/inventory.yaml`
+- `out/<lab>/nac/group_vars/all.yaml`
+- `out/<lab>/nac/host_vars/*.yaml`
+- `out/<lab>/nac/nac_metadata.yaml`
 
 ## Code structure and dependencies
 

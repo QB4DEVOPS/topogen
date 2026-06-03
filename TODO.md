@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.42
+Doc Version: v1.6.43
 Date Modified: 2026-03-25
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -133,6 +133,7 @@ Recent completions:
 - [x] Coordinate scaling bug fix: `offline_flat_yaml` / `offline_flat_pair_yaml` auto-scale x/y to stay within CML's 15000-coordinate limit (see CHANGES.md)
 - [x] GET VPN (Group Encrypted Transport VPN) support: `--getvpn` flag with `--getvpn-protocol {gdoi,gikev2}`, KS node (csr-getvpn-ks.jinja2), GM config injection on all routers, requires `--pki`. Works with flat, flat-pair, and dmvpn modes. See CHANGES.md.
 - [x] `--blank` flag: topology-only labs with empty configuration on all router nodes; enables CML Bootstrap Lab. Works offline and online for simple, nx, flat, and flat-pair modes. Not supported with DMVPN, `--pki`, `--getvpn`, or config-only flags (`--ntp`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf`). See CHANGES.md.
+- [x] NaC MVP baseline stories reconciled with git/Jira evidence (TG-116/117/118/119/120/121/122/123/124/127/128/129 marked Done; epic remains In Progress with TG-125/TG-126/TG-130 open).
 
 ## Future ideas
 

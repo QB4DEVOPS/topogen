@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.35
+Doc Version: v1.2.36
 Date Modified: 2026-03-25
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -25,6 +25,11 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - Previously `mode transport` was hardcoded; some Cisco reference designs use `mode tunnel`
     - Existing labs are unchanged (transport is the default)
     - Files: src/topogen/main.py (rev v1.3.7 → v1.3.8), src/topogen/render.py (rev v1.2.4 → v1.2.5), src/topogen/templates/csr-dmvpn.jinja2 (rev v1.4.0 → v1.4.1), src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.2.0 → v1.2.1), README.md (rev v1.5.6 → v1.5.7), CHANGES.md (rev v1.2.34 → v1.2.35), TODO.md (rev v1.6.41 → v1.6.42)
+  - docs(nac): document NaC MVP command scope, guardrails, and output tree (TG-125)
+    - Added dedicated README section for `--nac` MVP supported shapes: 1x simple, 2x simple/nx/flat/flat-pair
+    - Documented platform guardrail (`iosv`, `csr1000v`) and deterministic output layout under `out/<lab>/nac/`
+    - Updated TODO recent completions to reflect NaC MVP baseline delivery and status reconciliation
+    - Files: README.md (rev v1.5.9 → v1.6.0), TODO.md (rev v1.6.42 → v1.6.43), CHANGES.md (rev v1.2.35 → v1.2.36)
   - feat(pki): add `checkcert` alias to PKI client routers (TG-106)
     - Adds `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to all PKI client routers so operators can quickly verify certificate enrollment status
     - Mirrors the CA-ROOT `servcerts` alias pattern; injected via `_inject_pki_client_trustpoint()` alongside the existing `authc` alias

@@ -83,6 +83,7 @@ def validate_nac_mvp_guardrails(args, parser):
     allowed_shapes = {
         ("simple", 1),
         ("simple", 2),
+        ("nx", 2),
         ("flat", 2),
         ("flat-pair", 2),
     }
@@ -91,6 +92,7 @@ def validate_nac_mvp_guardrails(args, parser):
             "--nac MVP currently supports only: "
             "nodes=1 --mode simple --offline-yaml FILE OR "
             "nodes=2 --mode simple --offline-yaml FILE OR "
+            "nodes=2 --mode nx --offline-yaml FILE OR "
             "nodes=2 --mode flat --offline-yaml FILE OR "
             "nodes=2 --mode flat-pair --offline-yaml FILE"
         )
@@ -105,6 +107,30 @@ def validate_nac_mvp_guardrails(args, parser):
         parser.error("--nac MVP does not support import workflow flags (--import/--import-yaml/--up)")
     if getattr(args, "yaml_output", None):
         parser.error("--nac MVP does not support --yaml online export; use --offline-yaml")
+
+
+def normalize_template_inputs(args):
+    """Normalize template aliases and align device-template defaults."""
+    template = str(getattr(args, "template", "") or "").strip()
+    template_lower = template.lower()
+
+    aliases = {
+        "crsv": "csr1000v",
+    }
+    resolved_template = aliases.get(template_lower, template_lower)
+    if resolved_template:
+        args.template = resolved_template
+
+    dev_template = str(getattr(args, "dev_template", "iosv") or "iosv").strip().lower()
+
+    # If user selected a CSR template and did not explicitly override the
+    # default node definition, align to csr1000v automatically.
+    if resolved_template == "csr1000v" and dev_template == "iosv":
+        args.dev_template = "csr1000v"
+    elif resolved_template.startswith("csr-") and dev_template == "iosv":
+        args.dev_template = "csr1000v"
+    else:
+        args.dev_template = dev_template
 
 
 def create_argparser(parser_class=argparse.ArgumentParser):
@@ -584,7 +610,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="nac",
         action="store_true",
         default=False,
-        help="Enable NaC MVP guardrails (offline paths: one-router simple, two-router simple/flat/flat-pair)",
+        help="Enable NaC MVP guardrails (offline paths: one-router simple, two-router simple/nx/flat/flat-pair)",
     )
     parser.add_argument(
         "--overwrite",
@@ -698,6 +724,7 @@ def main():
     """main function, returns 0 on success, 1 otherwise"""
     parser = create_argparser()
     args = parser.parse_args()
+    normalize_template_inputs(args)
     # Default lab name: when -L is not provided (None), derive from context.
     # --offline-yaml: use filename stem. --import-yaml / --up: leave None (let YAML title: take effect). Online: "topogen lab".
     if args.labname is None:
