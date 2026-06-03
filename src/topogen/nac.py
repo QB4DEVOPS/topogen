@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.0
+# Doc Version: v1.3.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -227,6 +227,79 @@ def write_host_vars_yaml(model: dict, host_vars_root: Path, overwrite: bool = Fa
     return written_paths
 
 
+def write_devices_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
+    """Project canonical model into deterministic devices.yaml."""
+    devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
+    projected_devices = []
+    for device in devices:
+        mgmt_raw = str(device.get("mgmt", {}).get("ipv4", ""))
+        if "/" in mgmt_raw:
+            mgmt_ip = str(ip_interface(mgmt_raw).ip)
+        else:
+            mgmt_ip = mgmt_raw
+        projected_devices.append(
+            {
+                "name": device.get("name", ""),
+                "hostname": device.get("hostname", ""),
+                "platform": device.get("platform", ""),
+                "role": device.get("role", ""),
+                "mgmt_ip": mgmt_ip,
+            }
+        )
+    payload = {"devices": projected_devices}
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not overwrite:
+        raise TopogenError(
+            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
+        )
+    with output_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(
+            payload,
+            handle,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=False,
+        )
+    return output_path
+
+
+def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
+    """Write deterministic nac_metadata.yaml for canonical outputs."""
+    devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
+    host_vars_artifacts = [f"host_vars/{d.get('name', '')}.yaml" for d in devices]
+    generated_artifacts = [
+        "nac.yaml",
+        "terraform.tfvars.json",
+        "inventory.yaml",
+        "group_vars/all.yaml",
+        *host_vars_artifacts,
+        "devices.yaml",
+        "nac_metadata.yaml",
+    ]
+    payload = {
+        "schema": "iosxe-one-router-golden-contract",
+        "schema_version": "1.0.0",
+        "canonical_root": "iosxe.devices[0]",
+        "generator": "topogen",
+        "ticket_ref": "TG-122",
+        "generated_artifacts": generated_artifacts,
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not overwrite:
+        raise TopogenError(
+            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
+        )
+    with output_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(
+            payload,
+            handle,
+            sort_keys=False,
+            default_flow_style=False,
+            allow_unicode=False,
+        )
+    return output_path
+
+
 def write_nac_tree(
     *,
     nac_root: Path,
@@ -263,6 +336,16 @@ def write_nac_tree(
     write_host_vars_yaml(
         model,
         nac_root / "host_vars",
+        overwrite=overwrite,
+    )
+    write_devices_yaml(
+        model,
+        nac_root / "devices.yaml",
+        overwrite=overwrite,
+    )
+    write_nac_metadata_yaml(
+        model,
+        nac_root / "nac_metadata.yaml",
         overwrite=overwrite,
     )
     return nac_yaml_path

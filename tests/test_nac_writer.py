@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.0
+# Doc Version: v1.3.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -25,7 +25,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from topogen.main import main  # pylint: disable=wrong-import-position
-from topogen.nac import write_terraform_tfvars_json  # pylint: disable=wrong-import-position
+from topogen.nac import (  # pylint: disable=wrong-import-position
+    write_devices_yaml,
+    write_terraform_tfvars_json,
+)
 
 
 class TestNacWriter(unittest.TestCase):
@@ -54,11 +57,15 @@ class TestNacWriter(unittest.TestCase):
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
             group_all_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "group_vars" / "all.yaml"
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
+            devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
+            metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
             self.assertTrue(inventory_yaml.exists())
             self.assertTrue(group_all_yaml.exists())
             self.assertTrue(host_vars_yaml.exists())
+            self.assertTrue(devices_yaml.exists())
+            self.assertTrue(metadata_yaml.exists())
 
             data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
             self.assertIn("iosxe", data)
@@ -100,6 +107,24 @@ class TestNacWriter(unittest.TestCase):
             for key in ("hostname", "role", "template", "device_template", "loopbacks", "interfaces"):
                 self.assertIn(key, host_vars)
 
+            devices_doc = yaml.safe_load(devices_yaml.read_text(encoding="utf-8"))
+            self.assertIn("devices", devices_doc)
+            self.assertEqual(len(devices_doc["devices"]), 1)
+            dev = devices_doc["devices"][0]
+            for key in ("name", "hostname", "platform", "role", "mgmt_ip"):
+                self.assertIn(key, dev)
+
+            meta = yaml.safe_load(metadata_yaml.read_text(encoding="utf-8"))
+            for key in (
+                "schema",
+                "schema_version",
+                "canonical_root",
+                "generator",
+                "ticket_ref",
+                "generated_artifacts",
+            ):
+                self.assertIn(key, meta)
+
     def test_nac_rerun_is_deterministic_and_not_nested(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "iosv-test.yaml"
@@ -122,12 +147,16 @@ class TestNacWriter(unittest.TestCase):
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
             group_all_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "group_vars" / "all.yaml"
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
+            devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
+            metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
             nested_bad = Path(tmp) / "out" / "iosv-test" / "iosv-test" / "nac" / "nac.yaml"
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
             self.assertTrue(inventory_yaml.exists())
             self.assertTrue(group_all_yaml.exists())
             self.assertTrue(host_vars_yaml.exists())
+            self.assertTrue(devices_yaml.exists())
+            self.assertTrue(metadata_yaml.exists())
             self.assertFalse(nested_bad.exists())
 
             content_a = nac_yaml.read_text(encoding="utf-8")
@@ -145,6 +174,12 @@ class TestNacWriter(unittest.TestCase):
             hv_a = host_vars_yaml.read_text(encoding="utf-8")
             hv_b = host_vars_yaml.read_text(encoding="utf-8")
             self.assertEqual(hv_a, hv_b)
+            devices_a = devices_yaml.read_text(encoding="utf-8")
+            devices_b = devices_yaml.read_text(encoding="utf-8")
+            self.assertEqual(devices_a, devices_b)
+            meta_a = metadata_yaml.read_text(encoding="utf-8")
+            meta_b = metadata_yaml.read_text(encoding="utf-8")
+            self.assertEqual(meta_a, meta_b)
 
     def test_tfvars_mgmt_ip_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,6 +218,26 @@ class TestNacWriter(unittest.TestCase):
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
             inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
             self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.0.0.1")
+
+    def test_devices_yaml_mgmt_ip_uses_host_ip_for_cidr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = {
+                "iosxe": {
+                    "devices": [
+                        {
+                            "name": "iosv-01",
+                            "hostname": "iosv-01",
+                            "platform": "iosxe",
+                            "role": "router",
+                            "mgmt": {"ipv4": "10.254.0.11/24"},
+                        }
+                    ]
+                }
+            }
+            out_path = Path(tmp) / "devices.yaml"
+            write_devices_yaml(model, out_path, overwrite=True)
+            devices_doc = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(devices_doc["devices"][0]["mgmt_ip"], "10.254.0.11")
 
 
 if __name__ == "__main__":
