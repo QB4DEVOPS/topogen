@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
+# Doc Version: v1.4.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -25,8 +25,11 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from topogen.main import main  # pylint: disable=wrong-import-position
+from topogen.models import TopogenNode  # pylint: disable=wrong-import-position
 from topogen.nac import (  # pylint: disable=wrong-import-position
+    build_canonical_nac_model,
     write_devices_yaml,
+    write_nac_tree,
     write_terraform_tfvars_json,
 )
 
@@ -238,6 +241,90 @@ class TestNacWriter(unittest.TestCase):
             write_devices_yaml(model, out_path, overwrite=True)
             devices_doc = yaml.safe_load(out_path.read_text(encoding="utf-8"))
             self.assertEqual(devices_doc["devices"][0]["mgmt_ip"], "10.254.0.11")
+
+    def test_missing_interfaces_emits_empty_list_without_crash(self):
+        node = TopogenNode(hostname="r1", loopback=None, interfaces=[])
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="x",
+            mode="simple",
+        )
+        device = model["iosxe"]["devices"][0]
+        self.assertEqual(device["interfaces"], [])
+
+    def test_missing_loopback_uses_deterministic_empty_fallbacks(self):
+        node = TopogenNode(hostname="r1", loopback=None, interfaces=[])
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="x",
+            mode="simple",
+        )
+        device = model["iosxe"]["devices"][0]
+        self.assertEqual(device["mgmt"]["ipv4"], "")
+        self.assertEqual(device["loopbacks"], [])
+
+    def test_optional_interface_keys_absent_writer_still_succeeds(self):
+        class PartialIface:
+            pass
+
+        iface = PartialIface()
+        node = TopogenNode(hostname="r1", loopback=None, interfaces=[iface])
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="x",
+            mode="simple",
+        )
+        iface_entry = model["iosxe"]["devices"][0]["interfaces"][0]
+        self.assertEqual(iface_entry["slot"], 0)
+        self.assertEqual(iface_entry["name"], "GigabitEthernet0/0")
+        self.assertNotIn("ipv4", iface_entry)
+        self.assertNotIn("description", iface_entry)
+
+    def test_missing_metadata_sections_in_model_do_not_crash_writers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = {
+                "iosxe": {
+                    "devices": [
+                        {
+                            "name": "iosv-01",
+                            "hostname": "iosv-01",
+                            "platform": "iosxe",
+                            "role": "router",
+                        }
+                    ]
+                }
+            }
+            out_path = Path(tmp) / "devices.yaml"
+            write_devices_yaml(model, out_path, overwrite=True)
+            devices_doc = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(devices_doc["devices"][0]["mgmt_ip"], "")
+
+    def test_rerun_stability_with_fallback_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(hostname="r1", loopback=None, interfaces=[{"description": "uplink"}])
+            nac_root = Path(tmp) / "nac"
+            write_nac_tree(
+                nac_root=nac_root,
+                node=node,
+                device_template="iosv",
+                template="x",
+                mode="simple",
+                overwrite=True,
+            )
+            first = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+            write_nac_tree(
+                nac_root=nac_root,
+                node=node,
+                device_template="iosv",
+                template="x",
+                mode="simple",
+                overwrite=True,
+            )
+            second = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+            self.assertEqual(first, second)
 
 
 if __name__ == "__main__":

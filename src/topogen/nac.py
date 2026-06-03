@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
+# Doc Version: v1.4.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -17,6 +17,24 @@ from pathlib import Path
 import yaml
 
 from topogen.models import TopogenError, TopogenNode
+
+
+def _normalize_ipv4_host(value) -> str:
+    raw = "" if value is None else str(value).strip()
+    if not raw:
+        return ""
+    if "/" in raw:
+        try:
+            return str(ip_interface(raw).ip)
+        except ValueError:
+            return ""
+    return raw
+
+
+def _get_iface_value(iface, key: str, default):
+    if isinstance(iface, dict):
+        return iface.get(key, default)
+    return getattr(iface, key, default)
 
 
 def _interface_label(device_template: str, slot: int) -> str:
@@ -43,21 +61,41 @@ def build_canonical_nac_model(
     canonical_name: str = "iosv-01",
 ) -> dict:
     """Build canonical one-router NaC model rooted at iosxe.devices[0]."""
-    if node.loopback is None:
-        raise TopogenError("NaC canonical writer requires node.loopback for mgmt fallback")
-
     platform = _platform_from_device_template(device_template)
     interfaces = []
-    for iface in sorted(node.interfaces, key=lambda x: x.slot):
+    node_interfaces = getattr(node, "interfaces", None) or []
+    sorted_interfaces = sorted(
+        node_interfaces,
+        key=lambda x: _get_iface_value(x, "slot", 0) if _get_iface_value(x, "slot", None) is not None else 0,
+    )
+    for iface in sorted_interfaces:
+        slot = _get_iface_value(iface, "slot", 0)
+        try:
+            slot = int(0 if slot is None else slot)
+        except (TypeError, ValueError):
+            slot = 0
         entry = {
-            "name": _interface_label(device_template, iface.slot),
-            "slot": iface.slot,
+            "name": _interface_label(device_template, slot),
+            "slot": slot,
         }
-        if iface.address is not None:
-            entry["ipv4"] = str(iface.address)
-        if iface.description:
-            entry["description"] = iface.description
+        iface_address = _get_iface_value(iface, "address", None)
+        if iface_address:
+            entry["ipv4"] = str(iface_address)
+        iface_description = _get_iface_value(iface, "description", "")
+        if iface_description:
+            entry["description"] = str(iface_description)
         interfaces.append(entry)
+    loopback = getattr(node, "loopback", None)
+    mgmt_ipv4 = _normalize_ipv4_host(loopback.ip if loopback is not None else None)
+    loopbacks = []
+    if loopback is not None:
+        loopbacks.append(
+            {
+                "name": "Loopback0",
+                "ipv4": str(loopback),
+            }
+        )
+    node_id = str(getattr(node, "hostname", ""))
 
     device = {
         "name": canonical_name,
@@ -68,19 +106,14 @@ def build_canonical_nac_model(
         "device_template": device_template,
         "mgmt": {
             # TG-117 fallback: use loopback host IP until explicit mgmt source exists.
-            "ipv4": str(node.loopback.ip),
+            "ipv4": mgmt_ipv4,
         },
-        "loopbacks": [
-            {
-                "name": "Loopback0",
-                "ipv4": str(node.loopback),
-            }
-        ],
+        "loopbacks": loopbacks,
         "interfaces": interfaces,
         "metadata": {
             "topogen": {
                 "mode": mode,
-                "node_id": node.hostname,
+                "node_id": node_id,
             }
         },
     }
@@ -114,11 +147,7 @@ def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool 
     devices = model.get("iosxe", {}).get("devices", [])
     projected_devices = []
     for device in sorted(devices, key=lambda d: d.get("name", "")):
-        mgmt_raw = str(device.get("mgmt", {}).get("ipv4", ""))
-        if "/" in mgmt_raw:
-            mgmt_ip = str(ip_interface(mgmt_raw).ip)
-        else:
-            mgmt_ip = mgmt_raw
+        mgmt_ip = _normalize_ipv4_host(device.get("mgmt", {}).get("ipv4", ""))
         projected_devices.append(
             {
                 "name": device.get("name", ""),
@@ -146,11 +175,7 @@ def write_inventory_yaml(model: dict, output_path: Path, overwrite: bool = False
     devices = model.get("iosxe", {}).get("devices", [])
     hosts = {}
     for device in sorted(devices, key=lambda d: d.get("name", "")):
-        mgmt_raw = str(device.get("mgmt", {}).get("ipv4", ""))
-        if "/" in mgmt_raw:
-            ansible_host = str(ip_interface(mgmt_raw).ip)
-        else:
-            ansible_host = mgmt_raw
+        ansible_host = _normalize_ipv4_host(device.get("mgmt", {}).get("ipv4", ""))
         hosts[device.get("name", "")] = {
             "ansible_host": ansible_host,
             "platform": device.get("platform", ""),
@@ -232,11 +257,7 @@ def write_devices_yaml(model: dict, output_path: Path, overwrite: bool = False) 
     devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
     projected_devices = []
     for device in devices:
-        mgmt_raw = str(device.get("mgmt", {}).get("ipv4", ""))
-        if "/" in mgmt_raw:
-            mgmt_ip = str(ip_interface(mgmt_raw).ip)
-        else:
-            mgmt_ip = mgmt_raw
+        mgmt_ip = _normalize_ipv4_host(device.get("mgmt", {}).get("ipv4", ""))
         projected_devices.append(
             {
                 "name": device.get("name", ""),
