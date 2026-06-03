@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.7
+# Doc Version: v1.2.8
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/main.py
@@ -4349,6 +4349,11 @@ class Renderer:
         total = int(args.nodes)
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
         # Scale spacing so any node count and group size produces importable coordinates.
@@ -4592,6 +4597,7 @@ class Renderer:
         dev_def = getattr(args, "dev_template", args.template)
         g_base = "10.0" if getattr(args, "gi0_zero", False) else "10.10"
         l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total):
             n = idx + 1
             label = f"R{n}"
@@ -4630,6 +4636,7 @@ class Renderer:
                 loopback=IPv4Interface(f"{l_ip}/32"),
                 interfaces=ifaces,
             )
+            nac_router_nodes.append(node)
             # Build mgmt/ntp context for template
             mgmt_ctx = None
             if enable_mgmt:
@@ -5058,8 +5065,9 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -5070,6 +5078,16 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
         return 0
 
     @staticmethod
