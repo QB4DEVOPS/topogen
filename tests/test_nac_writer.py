@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.7.0
+# Doc Version: v1.7.1
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -13,7 +13,9 @@
 import sys
 import tempfile
 import unittest
+from ipaddress import IPv4Interface
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import yaml
@@ -25,8 +27,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from topogen.main import main  # pylint: disable=wrong-import-position
-from topogen.models import TopogenNode  # pylint: disable=wrong-import-position
+from topogen.models import TopogenInterface, TopogenNode  # pylint: disable=wrong-import-position
 from topogen.nac import (  # pylint: disable=wrong-import-position
+    _select_host,
     build_canonical_nac_model,
     write_devices_yaml,
     write_nac_tree,
@@ -220,7 +223,10 @@ class TestNacWriter(unittest.TestCase):
             self.assertEqual(rc, 0)
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
             inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
-            self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.0.0.1")
+            nac_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac.yaml"
+            nac = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], nac["iosxe"]["devices"][0]["host"])
+            self.assertNotEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.0.0.1")
 
     def test_devices_yaml_mgmt_ip_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -264,6 +270,184 @@ class TestNacWriter(unittest.TestCase):
         device = model["iosxe"]["devices"][0]
         self.assertEqual(device["mgmt"]["ipv4"], "")
         self.assertEqual(device["loopbacks"], [])
+
+    def test_select_host_uses_slot_zero_data_without_mgmt(self):
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.0.0.1/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                TopogenInterface(address=IPv4Interface("172.16.0.10/30"), slot=1),
+            ],
+        )
+        self.assertEqual(_select_host(node, SimpleNamespace(enable_mgmt=False)), "172.16.0.6")
+
+    def test_select_host_uses_oob_mgmt_when_enabled(self):
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.0.0.1/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                TopogenInterface(
+                    address=IPv4Interface("10.254.0.1/16"),
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=5,
+                ),
+            ],
+        )
+        self.assertEqual(_select_host(node, SimpleNamespace(enable_mgmt=True)), "10.254.0.1")
+
+    def test_select_host_has_no_loopback_fallback(self):
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.0.0.1/32"),
+            interfaces=[],
+        )
+        self.assertEqual(_select_host(node, SimpleNamespace(enable_mgmt=False)), "")
+
+    def test_vrf_mapping_emits_forwarding_and_vrf_definition(self):
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.0.0.1/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.6/30"), vrf="tenant", slot=1),
+            ],
+        )
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="iosv",
+            mode="flat-pair",
+        )
+        config = model["iosxe"]["devices"][0]["configuration"]
+        self.assertEqual(config["interfaces"]["ethernets"][0]["vrf_forwarding"], "tenant")
+        self.assertEqual(config["vrfs"], [{"name": "tenant"}])
+
+    def test_global_table_omits_vrf_keys(self):
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.0.0.1/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+            ],
+        )
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="iosv",
+            mode="simple",
+        )
+        config = model["iosxe"]["devices"][0]["configuration"]
+        self.assertNotIn("vrfs", config)
+        self.assertNotIn("vrf_forwarding", config["interfaces"]["ethernets"][0])
+
+    def test_flat_pair_cli_vrf_reaches_nac_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "flat-pair-vrf.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "flat-pair",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--vrf",
+                    "--pair-vrf",
+                    "tenant",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_yaml = Path(tmp) / "out" / "flat-pair-vrf" / "nac" / "nac.yaml"
+            devices = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))["iosxe"]["devices"]
+            r1_config = devices[0]["configuration"]
+            self.assertEqual(r1_config["vrfs"], [{"name": "tenant"}])
+            self.assertTrue(
+                any(
+                    iface.get("vrf_forwarding") == "tenant"
+                    for iface in r1_config["interfaces"]["ethernets"]
+                )
+            )
+
+    def test_mgmt_cli_emits_mgmt_host_interface_and_vrf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "mgmt-simple.yaml"
+            rc = self._run_main(
+                [
+                    "1",
+                    "--mode",
+                    "simple",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--mgmt",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_yaml = Path(tmp) / "out" / "mgmt-simple" / "nac" / "nac.yaml"
+            inventory_yaml = Path(tmp) / "out" / "mgmt-simple" / "nac" / "inventory.yaml"
+            device = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))["iosxe"]["devices"][0]
+            inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(device["host"], "10.254.0.1")
+            self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.254.0.1")
+            self.assertEqual(device["configuration"]["vrfs"], [{"name": "Mgmt-vrf"}])
+            mgmt_iface = next(
+                iface
+                for iface in device["configuration"]["interfaces"]["ethernets"]
+                if iface.get("description") == "OOB Management"
+            )
+            self.assertEqual(mgmt_iface["vrf_forwarding"], "Mgmt-vrf")
+
+    def test_mgmt_global_vrf_omits_vrf_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "mgmt-global.yaml"
+            rc = self._run_main(
+                [
+                    "1",
+                    "--mode",
+                    "simple",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--mgmt",
+                    "--mgmt-vrf",
+                    "global",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_yaml = Path(tmp) / "out" / "mgmt-global" / "nac" / "nac.yaml"
+            device = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))["iosxe"]["devices"][0]
+            config = device["configuration"]
+            self.assertEqual(device["host"], "10.254.0.1")
+            self.assertNotIn("vrfs", config)
+            mgmt_iface = next(
+                iface
+                for iface in config["interfaces"]["ethernets"]
+                if iface.get("description") == "OOB Management"
+            )
+            self.assertNotIn("vrf_forwarding", mgmt_iface)
+
+    def test_name_and_hostname_sources_are_distinct(self):
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.0.0.1/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+            ],
+        )
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="iosv",
+            mode="simple",
+        )
+        device = model["iosxe"]["devices"][0]
+        self.assertEqual(device["name"], "iosv-01")
+        self.assertEqual(device["configuration"]["system"]["hostname"], "R1")
 
     def test_optional_interface_keys_absent_writer_still_succeeds(self):
         class PartialIface:

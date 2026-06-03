@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.0
+# Doc Version: v1.5.1
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -43,6 +43,13 @@ def _interface_label(device_template: str, slot: int) -> str:
     return f"GigabitEthernet0/{slot}"
 
 
+def _split_interface_label(label: str) -> tuple[str, str]:
+    for prefix in ("GigabitEthernet",):
+        if label.startswith(prefix):
+            return prefix, label[len(prefix):]
+    return label, ""
+
+
 def _platform_from_device_template(device_template: str) -> str:
     if device_template in {"iosv", "csr1000v"}:
         return "iosxe"
@@ -62,12 +69,48 @@ def _as_nodes(node_or_nodes) -> list[TopogenNode]:
     return [node_or_nodes]
 
 
+def _select_host(node: TopogenNode, args) -> str:
+    """Select connection host from model data, never from Loopback0."""
+    node_interfaces = getattr(node, "interfaces", None) or []
+    if bool(getattr(args, "enable_mgmt", False)):
+        for iface in node_interfaces:
+            description = str(_get_iface_value(iface, "description", ""))
+            if description == "OOB Management":
+                return _normalize_ipv4_host(_get_iface_value(iface, "address", None))
+        return ""
+
+    data_interfaces = sorted(
+        node_interfaces,
+        key=lambda iface: _get_iface_value(iface, "slot", 0)
+        if _get_iface_value(iface, "slot", None) is not None
+        else 0,
+    )
+    for iface in data_interfaces:
+        slot = _get_iface_value(iface, "slot", None)
+        try:
+            slot = int(0 if slot is None else slot)
+        except (TypeError, ValueError):
+            slot = 0
+        if slot == 0:
+            return _normalize_ipv4_host(_get_iface_value(iface, "address", None))
+    return ""
+
+
+def _ipv4_mapping(address) -> dict:
+    iface = ip_interface(address)
+    return {
+        "address": str(iface.ip),
+        "address_mask": str(iface.netmask),
+    }
+
+
 def build_canonical_nac_model(
     node: TopogenNode | list[TopogenNode],
     *,
     device_template: str,
     template: str,
     mode: str,
+    args=None,
 ) -> dict:
     """Build canonical NaC model rooted at iosxe.devices[*]."""
     platform = _platform_from_device_template(device_template)
@@ -75,11 +118,16 @@ def build_canonical_nac_model(
     nodes = _as_nodes(node)
     for index, node_obj in enumerate(nodes, start=1):
         canonical_name = _canonical_name_for_index(index)
+        system_hostname = str(getattr(node_obj, "hostname", ""))
         interfaces = []
+        ethernets = []
+        vrf_names = set()
         node_interfaces = getattr(node_obj, "interfaces", None) or []
         sorted_interfaces = sorted(
             node_interfaces,
-            key=lambda x: _get_iface_value(x, "slot", 0) if _get_iface_value(x, "slot", None) is not None else 0,
+            key=lambda x: _get_iface_value(x, "slot", 0)
+            if _get_iface_value(x, "slot", None) is not None
+            else 0,
         )
         for iface in sorted_interfaces:
             slot = _get_iface_value(iface, "slot", 0)
@@ -87,20 +135,36 @@ def build_canonical_nac_model(
                 slot = int(0 if slot is None else slot)
             except (TypeError, ValueError):
                 slot = 0
+            iface_label = _interface_label(device_template, slot)
             entry = {
-                "name": _interface_label(device_template, slot),
+                "name": iface_label,
                 "slot": slot,
+            }
+            iface_type, iface_id = _split_interface_label(iface_label)
+            ethernet_entry = {
+                "type": iface_type,
+                "id": str(iface_id),
             }
             iface_address = _get_iface_value(iface, "address", None)
             if iface_address:
                 entry["ipv4"] = str(iface_address)
+                ethernet_entry["ipv4"] = _ipv4_mapping(iface_address)
             iface_description = _get_iface_value(iface, "description", "")
             if iface_description:
                 entry["description"] = str(iface_description)
+                ethernet_entry["description"] = str(iface_description)
+            iface_vrf = _get_iface_value(iface, "vrf", None)
+            if iface_vrf:
+                entry["vrf"] = str(iface_vrf)
+                ethernet_entry["vrf_forwarding"] = str(iface_vrf)
+                vrf_names.add(str(iface_vrf))
             interfaces.append(entry)
+            if iface_address:
+                ethernets.append(ethernet_entry)
         loopback = getattr(node_obj, "loopback", None)
-        mgmt_ipv4 = _normalize_ipv4_host(loopback.ip if loopback is not None else None)
+        host = _select_host(node_obj, args)
         loopbacks = []
+        config_loopbacks = []
         if loopback is not None:
             loopbacks.append(
                 {
@@ -108,25 +172,47 @@ def build_canonical_nac_model(
                     "ipv4": str(loopback),
                 }
             )
-        node_id = str(getattr(node_obj, "hostname", ""))
+            config_loopbacks.append(
+                {
+                    "id": "0",
+                    "ipv4": _ipv4_mapping(loopback),
+                }
+            )
+        configuration = {
+            "system": {
+                "hostname": system_hostname,
+            }
+        }
+        if vrf_names:
+            configuration["vrfs"] = [{"name": name} for name in sorted(vrf_names)]
+        config_interfaces = {}
+        if ethernets:
+            config_interfaces["ethernets"] = ethernets
+        if config_loopbacks:
+            config_interfaces["loopbacks"] = config_loopbacks
+        if config_interfaces:
+            configuration["interfaces"] = config_interfaces
         devices.append(
             {
                 "name": canonical_name,
-                "hostname": canonical_name,
+                "host": host,
+                "configuration": configuration,
+                "hostname": system_hostname,
                 "platform": platform,
                 "role": "router",
                 "template": template,
                 "device_template": device_template,
                 "mgmt": {
-                    # TG-117 fallback: use loopback host IP until explicit mgmt source exists.
-                    "ipv4": mgmt_ipv4,
+                    "ipv4": host,
                 },
                 "loopbacks": loopbacks,
                 "interfaces": interfaces,
                 "metadata": {
                     "topogen": {
                         "mode": mode,
-                        "node_id": node_id,
+                        "node_id": system_hostname,
+                        "name_source": "synthetic inventory name",
+                        "hostname_source": "TopogenNode.hostname",
                     }
                 },
             }
@@ -162,7 +248,7 @@ def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool 
     devices = model.get("iosxe", {}).get("devices", [])
     projected_devices = []
     for device in sorted(devices, key=lambda d: d.get("name", "")):
-        mgmt_ip = _normalize_ipv4_host(device.get("mgmt", {}).get("ipv4", ""))
+        mgmt_ip = _normalize_ipv4_host(device.get("host") or device.get("mgmt", {}).get("ipv4", ""))
         projected_devices.append(
             {
                 "name": device.get("name", ""),
@@ -190,7 +276,7 @@ def write_inventory_yaml(model: dict, output_path: Path, overwrite: bool = False
     devices = model.get("iosxe", {}).get("devices", [])
     hosts = {}
     for device in sorted(devices, key=lambda d: d.get("name", "")):
-        ansible_host = _normalize_ipv4_host(device.get("mgmt", {}).get("ipv4", ""))
+        ansible_host = _normalize_ipv4_host(device.get("host") or device.get("mgmt", {}).get("ipv4", ""))
         hosts[device.get("name", "")] = {
             "ansible_host": ansible_host,
             "platform": device.get("platform", ""),
@@ -272,7 +358,7 @@ def write_devices_yaml(model: dict, output_path: Path, overwrite: bool = False) 
     devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
     projected_devices = []
     for device in devices:
-        mgmt_ip = _normalize_ipv4_host(device.get("mgmt", {}).get("ipv4", ""))
+        mgmt_ip = _normalize_ipv4_host(device.get("host") or device.get("mgmt", {}).get("ipv4", ""))
         projected_devices.append(
             {
                 "name": device.get("name", ""),
@@ -345,6 +431,7 @@ def write_nac_tree(
     mode: str,
     node: TopogenNode | None = None,
     nodes: list[TopogenNode] | None = None,
+    args=None,
     overwrite: bool = False,
 ) -> Path:
     """Orchestrate canonical NaC output write tree."""
@@ -357,6 +444,7 @@ def write_nac_tree(
         device_template=device_template,
         template=template,
         mode=mode,
+        args=args,
     )
     nac_yaml_path = write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
     write_terraform_tfvars_json(
