@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.46
+Doc Version: v1.6.47
 Date Modified: 2026-06-04
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -107,6 +107,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] DMVPN flat and flat-pair offline NaC artifacts (TG-151): `--nac` now emits the sibling `nac/` tree for DMVPN flat and flat-pair offline YAML generation while preserving the original flat-pair CML YAML path/config when `--nac` is omitted. See CHANGES.md.
 - [x] CML2 Terraform lifecycle scaffold (`--terraform-cml2`, alias `--cml2`) for generated offline labs: emits `out/<lab>/cml2/` with `main.tf`, `versions.tf`, `variables.tf`, `outputs.tf`, and `.gitignore` targeting `CiscoDevNet/cml2` and the generated YAML through a relative path. See CHANGES.md TG-150 entry.
 - [x] Two-tier OOB management for all online modes: `render_node_network` (NX), `render_node_sequence` (simple), and `render_flat_network` (flat) now use SWoob0 (aggregation) + SWoob1..N (access) matching offline reference. Previously used a single switch that couldn't scale. See CHANGES.md.
 - [x] OOB management VRF block added to `iosv.jinja2`, `iosv-eigrp-nonflat.jinja2`, `iosv-eigrp-stub.jinja2`, `iol-xe.jinja2` — these templates previously had no mgmt block so `--mgmt` was silently ignored in the router config. See CHANGES.md.
@@ -141,7 +142,7 @@ Recent completions:
 
 - [ ] **NaC: `--nac` help text omits `nx`** — the `nodes` positional `--help` string lists `nodes=2 simple/flat/flat-pair` but omits `nx`, even though the standalone `--nac` help and `validate_nac_mvp_guardrails()` allow `nodes=2 --mode nx`. One-line fix in `src/topogen/main.py` argparse help; then refresh the README `--help` block. (Follow-up from TG-S13.)
 - [ ] **NaC: Terraform `init`/`validate` deployability gate** — add an opt-in (CI/manual) `terraform init` + `terraform validate` check against a generated `nac/` workspace to prove provider/module resolution and HCL validity end-to-end. Kept out of the committed pytest suite (needs the Terraform binary + network). (Follow-up from TG-S12/S13.)
-- [ ] **NaC: extend `--nac` to DMVPN** — DMVPN is currently blocked by the `--nac` allowlist. Wiring DMVPN topologies through `write_nac_tree()` would require collecting deterministic `nac_router_nodes` on those paths and emitting tunnel/overlay config in the NaC model. (Follow-up from TG-S11.)
+- [x] ~~**NaC: extend `--nac` to DMVPN**~~ Done for DMVPN flat and flat-pair offline paths in TG-151; deterministic `nac_router_nodes` feed the shared NaC writer.
 
 - [ ] **TG-109: New feature: FlexVPN** — add FlexVPN (IKEv2-native) hub-and-spoke overlay support
   - FlexVPN is the IKEv2-native replacement for DMVPN (no GRE/NHRP, pure IKEv2 + IPsec with virtual-template and route injection via IKEv2 routing or BGP)

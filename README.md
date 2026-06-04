@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.1
+Doc Version: v1.8.2
 Date Modified: 2026-06-04
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -85,12 +85,18 @@ Current supported command shapes:
 - `topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac`
 - `topogen 2 --mode flat --offline-yaml out/two-router-flat.yaml --nac`
 - `topogen 2 --mode flat-pair --offline-yaml out/two-router-flat-pair.yaml --nac`
+- `topogen 3 --mode dmvpn --dmvpn-hubs 1 --offline-yaml out/dmvpn-flat.yaml --nac`
+- `topogen 4 --mode dmvpn --dmvpn-underlay flat-pair --template iosv-dmvpn --offline-yaml out/dmvpn-flat-pair.yaml --nac`
 
 Platform guardrail (MVP):
 
 - Supported device templates: `iosv`, `csr1000v`
 - `--nac` requires `--offline-yaml`
 - Unsupported combinations fail fast with actionable CLI errors
+- DMVPN flat-pair keeps the DMVPN topology semantics: the node count is total
+  routers, odd routers are DMVPN endpoints, and even routers are paired access
+  routers. Without `--nac`, DMVPN flat-pair continues to write only the requested
+  CML YAML path.
 
 For `--offline-yaml out/<lab>.yaml --nac`, output layout is:
 

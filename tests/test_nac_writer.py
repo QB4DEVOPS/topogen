@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.14.0
+# Doc Version: v1.14.1
 # Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
@@ -7,7 +7,7 @@
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main.main, yaml.safe_load
 #
-# Purpose: Verify TG-121/TG-137/TG-140 canonical NaC writer output layout, keys, and deterministic rerun behavior.
+# Purpose: Verify canonical NaC writer output layout, keys, deterministic rerun behavior, and DMVPN artifact paths.
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import sys
@@ -300,9 +300,39 @@ class TestNacWriter(unittest.TestCase):
             nac_yaml = nac_root / "nac.yaml"
             self.assertTrue(cml_yaml.exists())
             self.assertTrue(nac_yaml.exists())
-            self.assertTrue((nac_root / "inventory.yaml").exists())
-            self.assertTrue((nac_root / "host_vars" / "iosv-04.yaml").exists())
+            expected_nac_files = [
+                "nac.yaml",
+                "main.tf",
+                "versions.tf",
+                "terraform.tfvars.example",
+                ".gitignore",
+                "ansible.cfg",
+                "inventory.yaml",
+                "group_vars/all.yaml",
+                "host_vars/iosv-01.yaml",
+                "host_vars/iosv-02.yaml",
+                "host_vars/iosv-03.yaml",
+                "host_vars/iosv-04.yaml",
+                "verify_reachability.yaml",
+                "devices.yaml",
+                "nac_metadata.yaml",
+            ]
+            for rel_path in expected_nac_files:
+                self.assertTrue((nac_root / rel_path).exists(), rel_path)
             self.assertFalse((lab_root / "nac.yaml").exists())
+
+            cml_text = cml_yaml.read_text(encoding="utf-8")
+            self.assertIn("restconf", cml_text)
+            self.assertIn("netconf-yang", cml_text)
+
+            main_tf = (nac_root / "main.tf").read_text(encoding="utf-8")
+            tfvars_example = (nac_root / "terraform.tfvars.example").read_text(encoding="utf-8")
+            self.assertIn("IOSXE_URL", main_tf)
+            self.assertIn("IOSXE_USERNAME", main_tf)
+            self.assertIn("IOSXE_PASSWORD", main_tf)
+            self.assertIn('IOSXE_URL="https://<lab-device-url>"', tfvars_example)
+            self.assertNotIn("password =", tfvars_example)
+            self.assertNotIn("cisco", main_tf.lower().replace("ciscodevnet", ""))
 
             data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
             devices = data["iosxe"]["devices"]
@@ -319,9 +349,48 @@ class TestNacWriter(unittest.TestCase):
                 ["dmvpn nbma", "pair link", "dmvpn tunnel"],
             )
             self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["ethernets"]],
+                [("0/0", "dmvpn nbma"), ("0/1", "pair link"), ("0/1000", "dmvpn tunnel")],
+            )
+            self.assertEqual(
                 [iface["description"] for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
                 ["pair link"],
             )
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
+                [("0/0", "pair link")],
+            )
+
+    def test_dmvpn_flat_pair_without_nac_keeps_original_output_path_and_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "dmvpn-flat-pair"
+            self.assertTrue(out_file.exists())
+            self.assertFalse((lab_root / "dmvpn-flat-pair.yaml").exists())
+            self.assertFalse((lab_root / "nac").exists())
+
+            cml_text = out_file.read_text(encoding="utf-8")
+            self.assertIn("label: R1", cml_text)
+            self.assertIn("label: R4", cml_text)
+            self.assertIn("label: GigabitEthernet0/1", cml_text)
+            self.assertNotIn("restconf", cml_text)
+            self.assertNotIn("netconf-yang", cml_text)
 
     def test_dmvpn_flat_without_nac_keeps_original_output_path(self):
         with tempfile.TemporaryDirectory() as tmp:

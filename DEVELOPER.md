@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.1
+Doc Version: v1.8.2
 Date Modified: 2026-06-04
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -315,6 +315,8 @@ Current MVP command shapes (guardrail-enforced):
 - `nodes=2, mode=nx`
 - `nodes=2, mode=flat`
 - `nodes=2, mode=flat-pair`
+- `mode=dmvpn, --dmvpn-underlay flat`
+- `mode=dmvpn, --dmvpn-underlay flat-pair`
 
 Guardrail implementation:
 
@@ -347,6 +349,8 @@ Canonical writer and adapters:
   - `offline_nx_yaml(...)`
   - `offline_flat_yaml(...)`
   - `offline_flat_pair_yaml(...)`
+  - `offline_dmvpn_yaml(...)`
+  - `offline_dmvpn_flat_pair_yaml(...)`
 
 If you extend NaC scope:
 

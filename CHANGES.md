@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.1
+Doc Version: v1.3.2
 Date Modified: 2026-06-04
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(nac): generate DMVPN flat-pair offline NaC artifacts (TG-151)
+    - DMVPN flat and flat-pair offline YAML generation now share the NaC validation/write helper and emit the full sibling `nac/` output tree when `--nac` is set.
+    - Added regression coverage for deterministic DMVPN flat-pair device/interface naming, full NaC artifact tree generation, RESTCONF/NETCONF day0 enablement, credential-free Terraform provider scaffolding, and unchanged flat-pair CML YAML path/config when `--nac` is omitted.
+    - Files: src/topogen/render.py (rev v1.3.1 → v1.3.2), tests/test_nac_writer.py (rev v1.14.0 → v1.14.1), README.md (rev v1.8.1 → v1.8.2), DEVELOPER.md (rev v1.8.1 → v1.8.2), TODO.md (rev v1.6.46 → v1.6.47), CHANGES.md (rev v1.3.1 → v1.3.2)
   - feat(cml2): add Terraform lifecycle scaffold for generated offline labs (TG-150)
     - Added `--terraform-cml2` for offline generation, emitting `out/<lab>/cml2/` alongside the generated CML YAML so users can run `terraform init` and `terraform apply` against the `CiscoDevNet/cml2` provider. `--cml2` remains available as a short compatibility alias.
     - The scaffold writes `main.tf`, `versions.tf`, `variables.tf`, `outputs.tf`, and `.gitignore`; `main.tf` points to the generated YAML through `file(var.topology_file)`, with `variables.tf` defaulting to a relative `../<lab>.yaml` path.
