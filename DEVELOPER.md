@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.2
+Doc Version: v1.8.3
 Date Modified: 2026-06-04
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -308,25 +308,29 @@ Maintenance note:
 
 Use this section as the implementation baseline for all `--nac` work.
 
-Current MVP command shapes (guardrail-enforced):
+**Universal offline scope:** `--nac` is supported on every offline renderer listed
+below. CLI guardrails no longer restrict specific mode/node-count pairs; users
+compose the same offline flags as without `--nac` and add `--nac` when they want
+the sibling `nac/` tree.
 
-- `nodes=1, mode=simple`
-- `nodes=2, mode=simple`
-- `nodes=2, mode=nx`
-- `nodes=2, mode=flat`
-- `nodes=2, mode=flat-pair`
-- `mode=dmvpn, --dmvpn-underlay flat`
-- `mode=dmvpn, --dmvpn-underlay flat-pair`
+CLI guardrails (`src/topogen/main.py`):
 
-Guardrail implementation:
+- `validate_nac_mvp_guardrails()` — historical name; enforces offline-only path,
+  IOS-XE `--device-template` (`iosv`, `csr1000v`), and rejects import/online
+  YAML workflows
+- `validate_nodes_for_mode()` — allows `nodes=1` when `--nac` is set; non-NaC
+  paths still require `nodes>=2`
 
-- `src/topogen/main.py::validate_nac_mvp_guardrails()`
-- Platform scope is IOS-XE templates only: `iosv`, `csr1000v`
-- `--nac` requires `--offline-yaml`
+Render-time guardrails (`src/topogen/render.py`):
+
+- `validate_nac_supported_iosxe_nodes()` / `_validate_nac_router_nodes_if_enabled()`
+  — abort before any `nac/` artifact exists if the router set cannot be projected
+- `describe_nac_unsupported_nodes()` — error text for CLI and render paths
 
 Path/layout contract:
 
-- Resolver: `src/topogen/render.py::resolve_offline_output_paths()`
+- Resolver: `src/topogen/render.py::resolve_offline_artifact_paths()` (and
+  `resolve_offline_output_paths()` where still used)
 - Input: `--offline-yaml out/<lab>.yaml --nac`
 - Output:
   - `out/<lab>/<lab>.yaml` (offline CML YAML)
@@ -344,27 +348,33 @@ Canonical writer and adapters:
   - `write_nac_yaml(...)`
   - `write_terraform_scaffold(...)` (main.tf/versions.tf/tfvars.example/.gitignore)
   - `write_nac_tree(...)` (top-level coordinator: NaC + Terraform + Ansible)
+- `src/topogen/render.py::_write_nac_tree_if_enabled()` — shared hook used by all offline NaC paths
 - Offline renderers that emit NaC trees:
   - `offline_simple_yaml(...)`
   - `offline_nx_yaml(...)`
   - `offline_flat_yaml(...)`
   - `offline_flat_pair_yaml(...)`
-  - `offline_dmvpn_yaml(...)`
+  - `offline_dmvpn_yaml(...)` (flat underlay)
   - `offline_dmvpn_flat_pair_yaml(...)`
+
+Tests (run when touching NaC):
+
+| File | Purpose |
+|------|---------|
+| `tests/test_nac_cli_guardrails.py` | CLI parsing, offline/import rejection, IOS-XE template checks, `nodes=1` with `--nac`, composed flags (mgmt/VRF/CSR) |
+| `tests/test_nac_output_paths.py` | `out/<lab>/` layout, no nested `nac/` on rerun |
+| `tests/test_nac_writer.py` | `nac.py` scaffold content, `yaml_files = ["nac.yaml"]`, DMVPN naming |
+| `tests/test_nac_day0_restconf.py` | RESTCONF/NETCONF lines in day0 when `--nac` |
+| `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair; non-NaC paths skip `nac/` |
+| `tests/test_nac_golden_smoke.py` | Regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*` |
 
 If you extend NaC scope:
 
-1. Update guardrails first (`main.py`)
-2. Ensure renderer collects deterministic `nac_router_nodes`
-3. Emit `write_nac_tree(...)` in that path
+1. Update CLI and render guardrails (`main.py`, `render.py`)
+2. Ensure the renderer collects deterministic `nac_router_nodes`
+3. Call `_write_nac_tree_if_enabled(...)` (or equivalent) in that offline path
 4. Update docs (`README.md`, `CHANGES.md`, this file)
-5. Add/adjust tests:
-   - `tests/test_nac_cli_guardrails.py`
-   - `tests/test_nac_output_paths.py`
-   - `tests/test_nac_writer.py`
-   - `tests/test_nac_day0_restconf.py`
-   - `tests/test_nac_render_e2e.py`
-   - `tests/test_nac_golden_smoke.py` (regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*`)
+5. Add or adjust the tests in the table above
 
 ## CML2 Terraform lifecycle scaffold reference (TG-150)
 
@@ -394,10 +404,26 @@ Canonical writer:
   - Terraform provider: `CiscoDevNet/cml2`
   - Terraform resource: `cml2_lifecycle` with `topology = file(var.topology_file)`
 
+User workflow (documented in README, not executed by TopoGen):
+
+1. `topogen ... --offline-yaml out/<lab>.yaml --terraform-cml2 [--overwrite]`
+2. `terraform -chdir=out/<lab>/cml2 init`
+3. Set `TF_VAR_address`, `TF_VAR_username`, `TF_VAR_password` (or `TF_VAR_token`) — never commit these
+4. `terraform -chdir=out/<lab>/cml2 plan` then `apply`
+5. Optional: `--nac` in step 1 adds `out/<lab>/nac/` for device config after the lab is up
+
 Relationship to NaC:
 
 - `--terraform-cml2` and `--nac` are independent. When both are enabled, `cml2/` and `nac/` are sibling directories under the generated lab root.
 - Do not place CML lifecycle files under `nac/`; the `nac/` Terraform workspace targets device configuration through `netascode/nac-iosxe`.
+
+Tests (run when touching CML2 lifecycle):
+
+| File | Purpose |
+|------|---------|
+| `tests/test_cml2_lifecycle.py` | Scaffold files, secret-free content, CLI emits `cml2/` only, `--cml2` alias, `cml2/` + `nac/` siblings |
+| `tests/test_nac_output_paths.py` | Shared offline path resolver behavior |
+| `tests/test_nac_cli_guardrails.py` | CML2 guardrails alongside NaC |
 
 If you extend CML2 lifecycle scope:
 
@@ -405,10 +431,7 @@ If you extend CML2 lifecycle scope:
 2. Keep output under `out/<lab>/cml2/`
 3. Keep connection settings as Terraform variables or environment-provided values
 4. Update docs (`README.md`, `CHANGES.md`, this file)
-5. Add/adjust tests:
-   - `tests/test_cml2_lifecycle.py`
-   - `tests/test_nac_output_paths.py`
-   - `tests/test_nac_cli_guardrails.py`
+5. Add or adjust the tests in the table above
 
 
 

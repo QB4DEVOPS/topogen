@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.2
+Doc Version: v1.8.3
 Date Modified: 2026-06-04
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -71,32 +71,62 @@ They define canonical shape, required fields, deterministic ordering, and field
 projection targets. Runtime CLI or adapter execution logic is intentionally out
 of scope for this documentation-only contract baseline.
 
-## NaC MVP scope (TG-131)
+## Offline Network-as-Code (`--nac`)
 
-`--nac` is an offline MVP path that, alongside the offline CML YAML, emits a
+`--nac` is an **offline-only** path that, alongside the offline CML YAML, emits a
 deployable Network-as-Code workspace: a lean `nac.yaml` for the official
 `netascode/nac-iosxe` Terraform module, a ready-to-run Terraform workspace, and
 a read-only Ansible reachability stub.
 
-Current supported command shapes:
+It works with **any supported offline topology mode** (`simple`, `nx`, `flat`,
+`flat-pair`, and `dmvpn` with `flat` or `flat-pair` underlay). You are not
+limited to a fixed set of node counts or modes — use the same flags you would
+for offline YAML generation and add `--nac`.
 
-- `topogen 1 --mode simple --offline-yaml out/iosv-test.yaml --nac`
-- `topogen 2 --mode simple --offline-yaml out/two-router-simple.yaml --nac`
-- `topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac`
-- `topogen 2 --mode flat --offline-yaml out/two-router-flat.yaml --nac`
-- `topogen 2 --mode flat-pair --offline-yaml out/two-router-flat-pair.yaml --nac`
-- `topogen 3 --mode dmvpn --dmvpn-hubs 1 --offline-yaml out/dmvpn-flat.yaml --nac`
-- `topogen 4 --mode dmvpn --dmvpn-underlay flat-pair --template iosv-dmvpn --offline-yaml out/dmvpn-flat-pair.yaml --nac`
+Guardrails:
 
-Platform guardrail (MVP):
+- `--nac` requires `--offline-yaml` (local generation only; no `--import`,
+  `--import-yaml`, `--up`, or online `--yaml` export)
+- Router nodes must use an IOS-XE CML definition: `iosv` or `csr1000v` (align
+  `-T` / `--template` with `--device-template`, e.g. `iosv-dmvpn` on `iosv`)
+- With `--nac`, `nodes=1` is allowed when the selected mode supports a single
+  router; without `--nac`, the minimum is `nodes=2`
+- Labs that add non–IOS-XE nodes (e.g. `--pki` CA-ROOT on `csr1000v` while
+  spokes use `iosv`) still fail fast before any `nac/` tree is written
+- DMVPN semantics are unchanged: default `dmvpn` uses `nodes` as spoke count
+  (R1 hub); with `--dmvpn-hubs`, `nodes` is total routers. DMVPN `flat-pair`
+  uses odd routers as DMVPN endpoints and even routers as pair partners — only
+  IOS-XE routers are projected into `nac.yaml`
 
-- Supported device templates: `iosv`, `csr1000v`
-- `--nac` requires `--offline-yaml`
-- Unsupported combinations fail fast with actionable CLI errors
-- DMVPN flat-pair keeps the DMVPN topology semantics: the node count is total
-  routers, odd routers are DMVPN endpoints, and even routers are paired access
-  routers. Without `--nac`, DMVPN flat-pair continues to write only the requested
-  CML YAML path.
+Example shapes (not an exhaustive list):
+
+```powershell
+topogen 1 --mode simple --offline-yaml out/iosv-test.yaml --nac --overwrite
+topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac --overwrite
+topogen 2 --mode flat-pair --device-template csr1000v -T csr-eigrp `
+  --mgmt --vrf --offline-yaml out/flat-pair-csr.yaml --nac --overwrite
+```
+
+DMVPN with NaC (offline YAML + `nac/` sibling tree):
+
+```powershell
+# Flat underlay: 3 total routers (R1 hub + R2,R3 spokes) when --dmvpn-hubs 1
+topogen 3 --mode dmvpn --dmvpn-hubs 1 -T iosv-dmvpn --device-template iosv `
+  --offline-yaml out/dmvpn-flat-nac.yaml --nac --overwrite
+
+# Flat-pair underlay: nodes = total routers; odd = DMVPN endpoints
+topogen 4 --mode dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv `
+  --offline-yaml out/dmvpn-flat-pair-nac.yaml --nac --overwrite
+```
+
+Deploy device config from the generated tree (after the lab is reachable):
+
+```powershell
+terraform -chdir=out\<lab>\nac init
+# Set IOSXE_USERNAME, IOSXE_PASSWORD, IOSXE_URL (and lab mgmt reachability) in the shell
+terraform -chdir=out\<lab>\nac plan
+terraform -chdir=out\<lab>\nac apply
+```
 
 For `--offline-yaml out/<lab>.yaml --nac`, output layout is:
 
@@ -137,20 +167,48 @@ Offline vs. deployment (what TopoGen guarantees vs. what you supply):
   device reachability, and credentials. `topogen` does not run any deployment or
   reachability tooling — those runners are intentionally out of scope.
 
-## CML2 Terraform lifecycle scaffold (TG-150)
+## CML2 Terraform lifecycle scaffold (`--terraform-cml2`)
 
 `--terraform-cml2` is an offline-only path that emits a Terraform lifecycle
 workspace for the generated CML YAML. It uses the official `CiscoDevNet/cml2`
 provider and the `cml2_lifecycle` resource so Terraform can import and start the
 generated lab. `--cml2` is accepted as a short compatibility alias.
 
-Example:
+`--terraform-cml2` and `--nac` are independent: when both are set, `cml2/` and
+`nac/` are sibling directories under `out/<lab>/` (lab topology in
+`out/<lab>/<lab>.yaml`).
+
+### Generate the scaffold
 
 ```powershell
 topogen 2 --mode simple --offline-yaml out\cml2-simple.yaml --terraform-cml2 --overwrite
+```
+
+Optional: also emit NaC artifacts in the same run:
+
+```powershell
+topogen 2 --mode flat --offline-yaml out\cml2-nac.yaml --terraform-cml2 --nac --overwrite
+```
+
+### Apply with Terraform
+
+From the repo (or any directory), point Terraform at the generated workspace.
+Provide CML connection values via `TF_VAR_*` or a local `terraform.tfvars` (not
+written by TopoGen — do not commit credentials).
+
+```powershell
 terraform -chdir=out\cml2-simple\cml2 init
+$env:TF_VAR_address = "https://<your-cml-controller>/"
+$env:TF_VAR_username = "<cml-user>"
+$env:TF_VAR_password = "<cml-password>"
+# Or use TF_VAR_token instead of username/password where your provider setup allows
+terraform -chdir=out\cml2-simple\cml2 plan
 terraform -chdir=out\cml2-simple\cml2 apply
 ```
+
+After apply, use `terraform output` in that directory for lab ID, lifecycle
+state, and node details. Device configuration (if you also used `--nac`) is a
+separate step in `out/<lab>/nac/` after routers are reachable.
 
 For `--offline-yaml out/<lab>.yaml --terraform-cml2`, output layout is:
 
@@ -161,10 +219,8 @@ For `--offline-yaml out/<lab>.yaml --terraform-cml2`, output layout is:
 - `out/<lab>/cml2/outputs.tf` — lab ID, lifecycle ID, state, boot status, and node details
 - `out/<lab>/cml2/.gitignore` — ignores Terraform state/vars
 
-No CML credentials are written. Provide CML connection values through Terraform
-variables or `TF_VAR_*` environment variables. The generated `topology_file`
-default is a relative path such as `../<lab>.yaml`; no machine-local paths are
-embedded.
+No CML credentials are written. The generated `topology_file` default is a
+relative path such as `../<lab>.yaml`; no machine-local paths are embedded.
 
 ## Code structure and dependencies
 
