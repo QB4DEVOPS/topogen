@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.13
-# Date Modified: 2026-06-03
+# Doc Version: v1.2.15
+# Date Modified: 2026-06-04
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -2140,6 +2140,11 @@ class Renderer:
                 f"DMVPN tunnel CIDR {tunnel_net} is too small for {total_routers} routers"
             )
 
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
         dev_def = getattr(args, "dev_template", args.template)
 
         def iface_label_for_slot(slot: int) -> str:
@@ -2432,6 +2437,7 @@ class Renderer:
         l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
 
         # Routers
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total_routers):
             n = idx + 1
             label = f"R{n}"
@@ -2455,6 +2461,16 @@ class Renderer:
                     TopogenInterface(address=tunnel_ip, description="dmvpn tunnel", slot=1000),
                 ],
             )
+            nac_node = TopogenNode(
+                hostname=label,
+                loopback=loopback_ip,
+                interfaces=[
+                    TopogenInterface(address=nbma_ip, description="dmvpn nbma", slot=0),
+                    TopogenInterface(address=tunnel_ip, description="dmvpn tunnel", slot=1000),
+                ],
+            )
+            _append_nac_mgmt_interface(nac_node, args, n)
+            nac_router_nodes.append(nac_node)
 
             # Build mgmt context for template
             mgmt_ctx = None
@@ -2510,6 +2526,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             # Flat-like placement
             sw_index = idx // group
@@ -2853,8 +2871,11 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -2865,6 +2886,17 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                args=args,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -2960,6 +2992,11 @@ class Renderer:
                 leave=False,
             )
 
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
         dev_def = getattr(args, "dev_template", args.template)
 
         def iface_label_for_slot(slot: int) -> str:
@@ -3206,6 +3243,7 @@ class Renderer:
                 IPv4Interface(f"{hosts[1]}/{p2pnet.netmask}"),
             )
 
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total_routers):
             rnum = idx + 1
             label = f"R{rnum}"
@@ -3250,6 +3288,8 @@ class Renderer:
                         TopogenInterface(address=tun_ip, description="dmvpn tunnel", slot=1000),
                     ],
                 )
+                _append_nac_mgmt_interface(node, args, rnum)
+                nac_router_nodes.append(node)
                 rendered = dmvpn_tpl.render(
                     config=cfg,
                     node=node,
@@ -3277,6 +3317,8 @@ class Renderer:
                     loopback=loopback_ip,
                     interfaces=[TopogenInterface(address=pair_ip, description="pair link", slot=0)],
                 )
+                _append_nac_mgmt_interface(node, args, rnum)
+                nac_router_nodes.append(node)
                 rendered = eigrp_tpl.render(
                     config=cfg,
                     node=node,
@@ -3302,6 +3344,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             sw_index = ((rnum - 1) // 2) // group
             x = min(max_coord, (sw_index + 1) * sw_step_x)
@@ -3676,8 +3720,11 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -3688,6 +3735,17 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                args=args,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
 
         if ticks:
             ticks.close()  # type: ignore
