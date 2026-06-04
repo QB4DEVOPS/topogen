@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.3.0
+# Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/render.py path resolver
@@ -84,6 +84,38 @@ class TestNacOutputPaths(unittest.TestCase):
         self.assertIsNotNone(cml2_root)
         self.assertEqual(nac_root.as_posix(), "out/iosv-test/nac")
         self.assertEqual(cml2_root.as_posix(), "out/iosv-test/cml2")
+
+    def test_nac_dmvpn_flat_path_transforms_to_layout(self):
+        yaml_target, nac_root = resolve_offline_output_paths(
+            "out/dmvpn-flat.yaml", nac_enabled=True
+        )
+        self.assertEqual(yaml_target.as_posix(), "out/dmvpn-flat/dmvpn-flat.yaml")
+        self.assertIsNotNone(nac_root)
+        self.assertEqual(nac_root.as_posix(), "out/dmvpn-flat/nac")
+
+    def test_nac_dmvpn_flat_pair_path_transforms_to_layout(self):
+        yaml_target, nac_root = resolve_offline_output_paths(
+            "out/dmvpn-flat-pair.yaml", nac_enabled=True
+        )
+        self.assertEqual(yaml_target.as_posix(), "out/dmvpn-flat-pair/dmvpn-flat-pair.yaml")
+        self.assertIsNotNone(nac_root)
+        self.assertEqual(nac_root.as_posix(), "out/dmvpn-flat-pair/nac")
+
+    def test_nac_dmvpn_flat_rerun_does_not_double_nest(self):
+        yaml_target, nac_root = resolve_offline_output_paths(
+            "out/dmvpn-flat/dmvpn-flat.yaml", nac_enabled=True
+        )
+        self.assertEqual(yaml_target.as_posix(), "out/dmvpn-flat/dmvpn-flat.yaml")
+        self.assertIsNotNone(nac_root)
+        self.assertEqual(nac_root.as_posix(), "out/dmvpn-flat/nac")
+
+    def test_nac_dmvpn_flat_pair_rerun_does_not_double_nest(self):
+        yaml_target, nac_root = resolve_offline_output_paths(
+            "out/dmvpn-flat-pair/dmvpn-flat-pair.yaml", nac_enabled=True
+        )
+        self.assertEqual(yaml_target.as_posix(), "out/dmvpn-flat-pair/dmvpn-flat-pair.yaml")
+        self.assertIsNotNone(nac_root)
+        self.assertEqual(nac_root.as_posix(), "out/dmvpn-flat-pair/nac")
 
 
 if __name__ == "__main__":
