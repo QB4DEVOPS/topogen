@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.35
-Date Modified: 2026-03-25
+Doc Version: v1.2.38
+Date Modified: 2026-06-03
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,11 +20,30 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(nac): drive the Terraform module via `yaml_files = ["nac.yaml"]` (TG-145)
+    - The generated `main.tf` used `yaml_directories = ["."]`, which made the `netascode/nac-iosxe` module recursively ingest every `*.yaml` under `nac/` (Ansible/informational files, and even the module's own examples under `.terraform/`). The Ansible playbook `verify_reachability.yaml` is a top-level sequence, so `terraform plan` failed in the module's `yaml_merge` (`cannot unmarshal !!seq into map`). `terraform validate` masked it because it never reads the YAML.
+    - Switched the scaffold to the module's `yaml_files = ["nac.yaml"]` input so only the NaC model is ingested; corrected the `terraform.tfvars.example` comment and the `devices.yaml`/`nac_metadata.yaml` informational note.
+    - Proven on a fresh generation: `terraform init`/`validate` pass and `terraform plan` => `Plan: 6 to add` (iosxe_system + interface_ethernet + interface_loopback for both routers).
+    - Files: src/topogen/nac.py (rev v1.8.0 → v1.9.0), tests/test_nac_writer.py (rev v1.10.0 → v1.11.0), tests/fixtures/nac/golden-flat-{no-mgmt,mgmt}/ (regenerated), docs/nac/schema-verification.md (rev v1.0.0 → v1.1.0), CHANGES.md (rev v1.2.37 → v1.2.38)
+  - feat(nac): deployable NaC MVP — Terraform workspace + Ansible stub + day0 RESTCONF/NETCONF (TG-131)
+    - `--nac` now emits a deployable Network-as-Code workspace alongside the offline CML YAML: a lean `nac.yaml` targeting the official `netascode/nac-iosxe/iosxe` 0.1.0 module (schema `iosxe.devices[].configuration.*`), a pinned Terraform scaffold (`main.tf`, `versions.tf`, `terraform.tfvars.example`, `.gitignore`), and a read-only Ansible reachability stub (`ansible.cfg`, `inventory.yaml`, `group_vars/all.yaml`, `host_vars/*.yaml`, `verify_reachability.yaml`)
+    - Provider pinned to `CiscoDevNet/iosxe` 0.15.0 (transitive `netascode/utils` 1.1.0-beta3), Terraform `>= 1.8.0`; provider `insecure = true` is lab-only; credentials are read from environment variables (no secrets written)
+    - RESTCONF/NETCONF enablement (`ip http secure-server`, `restconf`, `netconf-yang`) spliced into router day0 configs when `--nac` is set
+    - Removed `terraform.tfvars.json` emission (Terraform auto-loads that name; it cannot be labeled "not an input"); `devices.yaml` and `nac_metadata.yaml` are now explicitly informational (not Terraform inputs)
+    - Guardrails: `--nac` requires `--offline-yaml`; supported shapes are 1x simple and 2x simple/nx/flat/flat-pair on `iosv`/`csr1000v`; unsupported combinations fail fast
+    - Added offline smoke tests + two committed golden fixtures (`tests/fixtures/nac/golden-flat-{no-mgmt,mgmt}`) that regenerate through the real CLI and assert byte-identical output
+    - Docs (TG-S13 closeout): refreshed the README `--help` block and NaC scope section, updated the DEVELOPER.md NaC reference, and marked the one-router golden contract as superseded
+    - Files: README.md (rev v1.6.0 → v1.7.0), DEVELOPER.md (rev v1.7.16 → v1.7.17), docs/nac/iosxe-one-router-golden-contract.md (rev v1.1.0 → v1.2.0), CHANGES.md (rev v1.2.36 → v1.2.37), TODO.md (rev v1.6.43 → v1.6.44)
   - feat(dmvpn): add `--dmvpn-ipsec-mode` flag for transport/tunnel mode selection (TG-110)
     - Adds `--dmvpn-ipsec-mode {transport,tunnel}` CLI flag (default: transport) to control the IPsec transform-set mode in DMVPN configurations
     - Previously `mode transport` was hardcoded; some Cisco reference designs use `mode tunnel`
     - Existing labs are unchanged (transport is the default)
     - Files: src/topogen/main.py (rev v1.3.7 → v1.3.8), src/topogen/render.py (rev v1.2.4 → v1.2.5), src/topogen/templates/csr-dmvpn.jinja2 (rev v1.4.0 → v1.4.1), src/topogen/templates/iosv-dmvpn.jinja2 (rev v1.2.0 → v1.2.1), README.md (rev v1.5.6 → v1.5.7), CHANGES.md (rev v1.2.34 → v1.2.35), TODO.md (rev v1.6.41 → v1.6.42)
+  - docs(nac): document NaC MVP command scope, guardrails, and output tree (TG-125)
+    - Added dedicated README section for `--nac` MVP supported shapes: 1x simple, 2x simple/nx/flat/flat-pair
+    - Documented platform guardrail (`iosv`, `csr1000v`) and deterministic output layout under `out/<lab>/nac/`
+    - Updated TODO recent completions to reflect NaC MVP baseline delivery and status reconciliation
+    - Files: README.md (rev v1.5.9 → v1.6.0), TODO.md (rev v1.6.42 → v1.6.43), CHANGES.md (rev v1.2.35 → v1.2.36)
   - feat(pki): add `checkcert` alias to PKI client routers (TG-106)
     - Adds `alias exec checkcert show crypto pki certificates CA-ROOT-SELF` to all PKI client routers so operators can quickly verify certificate enrollment status
     - Mirrors the CA-ROOT `servcerts` alias pattern; injected via `_inject_pki_client_trustpoint()` alongside the existing `authc` alias

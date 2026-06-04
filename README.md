@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.5.7
-Date Modified: 2026-03-25
+Doc Version: v1.7.0
+Date Modified: 2026-06-03
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -51,6 +51,84 @@ controller, creating the lab, nodes and links on the fly.
 | CHANGES.md | All | Release history |
 | TODO.md | Developers | Roadmap and planned work |
 | PKI.md | Users, developers | PKI flags, CA-ROOT, EEM, auto-deploy certs, troubleshooting |
+| docs/nac/iosxe-one-router-golden-contract.md | Developers | Canonical one-router IOS-XE NaC contract (TG-116) |
+| docs/nac/topogen-to-nac-field-mapping.md | Developers | TopoGen-to-NaC field mapping matrix for adapter work |
+| docs/nac/single-node-source-field-audit.md | Developers | Verified one-router source-field audit for NaC (TG-117) |
+| tests/fixtures/nac/iosv-test/nac.yaml | Tests, developers | Deterministic golden fixture for NaC canonical output |
+
+## NaC contract artifacts (TG-116)
+
+The following artifacts are the source-of-truth for NaC implementation stories
+TG-116, TG-117, and TG-121:
+
+- `docs/nac/iosxe-one-router-golden-contract.md`
+- `docs/nac/topogen-to-nac-field-mapping.md`
+- `docs/nac/single-node-source-field-audit.md`
+- `tests/fixtures/nac/iosv-test/nac.yaml`
+
+They define canonical shape, required fields, deterministic ordering, and field
+projection targets. Runtime CLI or adapter execution logic is intentionally out
+of scope for this documentation-only contract baseline.
+
+## NaC MVP scope (TG-131)
+
+`--nac` is an offline MVP path that, alongside the offline CML YAML, emits a
+deployable Network-as-Code workspace: a lean `nac.yaml` for the official
+`netascode/nac-iosxe` Terraform module, a ready-to-run Terraform workspace, and
+a read-only Ansible reachability stub.
+
+Current supported command shapes:
+
+- `topogen 1 --mode simple --offline-yaml out/iosv-test.yaml --nac`
+- `topogen 2 --mode simple --offline-yaml out/two-router-simple.yaml --nac`
+- `topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac`
+- `topogen 2 --mode flat --offline-yaml out/two-router-flat.yaml --nac`
+- `topogen 2 --mode flat-pair --offline-yaml out/two-router-flat-pair.yaml --nac`
+
+Platform guardrail (MVP):
+
+- Supported device templates: `iosv`, `csr1000v`
+- `--nac` requires `--offline-yaml`
+- Unsupported combinations fail fast with actionable CLI errors
+
+For `--offline-yaml out/<lab>.yaml --nac`, output layout is:
+
+- `out/<lab>/<lab>.yaml` — offline CML YAML
+- `out/<lab>/nac/nac.yaml` — lean NaC model (`iosxe.devices[].configuration.*`)
+- `out/<lab>/nac/main.tf` — Terraform root calling `netascode/nac-iosxe/iosxe`
+- `out/<lab>/nac/versions.tf` — Terraform/provider version pins
+- `out/<lab>/nac/terraform.tfvars.example` — sample vars (copy to `terraform.tfvars`)
+- `out/<lab>/nac/.gitignore` — ignores Terraform state/vars
+- `out/<lab>/nac/inventory.yaml` — Ansible inventory
+- `out/<lab>/nac/ansible.cfg` — Ansible config for the stub
+- `out/<lab>/nac/group_vars/all.yaml` — shared Ansible vars (env-var credential lookups)
+- `out/<lab>/nac/host_vars/*.yaml` — per-device Ansible vars
+- `out/<lab>/nac/verify_reachability.yaml` — read-only `ios_facts` smoke playbook
+- `out/<lab>/nac/devices.yaml` — informational device projection (not a Terraform input)
+- `out/<lab>/nac/nac_metadata.yaml` — informational provenance (not a Terraform input)
+
+Toolchain pins (in the generated Terraform):
+
+- Module: `netascode/nac-iosxe/iosxe` `0.1.0` (transitively pulls `netascode/utils` `1.1.0-beta3`)
+- Provider: `CiscoDevNet/iosxe` `0.15.0`
+- Terraform: `>= 1.8.0`
+
+Credentials and TLS:
+
+- No secrets are written. Terraform reads device credentials from the environment
+  (`IOSXE_USERNAME` / `IOSXE_PASSWORD` / `IOSXE_URL`); Ansible uses matching env-var
+  lookups in `group_vars/all.yaml`.
+- The generated provider sets `insecure = true` for lab convenience. This disables
+  TLS verification and is **lab-only** — do not use it against production devices.
+
+Offline vs. deployment (what TopoGen guarantees vs. what you supply):
+
+- TopoGen guarantees the offline artifacts only: a schema-valid `nac.yaml`, a
+  pinned Terraform workspace, and a parseable Ansible stub. RESTCONF/NETCONF is
+  enabled in router day0 configs when `--nac` is set.
+- You supply the deployment: running `terraform init/plan/apply`, running Ansible,
+  device reachability, and credentials. `topogen` does not run any deployment or
+  reachability tooling — those runners are intentionally out of scope.
 
 ## Code structure and dependencies
 
@@ -188,17 +266,16 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--flat-group-size FLAT_GROUP_SIZE] [--loopback-255]
                [--gi0-zero] [--vrf] [--pair-vrf PAIR_VRF]
                [--dmvpn-fvrf DMVPN_FVRF]
-               [--dmvpn-ipsec-mode {transport,tunnel}]
-               [--mgmt] [--mgmt-cidr MGMT_CIDR]
-               [--mgmt-gw MGMT_GW] [--mgmt-slot MGMT_SLOT]
-               [--mgmt-vrf MGMT_VRF] [--mgmt-bridge] [--ntp NTP_SERVER]
-               [--ntp-vrf NTP_VRF] [--ntp-inband] [--ntp-oob NTP_OOB_SERVER]
-               [--pki] [--archive] [--getvpn]
+               [--dmvpn-ipsec-mode {transport,tunnel}] [--mgmt]
+               [--mgmt-cidr MGMT_CIDR] [--mgmt-gw MGMT_GW]
+               [--mgmt-slot MGMT_SLOT] [--mgmt-vrf MGMT_VRF] [--mgmt-bridge]
+               [--ntp NTP_SERVER] [--ntp-vrf NTP_VRF] [--ntp-inband]
+               [--ntp-oob NTP_OOB_SERVER] [--pki] [--archive] [--getvpn]
                [--getvpn-group-id GETVPN_GROUP_ID]
                [--getvpn-rekey-interval GETVPN_REKEY_INTERVAL]
                [--getvpn-protocol {gdoi,gikev2}] [--staging]
                [--no-abort-on-failure] [--pki-enroll {scep,cli}] [--start]
-               [--yaml FILE] [--offline-yaml FILE] [--overwrite]
+               [--yaml FILE] [--offline-yaml FILE] [--nac] [--overwrite]
                [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
                [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
                [--allow-oversubscribe] [--blank]
@@ -207,7 +284,9 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
 Generate test topology files and configurations for CML2
 
 positional arguments:
-  nodes                 Number of nodes to generate (2-1000)
+  nodes                 Number of nodes to generate (2-1000; --nac MVP also
+                        allows nodes=1 simple and nodes=2 simple/flat/flat-
+                        pair)
 
 options:
   -h, --help            show this help message and exit
@@ -324,6 +403,8 @@ options:
   --yaml FILE           Export the created lab to a YAML file at FILE
   --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller
                         required)
+  --nac                 Enable NaC MVP guardrails (offline paths: one-router
+                        simple, two-router simple/nx/flat/flat-pair)
   --overwrite           Allow overwriting an existing output file when using
                         --offline-yaml
   --import-yaml FILE    Path to existing offline YAML to import (skip
@@ -355,7 +436,6 @@ configuration:
   -p, --progress        show a progress bar
   -q, --quiet           suppress non-essential output (INFO/WARN); only errors
                         and final result
-$
 ```
 
 **CML version / schema compatibility:** The `--cml-version` flag sets the lab schema version in offline YAML **and** controls which optional fields are emitted. Known mapping:

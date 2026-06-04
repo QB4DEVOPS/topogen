@@ -1,11 +1,11 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.5
-# Date Modified: 2026-03-25
+# Doc Version: v1.2.13
+# Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
 # - Writes to: Offline YAML (--offline-yaml), CML controller via virl2_client
-# - Calls into: jinja2, virl2_client, dnshost.py, lxcfrr.py, models.py
+# - Calls into: jinja2, virl2_client, dnshost.py, lxcfrr.py, nac.py, models.py
 """
 TopoGen Topology Renderer - Core Topology Generation and Rendering Logic
 
@@ -113,6 +113,7 @@ from topogen import templates
 from topogen.config import Config
 from topogen.dnshost import dnshostconfig
 from topogen.lxcfrr import lxcfrr_bootconfig
+from topogen.nac import write_nac_tree
 from topogen.models import (
     CoordsGenerator,
     DNShost,
@@ -126,6 +127,7 @@ _LOGGER = logging.getLogger(__name__)
 
 EXT_CON_NAME = "ext-conn-0"
 DNS_HOST_NAME = "dns-host"
+SUPPORTED_NAC_DEVICE_TEMPLATES = {"iosv", "csr1000v"}
 
 
 # Determine package version locally to avoid circular import with topogen.__init__
@@ -214,6 +216,125 @@ def _emit_config(lines: list[str], rendered: str, blank: bool) -> None:
         lines.append("    configuration: |-")
         for ln in rendered.splitlines():
             lines.append(f"      {ln}")
+
+
+def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -> tuple[Path, Path | None]:
+    """Resolve deterministic offline output paths.
+
+    Non-NaC behavior is unchanged (returns the original offline YAML path).
+    NaC MVP behavior normalizes output so CML YAML stays at the lab root and
+    all NaC/Ansible artifacts share the returned nac_root:
+      <parent>/<lab>/<lab>.yaml and <parent>/<lab>/nac/
+    """
+    raw = Path(offline_yaml)
+    if not nac_enabled:
+        return raw, None
+
+    lab_name = raw.stem if raw.suffix else raw.name
+    # Avoid duplicate nesting on reruns if caller already passed out/<lab>/<lab>.yaml
+    if raw.parent.name == lab_name:
+        lab_root = raw.parent
+    else:
+        lab_root = raw.parent / lab_name
+    return lab_root / f"{lab_name}.yaml", lab_root / "nac"
+
+
+def _nac_unsupported_template_reason(device_template: str) -> str:
+    reasons = {
+        "asa": "ASA is not an IOS-XE device",
+        "iol": "IOL is not in the supported IOS-XE MVP template set",
+        "lxc": "FRR/LXC/Linux containers are not IOS-XE devices",
+        "ubuntu": "Ubuntu/Linux nodes are not IOS-XE devices",
+    }
+    return reasons.get(
+        str(device_template).lower(),
+        "device template is not in the supported IOS-XE MVP template set",
+    )
+
+
+def describe_nac_unsupported_nodes(
+    nodes: list[TopogenNode] | list[str],
+    device_template: str,
+) -> list[str]:
+    """Return human-readable unsupported-node details for NaC preflight errors."""
+    template = str(device_template).lower()
+    if template in SUPPORTED_NAC_DEVICE_TEMPLATES:
+        return []
+    reason = _nac_unsupported_template_reason(template)
+    details: list[str] = []
+    for node in nodes:
+        hostname = node if isinstance(node, str) else getattr(node, "hostname", "unknown")
+        details.append(f"{hostname}: {reason} (--device-template {template})")
+    return details
+
+
+def validate_nac_supported_iosxe_nodes(
+    nodes: list[TopogenNode],
+    device_template: str,
+) -> None:
+    """Abort NaC generation before any nac/ tree exists for unsupported routers."""
+    unsupported = describe_nac_unsupported_nodes(nodes, device_template)
+    if unsupported:
+        raise TopogenError(
+            "--nac supports IOS-XE router nodes only; unsupported node(s): "
+            + "; ".join(unsupported)
+            + ". Supported IOS-XE device templates: iosv, csr1000v."
+        )
+
+
+def _nac_restconf_lines() -> list[str]:
+    """RESTCONF/netconf-yang day0 commands required by the NaC MVP."""
+    return [
+        "ip http secure-server",
+        "restconf",
+        "netconf-yang",
+    ]
+
+
+def _append_nac_mgmt_interface(node: TopogenNode, args: Namespace, router_index: int) -> None:
+    """Expose the CML-only OOB management interface to the NaC data model."""
+    if not getattr(args, "enable_mgmt", False):
+        return
+    mgmt_net = IPv4Network(str(getattr(args, "mgmt_cidr", "10.254.0.0/16")), strict=False)
+    mgmt_slot = int(getattr(args, "mgmt_slot", 5))
+    dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
+    model_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+    node.interfaces.append(
+        TopogenInterface(
+            address=IPv4Interface(
+                f"{mgmt_net.network_address + router_index}/{mgmt_net.prefixlen}"
+            ),
+            vrf=getattr(args, "mgmt_vrf", None),
+            description="OOB Management",
+            slot=model_slot,
+        )
+    )
+
+
+def _inject_nac_restconf_day0(rendered: str) -> str:
+    """Insert NaC management transport before the final IOS-XE ``end`` line."""
+    lines = rendered.splitlines()
+    has_rsa_key = any(
+        line.strip().startswith("crypto key generate rsa")
+        for line in lines
+    )
+    block: list[str] = ["!"]
+    if not has_rsa_key:
+        # IOS-XE accepts this command in startup/day0 config; the iosv/csr1000v
+        # templates and PKI splice already use this exact form before enabling HTTPS.
+        block.extend(["crypto key generate rsa modulus 2048", "!"])
+    # With --mgmt, the NaC host can be reachable only inside Mgmt-vrf. This helper
+    # intentionally enables global services only; VRF reachability stays user-owned.
+    block.extend(_nac_restconf_lines())
+    try:
+        end_idx = next(
+            i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"
+        )
+        lines[end_idx:end_idx] = block
+    except StopIteration:
+        lines.extend(block)
+        lines.append("end")
+    return "\n".join(lines)
 
 
 def get_templates() -> list[str]:
@@ -3597,6 +3718,11 @@ class Renderer:
         total = int(args.nodes)
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
         # Scale spacing so any node count and group size produces importable coordinates.
@@ -3839,6 +3965,7 @@ class Renderer:
         dev_def = getattr(args, "dev_template", args.template)
         g_base = "10.0" if getattr(args, "gi0_zero", False) else "10.10"
         l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total):
             n = idx + 1
             label = f"R{n}"
@@ -3857,6 +3984,8 @@ class Renderer:
                     )
                 ],
             )
+            _append_nac_mgmt_interface(node, args, n)
+            nac_router_nodes.append(node)
             # Build mgmt context for template
             mgmt_ctx = None
             if enable_mgmt:
@@ -3902,6 +4031,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             rx = min(max_coord, (idx // group + 1) * sw_step_x)
             ry = min(max_coord, (idx % group + 1) * router_step_y)
@@ -4275,8 +4406,11 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -4287,6 +4421,17 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                args=args,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
         return 0
     @staticmethod
     def offline_flat_pair_yaml(args: Namespace, cfg: Config) -> int:
@@ -4310,6 +4455,11 @@ class Renderer:
         total = int(args.nodes)
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
         # Scale spacing so any node count and group size produces importable coordinates.
@@ -4553,6 +4703,7 @@ class Renderer:
         dev_def = getattr(args, "dev_template", args.template)
         g_base = "10.0" if getattr(args, "gi0_zero", False) else "10.10"
         l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total):
             n = idx + 1
             label = f"R{n}"
@@ -4591,6 +4742,8 @@ class Renderer:
                 loopback=IPv4Interface(f"{l_ip}/32"),
                 interfaces=ifaces,
             )
+            _append_nac_mgmt_interface(node, args, n)
+            nac_router_nodes.append(node)
             # Build mgmt/ntp context for template
             mgmt_ctx = None
             if enable_mgmt:
@@ -4636,6 +4789,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             rx = min(max_coord, (idx // group + 1) * sw_step_x)
             ry = min(max_coord, (idx % group + 1) * router_step_y)
@@ -5019,8 +5174,11 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -5031,6 +5189,17 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                args=args,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
         return 0
 
     @staticmethod
@@ -5059,6 +5228,11 @@ class Renderer:
 
         total = int(args.nodes)
         distance = int(getattr(args, "distance", 200))
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
 
         # --- Generate NX graph (mirrors create_nx_network) ---
         size = int(total / 8)
@@ -5163,6 +5337,7 @@ class Renderer:
         mgmt_slot = getattr(args, "mgmt_slot", 5)
         version = getattr(args, "cml_version", "0.3.0")
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        nac_router_nodes: list[TopogenNode] = []
 
         # --- Build YAML header ---
         lines: list[str] = []
@@ -5197,7 +5372,7 @@ class Renderer:
         if staging:
             args_bits.append("--staging")
         args_bits.append(f"-L {args.labname}")
-        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
+        args_bits.append(f"--offline-yaml {str(outfile).replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, nx) | args: "
             + " ".join(args_bits)
@@ -5330,6 +5505,8 @@ class Renderer:
                 loopback=loopback,
                 interfaces=topo_ifaces,
             )
+            _append_nac_mgmt_interface(node_obj, args, node_index + 1)
+            nac_router_nodes.append(node_obj)
 
             mgmt_ctx = None
             if enable_mgmt:
@@ -5363,6 +5540,8 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
@@ -5498,8 +5677,11 @@ class Renderer:
                 lines.append(f"    i2: i{oob_acc_port}")
 
         # --- Write file ---
-        outfile = Path(getattr(args, "offline_yaml"))
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -5513,6 +5695,17 @@ class Renderer:
             "Offline YAML (nx, %d nodes, %d edges) written to %s (%.1f KB)",
             graph.number_of_nodes(), graph.number_of_edges(), outfile, size_kb,
         )
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                args=args,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
         return 0
 
     @staticmethod
@@ -5542,6 +5735,11 @@ class Renderer:
 
         total = int(args.nodes)
         distance = int(getattr(args, "distance", 200))
+        nac_enabled = bool(getattr(args, "nac", False))
+        outfile, nac_root = resolve_offline_output_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+        )
 
         # --- Generate square spiral coordinates (mirrors CoordsGenerator) ---
         # Online render_node_sequence consumes first coord for dns-host,
@@ -5638,7 +5836,7 @@ class Renderer:
         if staging:
             args_bits.append("--staging")
         args_bits.append(f"-L {args.labname}")
-        args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
+        args_bits.append(f"--offline-yaml {str(outfile).replace(chr(92), '/')}")
         desc = (
             f"Generated by topogen v{TOPGEN_VERSION} (offline YAML, simple) | args: "
             + " ".join(args_bits)
@@ -5772,6 +5970,7 @@ class Renderer:
                     lines.append(f"        type: physical")
 
         # --- Router nodes ---
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total):
             label = f"R{idx + 1}"
             node_ids[label] = f"n{nid}"; nid += 1
@@ -5797,6 +5996,8 @@ class Renderer:
                 loopback=loopback,
                 interfaces=topo_ifaces,
             )
+            _append_nac_mgmt_interface(node_obj, args, idx + 1)
+            nac_router_nodes.append(node_obj)
 
             mgmt_ctx = None
             if enable_mgmt:
@@ -5827,6 +6028,8 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
@@ -5933,8 +6136,11 @@ class Renderer:
 
         # --- Write file ---
         num_edges = total - 1
-        outfile = Path(getattr(args, "offline_yaml"))
+        if nac_enabled and nac_root is not None:
+            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
@@ -5948,6 +6154,17 @@ class Renderer:
             "Offline YAML (simple, %d nodes, %d edges) written to %s (%.1f KB)",
             total, num_edges, outfile, size_kb,
         )
+        if nac_enabled and nac_root is not None and nac_router_nodes:
+            nac_file = write_nac_tree(
+                nac_root=nac_root,
+                nodes=nac_router_nodes,
+                device_template=dev_def,
+                template=args.template,
+                mode=args.mode,
+                args=args,
+                overwrite=getattr(args, "overwrite", False),
+            )
+            _LOGGER.warning("NaC canonical output written to %s", nac_file)
         return 0
 
     def render_flat_network(self) -> int:
