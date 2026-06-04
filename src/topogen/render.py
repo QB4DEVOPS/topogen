@@ -242,13 +242,13 @@ def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -
 def _nac_unsupported_template_reason(device_template: str) -> str:
     reasons = {
         "asa": "ASA is not an IOS-XE device",
-        "iol": "IOL is not in the supported IOS-XE MVP template set",
+        "iol": "IOL is not in the supported IOS-XE template set",
         "lxc": "FRR/LXC/Linux containers are not IOS-XE devices",
         "ubuntu": "Ubuntu/Linux nodes are not IOS-XE devices",
     }
     return reasons.get(
         str(device_template).lower(),
-        "device template is not in the supported IOS-XE MVP template set",
+        "device template is not in the supported IOS-XE template set",
     )
 
 
