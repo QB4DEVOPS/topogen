@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.7.3
+# Doc Version: v1.8.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -35,6 +35,7 @@ from topogen.nac import (  # pylint: disable=wrong-import-position
     write_devices_yaml,
     write_nac_yaml,
     write_nac_tree,
+    write_terraform_scaffold,
     write_terraform_tfvars_json,
 )
 
@@ -69,6 +70,10 @@ class TestNacWriter(unittest.TestCase):
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
             devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
             metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
+            main_tf = Path(tmp) / "out" / "iosv-test" / "nac" / "main.tf"
+            versions_tf = Path(tmp) / "out" / "iosv-test" / "nac" / "versions.tf"
+            tfvars_example = Path(tmp) / "out" / "iosv-test" / "nac" / "terraform.tfvars.example"
+            terraform_gitignore = Path(tmp) / "out" / "iosv-test" / "nac" / ".gitignore"
             self.assertTrue(cml_yaml.exists())
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
@@ -77,7 +82,13 @@ class TestNacWriter(unittest.TestCase):
             self.assertTrue(host_vars_yaml.exists())
             self.assertTrue(devices_yaml.exists())
             self.assertTrue(metadata_yaml.exists())
+            self.assertTrue(main_tf.exists())
+            self.assertTrue(versions_tf.exists())
+            self.assertTrue(tfvars_example.exists())
+            self.assertTrue(terraform_gitignore.exists())
             self.assertFalse((lab_root / "nac.yaml").exists())
+            self.assertFalse((lab_root / "main.tf").exists())
+            self.assertFalse((lab_root / "versions.tf").exists())
             self.assertFalse((lab_root / "inventory.yaml").exists())
             self.assertFalse((lab_root / "group_vars").exists())
             self.assertFalse((lab_root / "host_vars").exists())
@@ -152,6 +163,87 @@ class TestNacWriter(unittest.TestCase):
                 "generated_artifacts",
             ):
                 self.assertIn(key, meta)
+            for artifact in (
+                "main.tf",
+                "versions.tf",
+                "terraform.tfvars.example",
+                ".gitignore",
+            ):
+                self.assertIn(artifact, meta["generated_artifacts"])
+
+    def test_terraform_scaffold_content_is_pinned_and_secret_free(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            nac_root = Path(tmp) / "lab" / "nac"
+            write_terraform_scaffold(nac_root, overwrite=True)
+
+            main_tf = (nac_root / "main.tf").read_text(encoding="utf-8")
+            self.assertIn('source           = "netascode/nac-iosxe/iosxe"', main_tf)
+            self.assertIn('version          = "0.1.0"', main_tf)
+            self.assertIn('yaml_directories = ["."]', main_tf)
+            self.assertIn("terraform -chdir=<lab>/nac", main_tf)
+            self.assertIn("Run Terraform from this nac/ directory", main_tf)
+            self.assertIn("IOSXE_URL", main_tf)
+            self.assertIn("IOSXE_USERNAME", main_tf)
+            self.assertIn("IOSXE_PASSWORD", main_tf)
+            self.assertIn("LAB ONLY", main_tf)
+            self.assertIn("insecure disables TLS certificate verification", main_tf)
+            self.assertIn("throwaway lab gear", main_tf)
+            self.assertIn("insecure = true", main_tf)
+
+            versions_tf = (nac_root / "versions.tf").read_text(encoding="utf-8")
+            self.assertIn('required_version = ">= 1.8.0"', versions_tf)
+            self.assertIn('source  = "CiscoDevNet/iosxe"', versions_tf)
+            self.assertIn('version = "0.15.0"', versions_tf)
+            self.assertNotIn("0.18.0", versions_tf)
+
+            tfvars_example = (nac_root / "terraform.tfvars.example").read_text(encoding="utf-8")
+            self.assertIn('yaml_directories = ["."]', tfvars_example)
+            self.assertIn('IOSXE_URL="https://<lab-device-url>"', tfvars_example)
+            self.assertIn('IOSXE_USERNAME="<lab-username>"', tfvars_example)
+            self.assertIn('IOSXE_PASSWORD="<lab-password>"', tfvars_example)
+            self.assertNotIn("url =", tfvars_example)
+            self.assertNotIn("username =", tfvars_example)
+            self.assertNotIn("password =", tfvars_example)
+
+            gitignore_lines = (nac_root / ".gitignore").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(gitignore_lines, [".terraform/", "*.tfstate*", "terraform.tfvars"])
+
+            for content in (main_tf, versions_tf, tfvars_example):
+                self.assertNotIn("10.", content)
+                self.assertNotIn("172.", content)
+                self.assertNotIn("192.168.", content)
+                self.assertNotIn("admin", content.lower())
+                self.assertNotIn("cisco", content.lower().replace("ciscodevnet", ""))
+
+    def test_terraform_scaffold_refuses_clobber_and_reemit_is_byte_identical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            nac_root = Path(tmp) / "nac"
+            write_terraform_scaffold(nac_root, overwrite=True)
+            first = {
+                path.name: path.read_text(encoding="utf-8")
+                for path in (
+                    nac_root / "main.tf",
+                    nac_root / "versions.tf",
+                    nac_root / "terraform.tfvars.example",
+                    nac_root / ".gitignore",
+                )
+            }
+
+            with self.assertRaises(Exception) as cm:
+                write_terraform_scaffold(nac_root, overwrite=False)
+            self.assertIn("Refusing to overwrite existing file", str(cm.exception))
+
+            write_terraform_scaffold(nac_root, overwrite=True)
+            second = {
+                path.name: path.read_text(encoding="utf-8")
+                for path in (
+                    nac_root / "main.tf",
+                    nac_root / "versions.tf",
+                    nac_root / "terraform.tfvars.example",
+                    nac_root / ".gitignore",
+                )
+            }
+            self.assertEqual(first, second)
 
     def test_nac_rerun_is_deterministic_and_not_nested(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -177,6 +269,10 @@ class TestNacWriter(unittest.TestCase):
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
             devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
             metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
+            main_tf = Path(tmp) / "out" / "iosv-test" / "nac" / "main.tf"
+            versions_tf = Path(tmp) / "out" / "iosv-test" / "nac" / "versions.tf"
+            tfvars_example = Path(tmp) / "out" / "iosv-test" / "nac" / "terraform.tfvars.example"
+            terraform_gitignore = Path(tmp) / "out" / "iosv-test" / "nac" / ".gitignore"
             nested_bad = Path(tmp) / "out" / "iosv-test" / "iosv-test" / "nac" / "nac.yaml"
             self.assertTrue(nac_yaml.exists())
             self.assertTrue(tfvars_json.exists())
@@ -185,6 +281,10 @@ class TestNacWriter(unittest.TestCase):
             self.assertTrue(host_vars_yaml.exists())
             self.assertTrue(devices_yaml.exists())
             self.assertTrue(metadata_yaml.exists())
+            self.assertTrue(main_tf.exists())
+            self.assertTrue(versions_tf.exists())
+            self.assertTrue(tfvars_example.exists())
+            self.assertTrue(terraform_gitignore.exists())
             self.assertFalse(nested_bad.exists())
 
             content_a = nac_yaml.read_text(encoding="utf-8")
@@ -208,6 +308,18 @@ class TestNacWriter(unittest.TestCase):
             meta_a = metadata_yaml.read_text(encoding="utf-8")
             meta_b = metadata_yaml.read_text(encoding="utf-8")
             self.assertEqual(meta_a, meta_b)
+            main_a = main_tf.read_text(encoding="utf-8")
+            main_b = main_tf.read_text(encoding="utf-8")
+            self.assertEqual(main_a, main_b)
+            versions_a = versions_tf.read_text(encoding="utf-8")
+            versions_b = versions_tf.read_text(encoding="utf-8")
+            self.assertEqual(versions_a, versions_b)
+            example_a = tfvars_example.read_text(encoding="utf-8")
+            example_b = tfvars_example.read_text(encoding="utf-8")
+            self.assertEqual(example_a, example_b)
+            gitignore_a = terraform_gitignore.read_text(encoding="utf-8")
+            gitignore_b = terraform_gitignore.read_text(encoding="utf-8")
+            self.assertEqual(gitignore_a, gitignore_b)
 
     def test_tfvars_mgmt_ip_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:

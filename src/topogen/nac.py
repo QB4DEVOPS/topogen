@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.3
+# Doc Version: v1.6.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -17,6 +17,63 @@ from pathlib import Path
 import yaml
 
 from topogen.models import TopogenError, TopogenNode
+
+
+TERRAFORM_MAIN_TF = """# Run Terraform from this nac/ directory so yaml_directories = [\".\"] resolves
+# to the directory containing both main.tf and nac.yaml. From the lab root, use:
+# terraform -chdir=<lab>/nac <command>
+
+module \"iosxe\" {
+  source           = \"netascode/nac-iosxe/iosxe\"
+  version          = \"0.1.0\"
+  yaml_directories = [\".\"]
+}
+
+provider \"iosxe\" {
+  # The CiscoDevNet/iosxe provider reads IOSXE_URL, IOSXE_USERNAME, and
+  # IOSXE_PASSWORD (or its documented IOSXE_* environment variables).
+  # Do not put lab URLs, usernames, or passwords in Terraform files.
+  #
+  # LAB ONLY: insecure disables TLS certificate verification; acceptable only
+  # for throwaway lab gear with self-signed certificates. Never use this for
+  # production NaC.
+  insecure = true
+}
+"""
+
+
+TERRAFORM_VERSIONS_TF = """terraform {
+  required_version = \">= 1.8.0\"
+
+  required_providers {
+    iosxe = {
+      source  = \"CiscoDevNet/iosxe\"
+      version = \"0.15.0\"
+    }
+  }
+}
+"""
+
+
+TERRAFORM_TFVARS_EXAMPLE = """# This scaffold is intentionally driven by nac.yaml through yaml_directories = [\".\"].
+# Supply provider connection settings with environment variables on your runner.
+#
+# Bash:
+#   export IOSXE_URL=\"https://<lab-device-url>\"
+#   export IOSXE_USERNAME=\"<lab-username>\"
+#   export IOSXE_PASSWORD=\"<lab-password>\"
+#
+# PowerShell:
+#   $env:IOSXE_URL = \"https://<lab-device-url>\"
+#   $env:IOSXE_USERNAME = \"<lab-username>\"
+#   $env:IOSXE_PASSWORD = \"<lab-password>\"
+"""
+
+
+TERRAFORM_GITIGNORE = """.terraform/
+*.tfstate*
+terraform.tfvars
+"""
 
 
 def _normalize_ipv4_host(value) -> str:
@@ -293,7 +350,7 @@ def write_nac_yaml(model: dict, output_path: Path, overwrite: bool = False) -> P
 
 
 def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool = False) -> Path:
-    """Project canonical model into deterministic terraform.tfvars.json."""
+    """Project an informational device list; the TG-S8 module scaffold reads nac.yaml."""
     devices = model.get("iosxe", {}).get("devices", [])
     projected_devices = []
     for device in sorted(devices, key=lambda d: d.get("name", "")):
@@ -318,6 +375,46 @@ def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool 
         encoding="utf-8",
     )
     return output_path
+
+
+def _write_static_text(output_path: Path, content: str, overwrite: bool = False) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and not overwrite:
+        raise TopogenError(
+            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
+        )
+    output_path.write_text(content, encoding="utf-8")
+    return output_path
+
+
+def write_terraform_main_tf(output_path: Path, overwrite: bool = False) -> Path:
+    """Write the static netascode/nac-iosxe module scaffold."""
+    return _write_static_text(output_path, TERRAFORM_MAIN_TF, overwrite=overwrite)
+
+
+def write_terraform_versions_tf(output_path: Path, overwrite: bool = False) -> Path:
+    """Write the Terraform/provider version pins required by nac-iosxe 0.1.0."""
+    return _write_static_text(output_path, TERRAFORM_VERSIONS_TF, overwrite=overwrite)
+
+
+def write_terraform_tfvars_example(output_path: Path, overwrite: bool = False) -> Path:
+    """Write placeholder-only provider environment variable guidance."""
+    return _write_static_text(output_path, TERRAFORM_TFVARS_EXAMPLE, overwrite=overwrite)
+
+
+def write_terraform_gitignore(output_path: Path, overwrite: bool = False) -> Path:
+    """Write Terraform local-state ignore rules for the nac workspace."""
+    return _write_static_text(output_path, TERRAFORM_GITIGNORE, overwrite=overwrite)
+
+
+def write_terraform_scaffold(nac_root: Path, overwrite: bool = False) -> list[Path]:
+    """Write the static Terraform scaffold files under nac_root."""
+    return [
+        write_terraform_main_tf(nac_root / "main.tf", overwrite=overwrite),
+        write_terraform_versions_tf(nac_root / "versions.tf", overwrite=overwrite),
+        write_terraform_tfvars_example(nac_root / "terraform.tfvars.example", overwrite=overwrite),
+        write_terraform_gitignore(nac_root / ".gitignore", overwrite=overwrite),
+    ]
 
 
 def write_inventory_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
@@ -440,6 +537,10 @@ def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = Fa
     host_vars_artifacts = [f"host_vars/{d.get('name', '')}.yaml" for d in devices]
     generated_artifacts = [
         "nac.yaml",
+        "main.tf",
+        "versions.tf",
+        "terraform.tfvars.example",
+        ".gitignore",
         "terraform.tfvars.json",
         "inventory.yaml",
         "group_vars/all.yaml",
@@ -496,6 +597,7 @@ def write_nac_tree(
     )
     nac_root.mkdir(parents=True, exist_ok=True)
     nac_yaml_path = write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
+    write_terraform_scaffold(nac_root, overwrite=overwrite)
     write_terraform_tfvars_json(
         model,
         nac_root / "terraform.tfvars.json",
