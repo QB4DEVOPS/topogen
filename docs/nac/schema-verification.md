@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.0
+Doc Version: v1.1.0
 Date Modified: 2026-06-03
 
 - Called by: TG-S1 (Jira TG-132); gating deliverable for TG-S2 (TG-133) and TG-S7 (TG-139)
@@ -156,7 +156,9 @@ fallback, so an absent key fails the module):
   the MVP surface intentionally emits none of them.
 - Module-level: at least one of `yaml_directories`, `yaml_files`, or `model` must be
   non-empty (`variables.tf:17-20` validation) — satisfied by the scaffold's
-  `yaml_directories`/`yaml_files`.
+  `yaml_files = ["nac.yaml"]`. (The scaffold deliberately uses `yaml_files`, not
+  `yaml_directories = ["."]`, which would also ingest the Ansible/informational
+  YAML and break `yaml_merge` — see TG-145.)
 
 ## `host` placement note (not a schema error, but worth recording)
 

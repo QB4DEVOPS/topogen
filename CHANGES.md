@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.37
+Doc Version: v1.2.38
 Date Modified: 2026-06-03
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,11 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(nac): drive the Terraform module via `yaml_files = ["nac.yaml"]` (TG-145)
+    - The generated `main.tf` used `yaml_directories = ["."]`, which made the `netascode/nac-iosxe` module recursively ingest every `*.yaml` under `nac/` (Ansible/informational files, and even the module's own examples under `.terraform/`). The Ansible playbook `verify_reachability.yaml` is a top-level sequence, so `terraform plan` failed in the module's `yaml_merge` (`cannot unmarshal !!seq into map`). `terraform validate` masked it because it never reads the YAML.
+    - Switched the scaffold to the module's `yaml_files = ["nac.yaml"]` input so only the NaC model is ingested; corrected the `terraform.tfvars.example` comment and the `devices.yaml`/`nac_metadata.yaml` informational note.
+    - Proven on a fresh generation: `terraform init`/`validate` pass and `terraform plan` => `Plan: 6 to add` (iosxe_system + interface_ethernet + interface_loopback for both routers).
+    - Files: src/topogen/nac.py (rev v1.8.0 → v1.9.0), tests/test_nac_writer.py (rev v1.10.0 → v1.11.0), tests/fixtures/nac/golden-flat-{no-mgmt,mgmt}/ (regenerated), docs/nac/schema-verification.md (rev v1.0.0 → v1.1.0), CHANGES.md (rev v1.2.37 → v1.2.38)
   - feat(nac): deployable NaC MVP — Terraform workspace + Ansible stub + day0 RESTCONF/NETCONF (TG-131)
     - `--nac` now emits a deployable Network-as-Code workspace alongside the offline CML YAML: a lean `nac.yaml` targeting the official `netascode/nac-iosxe/iosxe` 0.1.0 module (schema `iosxe.devices[].configuration.*`), a pinned Terraform scaffold (`main.tf`, `versions.tf`, `terraform.tfvars.example`, `.gitignore`), and a read-only Ansible reachability stub (`ansible.cfg`, `inventory.yaml`, `group_vars/all.yaml`, `host_vars/*.yaml`, `verify_reachability.yaml`)
     - Provider pinned to `CiscoDevNet/iosxe` 0.15.0 (transitive `netascode/utils` 1.1.0-beta3), Terraform `>= 1.8.0`; provider `insecure = true` is lab-only; credentials are read from environment variables (no secrets written)
