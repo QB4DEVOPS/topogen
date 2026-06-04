@@ -1,0 +1,38 @@
+iosxe:
+  devices:
+  - name: iosv-01
+    host: 10.10.0.1
+    configuration:
+      system:
+        hostname: R1
+      interfaces:
+        ethernets:
+        - type: GigabitEthernet
+          id: 0/0
+          ipv4:
+            address: 10.10.0.1
+            address_mask: 255.255.0.0
+          description: mgmt flat
+        loopbacks:
+        - id: '0'
+          ipv4:
+            address: 10.20.0.1
+            address_mask: 255.255.255.255
+  - name: iosv-02
+    host: 10.10.0.2
+    configuration:
+      system:
+        hostname: R2
+      interfaces:
+        ethernets:
+        - type: GigabitEthernet
+          id: 0/0
+          ipv4:
+            address: 10.10.0.2
+            address_mask: 255.255.0.0
+          description: mgmt flat
+        loopbacks:
+        - id: '0'
+          ipv4:
+            address: 10.20.0.2
+            address_mask: 255.255.255.255
