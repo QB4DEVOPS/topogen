@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.7.0
+# Doc Version: v1.8.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -72,6 +72,26 @@ TERRAFORM_TFVARS_EXAMPLE = """# This scaffold is intentionally driven by nac.yam
 TERRAFORM_GITIGNORE = """.terraform/
 *.tfstate*
 terraform.tfvars
+"""
+
+
+ANSIBLE_CFG = """[defaults]
+inventory = inventory.yaml
+# LAB ONLY: disables SSH host key checks for disposable CML labs.
+host_key_checking = False
+retry_files_enabled = False
+"""
+
+
+VERIFY_REACHABILITY_YAML = """---
+- name: Verify IOS-XE reachability with read-only facts
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Gather minimal IOS-XE facts
+      cisco.ios.ios_facts:
+        gather_subset:
+          - min
 """
 
 
@@ -394,6 +414,16 @@ def write_terraform_scaffold(nac_root: Path, overwrite: bool = False) -> list[Pa
     ]
 
 
+def write_ansible_cfg(output_path: Path, overwrite: bool = False) -> Path:
+    """Write the parse-only Ansible config stub."""
+    return _write_static_text(output_path, ANSIBLE_CFG, overwrite=overwrite)
+
+
+def write_verify_reachability_yaml(output_path: Path, overwrite: bool = False) -> Path:
+    """Write the read-only Ansible ios_facts smoke playbook."""
+    return _write_static_text(output_path, VERIFY_REACHABILITY_YAML, overwrite=overwrite)
+
+
 def write_inventory_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
     """Project canonical model into deterministic Ansible inventory.yaml."""
     devices = model.get("iosxe", {}).get("devices", [])
@@ -428,6 +458,10 @@ def write_group_vars_all_yaml(model: dict, output_path: Path, overwrite: bool = 
     payload = {
         "nac_platform": platform,
         "nac_device_count": len(devices),
+        "ansible_connection": "ansible.netcommon.network_cli",
+        "ansible_network_os": "cisco.ios.ios",
+        "ansible_user": "{{ lookup('env', 'IOSXE_USERNAME') }}",
+        "ansible_password": "{{ lookup('env', 'IOSXE_PASSWORD') }}",
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists() and not overwrite:
@@ -525,8 +559,10 @@ def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = Fa
         "terraform.tfvars.example",
         ".gitignore",
         "inventory.yaml",
+        "ansible.cfg",
         "group_vars/all.yaml",
         *host_vars_artifacts,
+        "verify_reachability.yaml",
         "devices.yaml",
         "nac_metadata.yaml",
     ]
@@ -588,6 +624,10 @@ def write_nac_tree(
     nac_root.mkdir(parents=True, exist_ok=True)
     nac_yaml_path = write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
     write_terraform_scaffold(nac_root, overwrite=overwrite)
+    write_ansible_cfg(
+        nac_root / "ansible.cfg",
+        overwrite=overwrite,
+    )
     write_inventory_yaml(
         model,
         nac_root / "inventory.yaml",
@@ -601,6 +641,10 @@ def write_nac_tree(
     write_host_vars_yaml(
         model,
         nac_root / "host_vars",
+        overwrite=overwrite,
+    )
+    write_verify_reachability_yaml(
+        nac_root / "verify_reachability.yaml",
         overwrite=overwrite,
     )
     write_devices_yaml(
