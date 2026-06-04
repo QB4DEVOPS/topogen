@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.6.1
+# Doc Version: v1.8.0
 # Date Modified: 2026-06-03
 #
 """
@@ -106,6 +106,28 @@ def validate_nac_mvp_guardrails(args, parser):
     if getattr(args, "yaml_output", None):
         parser.error(
             "--nac requires local offline generation; "
+            "use --offline-yaml instead of --yaml online export"
+        )
+
+
+def validate_cml2_lifecycle_guardrails(args, parser):
+    """Fail-fast guardrails for CML2 Terraform lifecycle scaffold generation."""
+    if not getattr(args, "terraform_cml2", False):
+        return
+    if not getattr(args, "offline_yaml", None):
+        parser.error("--terraform-cml2 requires --offline-yaml FILE (offline generation path)")
+    if (
+        getattr(args, "do_import", False)
+        or getattr(args, "import_yaml", None)
+        or getattr(args, "up", None)
+    ):
+        parser.error(
+            "--terraform-cml2 requires local offline generation; "
+            "import workflow flags are not supported (--import/--import-yaml/--up)"
+        )
+    if getattr(args, "yaml_output", None):
+        parser.error(
+            "--terraform-cml2 requires local offline generation; "
             "use --offline-yaml instead of --yaml online export"
         )
 
@@ -614,6 +636,14 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="Enable NaC artifacts for offline YAML generation (requires IOS-XE router templates)",
     )
     parser.add_argument(
+        "--terraform-cml2",
+        "--cml2",
+        dest="terraform_cml2",
+        action="store_true",
+        default=False,
+        help="Enable Terraform lifecycle scaffold generation for offline CML2 labs",
+    )
+    parser.add_argument(
         "--overwrite",
         dest="overwrite",
         action="store_true",
@@ -769,6 +799,7 @@ def main():
         validate_nodes_for_mode(args, parser)
         args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
         validate_nac_mvp_guardrails(args, parser)
+        validate_cml2_lifecycle_guardrails(args, parser)
 
         if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-psk":
             psk = getattr(args, "dmvpn_psk", None)

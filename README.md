@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.7.0
-Date Modified: 2026-06-03
+Doc Version: v1.8.1
+Date Modified: 2026-06-04
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -38,6 +38,7 @@ controller, creating the lab, nodes and links on the fly.
 - flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
 - YAML export of generated labs via controller API
 - offline YAML generation for CML (no controller needed) with `--offline-yaml`
+- optional CML2 Terraform lifecycle scaffold with `--terraform-cml2`
 - offline-to-CML import: `--import-yaml FILE` and `--import` to push YAML into CML (file size and lab URL printed; `--start` runs in background)
 
 ## Documentation map
@@ -129,6 +130,35 @@ Offline vs. deployment (what TopoGen guarantees vs. what you supply):
 - You supply the deployment: running `terraform init/plan/apply`, running Ansible,
   device reachability, and credentials. `topogen` does not run any deployment or
   reachability tooling — those runners are intentionally out of scope.
+
+## CML2 Terraform lifecycle scaffold (TG-150)
+
+`--terraform-cml2` is an offline-only path that emits a Terraform lifecycle
+workspace for the generated CML YAML. It uses the official `CiscoDevNet/cml2`
+provider and the `cml2_lifecycle` resource so Terraform can import and start the
+generated lab. `--cml2` is accepted as a short compatibility alias.
+
+Example:
+
+```powershell
+topogen 2 --mode simple --offline-yaml out\cml2-simple.yaml --terraform-cml2 --overwrite
+terraform -chdir=out\cml2-simple\cml2 init
+terraform -chdir=out\cml2-simple\cml2 apply
+```
+
+For `--offline-yaml out/<lab>.yaml --terraform-cml2`, output layout is:
+
+- `out/<lab>/<lab>.yaml` — offline CML YAML
+- `out/<lab>/cml2/main.tf` — `cml2_lifecycle` resource using `file(var.topology_file)`
+- `out/<lab>/cml2/variables.tf` — CML connection inputs and lifecycle controls
+- `out/<lab>/cml2/versions.tf` — Terraform/provider version constraints
+- `out/<lab>/cml2/outputs.tf` — lab ID, lifecycle ID, state, boot status, and node details
+- `out/<lab>/cml2/.gitignore` — ignores Terraform state/vars
+
+No CML credentials are written. Provide CML connection values through Terraform
+variables or `TF_VAR_*` environment variables. The generated `topology_file`
+default is a relative path such as `../<lab>.yaml`; no machine-local paths are
+embedded.
 
 ## Code structure and dependencies
 
@@ -275,8 +305,9 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--getvpn-rekey-interval GETVPN_REKEY_INTERVAL]
                [--getvpn-protocol {gdoi,gikev2}] [--staging]
                [--no-abort-on-failure] [--pki-enroll {scep,cli}] [--start]
-               [--yaml FILE] [--offline-yaml FILE] [--nac] [--overwrite]
-               [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
+               [--yaml FILE] [--offline-yaml FILE] [--nac]
+               [--terraform-cml2] [--overwrite] [--import-yaml FILE]
+               [--import] [--up FILE] [--print-up-cmd]
                [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
                [--allow-oversubscribe] [--blank]
                [nodes]
@@ -284,9 +315,9 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
 Generate test topology files and configurations for CML2
 
 positional arguments:
-  nodes                 Number of nodes to generate (2-1000; --nac MVP also
-                        allows nodes=1 simple and nodes=2 simple/flat/flat-
-                        pair)
+  nodes                 Number of nodes to generate (2-1000; --nac offline
+                        generation also allows 1 where supported by the
+                        selected mode)
 
 options:
   -h, --help            show this help message and exit
@@ -403,8 +434,11 @@ options:
   --yaml FILE           Export the created lab to a YAML file at FILE
   --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller
                         required)
-  --nac                 Enable NaC MVP guardrails (offline paths: one-router
-                        simple, two-router simple/nx/flat/flat-pair)
+  --nac                 Enable NaC artifacts for offline YAML generation
+                        (requires IOS-XE router templates)
+  --terraform-cml2, --cml2
+                        Enable Terraform lifecycle scaffold generation for
+                        offline CML2 labs
   --overwrite           Allow overwriting an existing output file when using
                         --offline-yaml
   --import-yaml FILE    Path to existing offline YAML to import (skip
