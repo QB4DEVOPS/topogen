@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.14.1
+# Doc Version: v1.14.2
 # Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
@@ -271,8 +271,13 @@ class TestNacWriter(unittest.TestCase):
             )
             for device in devices:
                 ethernets = device["configuration"]["interfaces"]["ethernets"]
+                tunnels = device["configuration"]["interfaces"]["tunnels"]
                 self.assertEqual(ethernets[0]["description"], "dmvpn nbma")
-                self.assertEqual(ethernets[1]["description"], "dmvpn tunnel")
+                self.assertEqual(tunnels[0]["id"], "0")
+                self.assertEqual(tunnels[0]["description"], "dmvpn tunnel")
+            for host_name in ("iosv-01", "iosv-02", "iosv-03"):
+                host_vars = nac_root / "host_vars" / f"{host_name}.yaml"
+                self.assertTrue(host_vars.exists())
 
     def test_dmvpn_flat_pair_nac_writes_cml_yaml_and_nac_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -346,11 +351,15 @@ class TestNacWriter(unittest.TestCase):
             )
             self.assertEqual(
                 [iface["description"] for iface in devices[0]["configuration"]["interfaces"]["ethernets"]],
-                ["dmvpn nbma", "pair link", "dmvpn tunnel"],
+                ["dmvpn nbma", "pair link"],
             )
             self.assertEqual(
                 [(iface["id"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["ethernets"]],
-                [("0/0", "dmvpn nbma"), ("0/1", "pair link"), ("0/1000", "dmvpn tunnel")],
+                [("0/0", "dmvpn nbma"), ("0/1", "pair link")],
+            )
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["tunnels"]],
+                [("0", "dmvpn tunnel")],
             )
             self.assertEqual(
                 [iface["description"] for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
@@ -359,6 +368,62 @@ class TestNacWriter(unittest.TestCase):
             self.assertEqual(
                 [(iface["id"], iface["description"]) for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
                 [("0/0", "pair link")],
+            )
+            self.assertNotIn("tunnels", devices[1]["configuration"]["interfaces"])
+
+    def test_dmvpn_flat_nac_with_mgmt_uses_oob_hosts_and_tunnel_interfaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-mgmt.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--mgmt",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            nac_root = Path(tmp) / "out" / "dmvpn-flat-mgmt" / "nac"
+            nac_yaml = nac_root / "nac.yaml"
+            inventory_yaml = nac_root / "inventory.yaml"
+            data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            inventory = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
+            devices = data["iosxe"]["devices"]
+            self.assertEqual([device["name"] for device in devices], ["iosv-01", "iosv-02", "iosv-03"])
+            self.assertEqual([device["host"] for device in devices], ["10.254.0.1", "10.254.0.2", "10.254.0.3"])
+            self.assertEqual(
+                [inventory["all"]["hosts"][device["name"]]["ansible_host"] for device in devices],
+                ["10.254.0.1", "10.254.0.2", "10.254.0.3"],
+            )
+
+            hub_interfaces = devices[0]["configuration"]["interfaces"]
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in hub_interfaces["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            self.assertTrue(
+                any(
+                    iface.get("description") == "OOB Management"
+                    and iface.get("vrf_forwarding") == "Mgmt-vrf"
+                    for iface in hub_interfaces["ethernets"]
+                )
+            )
+
+            host_vars = yaml.safe_load((nac_root / "host_vars" / "iosv-01.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(host_vars["hostname"], "R1")
+            self.assertTrue(
+                any(iface.get("name") == "Tunnel0" and iface.get("description") == "dmvpn tunnel"
+                    for iface in host_vars["interfaces"])
+            )
+            self.assertTrue(
+                any(iface.get("description") == "OOB Management" for iface in host_vars["interfaces"])
             )
 
     def test_dmvpn_flat_pair_without_nac_keeps_original_output_path_and_config(self):
