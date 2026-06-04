@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.2
+Doc Version: v1.3.3
 Date Modified: 2026-06-04
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - docs(nac,cml2): universal offline NaC, DMVPN NaC examples, CML2 Terraform workflow (TG-154)
+    - README no longer documents `--nac` as limited to fixed MVP command shapes; describes all offline modes, DMVPN `--nac` examples, and `terraform init` / `plan` / `apply` for both `nac/` and `cml2/` workspaces
+    - DEVELOPER.md updates NaC/CML2 file chains, guardrail split (CLI vs render), and test tables for universal + DMVPN paths
+    - Files: README.md (rev v1.8.2 → v1.8.3), DEVELOPER.md (rev v1.8.2 → v1.8.3), CHANGES.md (rev v1.3.2 → v1.3.3)
   - feat(nac): generate DMVPN flat-pair offline NaC artifacts (TG-151)
     - DMVPN flat and flat-pair offline YAML generation now share the NaC validation/write helper and emit the full sibling `nac/` output tree when `--nac` is set.
     - Added regression coverage for deterministic DMVPN flat-pair device/interface naming, full NaC artifact tree generation, RESTCONF/NETCONF day0 enablement, credential-free Terraform provider scaffolding, and unchanged flat-pair CML YAML path/config when `--nac` is omitted.
