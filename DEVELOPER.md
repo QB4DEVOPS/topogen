@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.16
+Doc Version: v1.7.17
 Date Modified: 2026-06-03
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -327,16 +327,21 @@ Path/layout contract:
 - Resolver: `src/topogen/render.py::resolve_offline_output_paths()`
 - Input: `--offline-yaml out/<lab>.yaml --nac`
 - Output:
-  - `out/<lab>/<lab>.yaml`
-  - `out/<lab>/nac/nac.yaml`
-  - `out/<lab>/nac/{devices.yaml,terraform.tfvars.json,inventory.yaml,group_vars/all.yaml,host_vars/*.yaml,nac_metadata.yaml}`
+  - `out/<lab>/<lab>.yaml` (offline CML YAML)
+  - `out/<lab>/nac/nac.yaml` (lean `iosxe.devices[].configuration.*` model)
+  - Terraform scaffold: `out/<lab>/nac/{main.tf,versions.tf,terraform.tfvars.example,.gitignore}`
+  - Ansible stub: `out/<lab>/nac/{ansible.cfg,inventory.yaml,group_vars/all.yaml,host_vars/*.yaml,verify_reachability.yaml}`
+  - Informational (NOT Terraform inputs): `out/<lab>/nac/{devices.yaml,nac_metadata.yaml}`
+  - Note: `terraform.tfvars.json` is intentionally NOT emitted (Terraform auto-loads that name; it cannot be labeled "not an input"). Credentials come from env vars; the provider uses `insecure = true` (lab-only).
 
 Canonical writer and adapters:
 
 - `src/topogen/nac.py`
-  - `build_canonical_nac_model(...)`
+  - `build_canonical_nac_model(...)` (fat model used by scaffold writers)
+  - `project_nac_yaml(...)` (lean projection actually written to `nac.yaml`)
   - `write_nac_yaml(...)`
-  - `write_nac_tree(...)`
+  - `write_terraform_scaffold(...)` (main.tf/versions.tf/tfvars.example/.gitignore)
+  - `write_nac_tree(...)` (top-level coordinator: NaC + Terraform + Ansible)
 - Offline renderers that emit NaC trees:
   - `offline_simple_yaml(...)`
   - `offline_nx_yaml(...)`
@@ -353,6 +358,9 @@ If you extend NaC scope:
    - `tests/test_nac_cli_guardrails.py`
    - `tests/test_nac_output_paths.py`
    - `tests/test_nac_writer.py`
+   - `tests/test_nac_day0_restconf.py`
+   - `tests/test_nac_render_e2e.py`
+   - `tests/test_nac_golden_smoke.py` (regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*`)
 
 
 

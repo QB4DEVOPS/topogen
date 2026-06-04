@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.36
-Date Modified: 2026-03-25
+Doc Version: v1.2.37
+Date Modified: 2026-06-03
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,15 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(nac): deployable NaC MVP — Terraform workspace + Ansible stub + day0 RESTCONF/NETCONF (TG-131)
+    - `--nac` now emits a deployable Network-as-Code workspace alongside the offline CML YAML: a lean `nac.yaml` targeting the official `netascode/nac-iosxe/iosxe` 0.1.0 module (schema `iosxe.devices[].configuration.*`), a pinned Terraform scaffold (`main.tf`, `versions.tf`, `terraform.tfvars.example`, `.gitignore`), and a read-only Ansible reachability stub (`ansible.cfg`, `inventory.yaml`, `group_vars/all.yaml`, `host_vars/*.yaml`, `verify_reachability.yaml`)
+    - Provider pinned to `CiscoDevNet/iosxe` 0.15.0 (transitive `netascode/utils` 1.1.0-beta3), Terraform `>= 1.8.0`; provider `insecure = true` is lab-only; credentials are read from environment variables (no secrets written)
+    - RESTCONF/NETCONF enablement (`ip http secure-server`, `restconf`, `netconf-yang`) spliced into router day0 configs when `--nac` is set
+    - Removed `terraform.tfvars.json` emission (Terraform auto-loads that name; it cannot be labeled "not an input"); `devices.yaml` and `nac_metadata.yaml` are now explicitly informational (not Terraform inputs)
+    - Guardrails: `--nac` requires `--offline-yaml`; supported shapes are 1x simple and 2x simple/nx/flat/flat-pair on `iosv`/`csr1000v`; unsupported combinations fail fast
+    - Added offline smoke tests + two committed golden fixtures (`tests/fixtures/nac/golden-flat-{no-mgmt,mgmt}`) that regenerate through the real CLI and assert byte-identical output
+    - Docs (TG-S13 closeout): refreshed the README `--help` block and NaC scope section, updated the DEVELOPER.md NaC reference, and marked the one-router golden contract as superseded
+    - Files: README.md (rev v1.6.0 → v1.7.0), DEVELOPER.md (rev v1.7.16 → v1.7.17), docs/nac/iosxe-one-router-golden-contract.md (rev v1.1.0 → v1.2.0), CHANGES.md (rev v1.2.36 → v1.2.37), TODO.md (rev v1.6.43 → v1.6.44)
   - feat(dmvpn): add `--dmvpn-ipsec-mode` flag for transport/tunnel mode selection (TG-110)
     - Adds `--dmvpn-ipsec-mode {transport,tunnel}` CLI flag (default: transport) to control the IPsec transform-set mode in DMVPN configurations
     - Previously `mode transport` was hardcoded; some Cisco reference designs use `mode tunnel`
