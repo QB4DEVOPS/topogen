@@ -7,7 +7,7 @@
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main (main, create_argparser, validate_nodes_for_mode, validate_nac_mvp_guardrails)
 #
-# Purpose: Validate TG-119/TG-136 NaC CLI guardrails and preserve non-NaC node behavior.
+# Purpose: Validate NaC CLI guardrails and preserve non-NaC node behavior.
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import io
@@ -52,7 +52,7 @@ class TestNacCliGuardrails(unittest.TestCase):
             except SystemExit as exc:
                 return exc.code, stderr.getvalue()
 
-    def test_valid_nac_mvp_command_shape(self):
+    def test_valid_nac_simple_one_router_command_shape(self):
         args = self._parse_and_validate(
             ["1", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--nac"]
         )
@@ -61,41 +61,50 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertEqual(args.mode, "simple")
         self.assertEqual(args.offline_yaml, "out/iosv-test.yaml")
 
-    def test_valid_nac_two_router_flat_command_shape(self):
+    def test_valid_nac_flat_one_router_command_shape(self):
         args = self._parse_and_validate(
-            ["2", "--mode", "flat", "--offline-yaml", "out/two-router-flat.yaml", "--nac"]
+            ["1", "--mode", "flat", "--offline-yaml", "out/one-router-flat.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.nodes, 1)
         self.assertEqual(args.mode, "flat")
-        self.assertEqual(args.offline_yaml, "out/two-router-flat.yaml")
+        self.assertEqual(args.offline_yaml, "out/one-router-flat.yaml")
 
-    def test_valid_nac_two_router_nx_command_shape(self):
+    def test_valid_nac_three_router_nx_command_shape(self):
         args = self._parse_and_validate(
-            ["2", "--mode", "nx", "--offline-yaml", "out/two-router-nx.yaml", "--nac"]
+            ["3", "--mode", "nx", "--offline-yaml", "out/three-router-nx.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.nodes, 3)
         self.assertEqual(args.mode, "nx")
-        self.assertEqual(args.offline_yaml, "out/two-router-nx.yaml")
+        self.assertEqual(args.offline_yaml, "out/three-router-nx.yaml")
 
-    def test_valid_nac_two_router_simple_command_shape(self):
+    def test_valid_nac_three_router_simple_command_shape(self):
         args = self._parse_and_validate(
-            ["2", "--mode", "simple", "--offline-yaml", "out/two-router-simple.yaml", "--nac"]
+            ["3", "--mode", "simple", "--offline-yaml", "out/three-router-simple.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.nodes, 3)
         self.assertEqual(args.mode, "simple")
-        self.assertEqual(args.offline_yaml, "out/two-router-simple.yaml")
+        self.assertEqual(args.offline_yaml, "out/three-router-simple.yaml")
 
-    def test_valid_nac_two_router_flat_pair_command_shape(self):
+    def test_valid_nac_four_router_flat_pair_command_shape(self):
         args = self._parse_and_validate(
-            ["2", "--mode", "flat-pair", "--offline-yaml", "out/two-router-flat-pair.yaml", "--nac"]
+            ["4", "--mode", "flat-pair", "--offline-yaml", "out/four-router-flat-pair.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.nodes, 4)
         self.assertEqual(args.mode, "flat-pair")
-        self.assertEqual(args.offline_yaml, "out/two-router-flat-pair.yaml")
+        self.assertEqual(args.offline_yaml, "out/four-router-flat-pair.yaml")
+
+    def test_valid_nac_dmvpn_command_shape(self):
+        args = self._parse_and_validate(
+            ["3", "--mode", "dmvpn", "--offline-yaml", "out/three-router-dmvpn.yaml", "--nac"]
+        )
+        self.assertTrue(args.nac)
+        self.assertEqual(args.nodes, 3)
+        self.assertEqual(args.mode, "dmvpn")
+        self.assertEqual(args.offline_yaml, "out/three-router-dmvpn.yaml")
 
     def test_nac_requires_offline_yaml(self):
         with self.assertRaises(SystemExit) as cm:
@@ -111,19 +120,37 @@ class TestNacCliGuardrails(unittest.TestCase):
             self.assertIn("--nac requires --offline-yaml FILE", stderr)
             self.assertFalse((Path(tmp) / "nac").exists())
 
-    def test_nac_rejects_unsupported_mode_or_path(self):
-        with self.assertRaises(SystemExit):
-            self._parse_and_validate(
-                ["1", "--mode", "flat", "--offline-yaml", "out/iosv-test.yaml", "--nac"]
-            )
-        with self.assertRaises(SystemExit):
-            self._parse_and_validate(
-                ["3", "--mode", "simple", "--offline-yaml", "out/three-router-simple.yaml", "--nac"]
-            )
-        with self.assertRaises(SystemExit):
-            self._parse_and_validate(
-                ["3", "--mode", "nx", "--offline-yaml", "out/three-router-nx.yaml", "--nac"]
-            )
+    def test_nac_rejects_import_workflow_flags(self):
+        cases = [
+            ["2", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--import", "--nac"],
+            ["2", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--import-yaml", "in.yaml", "--nac"],
+            ["2", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--up", "in.yaml", "--nac"],
+        ]
+        for argv in cases:
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit) as cm:
+                    with redirect_stderr(io.StringIO()) as stderr:
+                        self._parse_and_validate(argv)
+                self.assertNotEqual(cm.exception.code, 0)
+                self.assertIn("import workflow flags are not supported", stderr.getvalue())
+
+    def test_nac_rejects_online_yaml_export(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "simple",
+                        "--yaml",
+                        "online.yaml",
+                        "--offline-yaml",
+                        "out.yaml",
+                        "--nac",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("use --offline-yaml instead of --yaml online export", stderr.getvalue())
 
     def test_nac_rejects_unsupported_platform_family(self):
         with self.assertRaises(SystemExit) as cm:
@@ -142,7 +169,7 @@ class TestNacCliGuardrails(unittest.TestCase):
                 )
         self.assertNotEqual(cm.exception.code, 0)
         self.assertIn("R1", stderr.getvalue())
-        self.assertIn("IOL is not in the supported IOS-XE MVP template set", stderr.getvalue())
+        self.assertIn("IOL is not in the supported IOS-XE template set", stderr.getvalue())
 
     def test_nac_rejects_non_iosxe_node_before_nac_tree_exists(self):
         with tempfile.TemporaryDirectory() as tmp:

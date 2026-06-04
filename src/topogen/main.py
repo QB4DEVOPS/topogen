@@ -80,27 +80,11 @@ def validate_nodes_for_mode(args, parser):
 
 
 def validate_nac_mvp_guardrails(args, parser):
-    """Fail-fast guardrails for NaC MVP CLI combinations."""
+    """Fail-fast guardrails for NaC CLI combinations."""
     if not getattr(args, "nac", False):
         return
     if not getattr(args, "offline_yaml", None):
         parser.error("--nac requires --offline-yaml FILE (offline generation path)")
-    allowed_shapes = {
-        ("simple", 1),
-        ("simple", 2),
-        ("nx", 2),
-        ("flat", 2),
-        ("flat-pair", 2),
-    }
-    if (args.mode, args.nodes) not in allowed_shapes:
-        parser.error(
-            "--nac MVP currently supports only: "
-            "nodes=1 --mode simple --offline-yaml FILE OR "
-            "nodes=2 --mode simple --offline-yaml FILE OR "
-            "nodes=2 --mode nx --offline-yaml FILE OR "
-            "nodes=2 --mode flat --offline-yaml FILE OR "
-            "nodes=2 --mode flat-pair --offline-yaml FILE"
-        )
     dev_template = getattr(args, "dev_template", "iosv")
     if dev_template not in SUPPORTED_NAC_DEVICE_TEMPLATES:
         node_names = [f"R{i}" for i in range(1, int(args.nodes or 0) + 1)]
@@ -110,10 +94,20 @@ def validate_nac_mvp_guardrails(args, parser):
             + "; ".join(unsupported)
             + ". Supported IOS-XE device templates: iosv, csr1000v."
         )
-    if getattr(args, "do_import", False) or getattr(args, "import_yaml", None) or getattr(args, "up", None):
-        parser.error("--nac MVP does not support import workflow flags (--import/--import-yaml/--up)")
+    if (
+        getattr(args, "do_import", False)
+        or getattr(args, "import_yaml", None)
+        or getattr(args, "up", None)
+    ):
+        parser.error(
+            "--nac requires local offline generation; "
+            "import workflow flags are not supported (--import/--import-yaml/--up)"
+        )
     if getattr(args, "yaml_output", None):
-        parser.error("--nac MVP does not support --yaml online export; use --offline-yaml")
+        parser.error(
+            "--nac requires local offline generation; "
+            "use --offline-yaml instead of --yaml online export"
+        )
 
 
 def normalize_template_inputs(args):
@@ -617,7 +611,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="nac",
         action="store_true",
         default=False,
-        help="Enable NaC MVP guardrails (offline paths: one-router simple, two-router simple/nx/flat/flat-pair)",
+        help="Enable NaC artifacts for offline YAML generation (requires IOS-XE router templates)",
     )
     parser.add_argument(
         "--overwrite",
@@ -678,7 +672,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "nodes",
         nargs="?",
         type=valid_node_count,
-        help="Number of nodes to generate (2-1000; --nac MVP also allows nodes=1 simple and nodes=2 simple/flat/flat-pair)",
+        help="Number of nodes to generate (2-1000; --nac offline generation also allows 1 where supported by the selected mode)",
     )
     parser.add_argument(
         "--allow-oversubscribe",
