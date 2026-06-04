@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.9.0
+# Doc Version: v1.10.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -32,11 +32,13 @@ from topogen.nac import (  # pylint: disable=wrong-import-position
     _select_host,
     build_canonical_nac_model,
     project_nac_yaml,
+    write_ansible_cfg,
     write_devices_yaml,
     write_nac_metadata_yaml,
     write_nac_yaml,
     write_nac_tree,
     write_terraform_scaffold,
+    write_verify_reachability_yaml,
 )
 
 
@@ -68,6 +70,8 @@ class TestNacWriter(unittest.TestCase):
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
             group_all_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "group_vars" / "all.yaml"
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
+            ansible_cfg = Path(tmp) / "out" / "iosv-test" / "nac" / "ansible.cfg"
+            verify_reachability_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "verify_reachability.yaml"
             devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
             metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
             main_tf = Path(tmp) / "out" / "iosv-test" / "nac" / "main.tf"
@@ -80,6 +84,8 @@ class TestNacWriter(unittest.TestCase):
             self.assertTrue(inventory_yaml.exists())
             self.assertTrue(group_all_yaml.exists())
             self.assertTrue(host_vars_yaml.exists())
+            self.assertTrue(ansible_cfg.exists())
+            self.assertTrue(verify_reachability_yaml.exists())
             self.assertTrue(devices_yaml.exists())
             self.assertTrue(metadata_yaml.exists())
             self.assertTrue(main_tf.exists())
@@ -90,6 +96,8 @@ class TestNacWriter(unittest.TestCase):
             self.assertFalse((lab_root / "main.tf").exists())
             self.assertFalse((lab_root / "versions.tf").exists())
             self.assertFalse((lab_root / "inventory.yaml").exists())
+            self.assertFalse((lab_root / "ansible.cfg").exists())
+            self.assertFalse((lab_root / "verify_reachability.yaml").exists())
             self.assertFalse((lab_root / "group_vars").exists())
             self.assertFalse((lab_root / "host_vars").exists())
 
@@ -134,10 +142,32 @@ class TestNacWriter(unittest.TestCase):
             grp = yaml.safe_load(group_all_yaml.read_text(encoding="utf-8"))
             self.assertIn("nac_platform", grp)
             self.assertIn("nac_device_count", grp)
+            self.assertEqual(grp["ansible_connection"], "ansible.netcommon.network_cli")
+            self.assertEqual(grp["ansible_network_os"], "cisco.ios.ios")
+            self.assertEqual(grp["ansible_user"], "{{ lookup('env', 'IOSXE_USERNAME') }}")
+            self.assertEqual(grp["ansible_password"], "{{ lookup('env', 'IOSXE_PASSWORD') }}")
 
             host_vars = yaml.safe_load(host_vars_yaml.read_text(encoding="utf-8"))
             for key in ("hostname", "role", "template", "device_template", "loopbacks", "interfaces"):
                 self.assertIn(key, host_vars)
+
+            ansible_cfg_text = ansible_cfg.read_text(encoding="utf-8")
+            self.assertIn("[defaults]", ansible_cfg_text)
+            self.assertIn("inventory = inventory.yaml", ansible_cfg_text)
+            self.assertIn("host_key_checking = False", ansible_cfg_text)
+            self.assertIn("LAB ONLY", ansible_cfg_text)
+
+            reachability = yaml.safe_load(verify_reachability_yaml.read_text(encoding="utf-8"))
+            self.assertEqual(len(reachability), 1)
+            play = reachability[0]
+            self.assertEqual(play["hosts"], "all")
+            self.assertIs(play["gather_facts"], False)
+            self.assertNotIn("connection", play)
+            self.assertEqual(len(play["tasks"]), 1)
+            task = play["tasks"][0]
+            self.assertIn("cisco.ios.ios_facts", task)
+            self.assertEqual(task["cisco.ios.ios_facts"]["gather_subset"], ["min"])
+            self.assertNotIn("cisco.ios.ios_config", verify_reachability_yaml.read_text(encoding="utf-8"))
 
             devices_doc = yaml.safe_load(devices_yaml.read_text(encoding="utf-8"))
             self.assertIs(devices_doc["terraform_input"], False)
@@ -195,12 +225,86 @@ class TestNacWriter(unittest.TestCase):
                     "terraform.tfvars.example",
                     ".gitignore",
                     "inventory.yaml",
+                    "ansible.cfg",
                     "group_vars/all.yaml",
                     "host_vars/iosv-01.yaml",
+                    "verify_reachability.yaml",
                     "devices.yaml",
                     "nac_metadata.yaml",
                 ],
             )
+
+    def test_ansible_stub_content_is_parseable_read_only_and_secret_free(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                ],
+            )
+            nac_root = Path(tmp) / "nac"
+            write_nac_tree(
+                nac_root=nac_root,
+                node=node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+                overwrite=True,
+            )
+
+            ansible_cfg = (nac_root / "ansible.cfg").read_text(encoding="utf-8")
+            self.assertIn("[defaults]", ansible_cfg)
+            self.assertIn("inventory = inventory.yaml", ansible_cfg)
+            self.assertIn("host_key_checking = False", ansible_cfg)
+
+            group_vars_path = nac_root / "group_vars" / "all.yaml"
+            group_vars_text = group_vars_path.read_text(encoding="utf-8")
+            group_vars = yaml.safe_load(group_vars_text)
+            self.assertEqual(group_vars["ansible_connection"], "ansible.netcommon.network_cli")
+            self.assertEqual(group_vars["ansible_network_os"], "cisco.ios.ios")
+            self.assertEqual(group_vars["ansible_user"], "{{ lookup('env', 'IOSXE_USERNAME') }}")
+            self.assertEqual(group_vars["ansible_password"], "{{ lookup('env', 'IOSXE_PASSWORD') }}")
+            self.assertIn("IOSXE_USERNAME", group_vars_text)
+            self.assertIn("IOSXE_PASSWORD", group_vars_text)
+            for forbidden in ("admin", "cisco123", "lab-password", "<lab-password>", "secret_value"):
+                self.assertNotIn(forbidden, group_vars_text.lower())
+
+            playbook_path = nac_root / "verify_reachability.yaml"
+            playbook_text = playbook_path.read_text(encoding="utf-8")
+            playbook = yaml.safe_load(playbook_text)
+            self.assertIsInstance(playbook, list)
+            self.assertEqual(len(playbook), 1)
+            self.assertEqual(playbook[0]["hosts"], "all")
+            self.assertIs(playbook[0]["gather_facts"], False)
+            self.assertEqual(len(playbook[0]["tasks"]), 1)
+            self.assertIn("cisco.ios.ios_facts", playbook[0]["tasks"][0])
+            self.assertEqual(playbook[0]["tasks"][0]["cisco.ios.ios_facts"]["gather_subset"], ["min"])
+            self.assertNotIn("ios_config", playbook_text)
+            self.assertNotIn("config:", playbook_text)
+            self.assertNotIn("username", playbook_text.lower())
+            self.assertNotIn("password", playbook_text.lower())
+
+    def test_ansible_stub_refuses_clobber_and_reemit_is_byte_identical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ansible_cfg = Path(tmp) / "ansible.cfg"
+            verify_yaml = Path(tmp) / "verify_reachability.yaml"
+            write_ansible_cfg(ansible_cfg, overwrite=True)
+            write_verify_reachability_yaml(verify_yaml, overwrite=True)
+            first_cfg = ansible_cfg.read_text(encoding="utf-8")
+            first_verify = verify_yaml.read_text(encoding="utf-8")
+
+            with self.assertRaises(Exception) as cfg_cm:
+                write_ansible_cfg(ansible_cfg, overwrite=False)
+            self.assertIn("Refusing to overwrite existing file", str(cfg_cm.exception))
+            with self.assertRaises(Exception) as verify_cm:
+                write_verify_reachability_yaml(verify_yaml, overwrite=False)
+            self.assertIn("Refusing to overwrite existing file", str(verify_cm.exception))
+
+            write_ansible_cfg(ansible_cfg, overwrite=True)
+            write_verify_reachability_yaml(verify_yaml, overwrite=True)
+            self.assertEqual(first_cfg, ansible_cfg.read_text(encoding="utf-8"))
+            self.assertEqual(first_verify, verify_yaml.read_text(encoding="utf-8"))
 
     def test_terraform_scaffold_content_is_pinned_and_secret_free(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -298,6 +402,8 @@ class TestNacWriter(unittest.TestCase):
             inventory_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "inventory.yaml"
             group_all_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "group_vars" / "all.yaml"
             host_vars_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "host_vars" / "iosv-01.yaml"
+            ansible_cfg = Path(tmp) / "out" / "iosv-test" / "nac" / "ansible.cfg"
+            verify_reachability_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "verify_reachability.yaml"
             devices_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "devices.yaml"
             metadata_yaml = Path(tmp) / "out" / "iosv-test" / "nac" / "nac_metadata.yaml"
             main_tf = Path(tmp) / "out" / "iosv-test" / "nac" / "main.tf"
@@ -310,6 +416,8 @@ class TestNacWriter(unittest.TestCase):
             self.assertTrue(inventory_yaml.exists())
             self.assertTrue(group_all_yaml.exists())
             self.assertTrue(host_vars_yaml.exists())
+            self.assertTrue(ansible_cfg.exists())
+            self.assertTrue(verify_reachability_yaml.exists())
             self.assertTrue(devices_yaml.exists())
             self.assertTrue(metadata_yaml.exists())
             self.assertTrue(main_tf.exists())
@@ -330,6 +438,12 @@ class TestNacWriter(unittest.TestCase):
             hv_a = host_vars_yaml.read_text(encoding="utf-8")
             hv_b = host_vars_yaml.read_text(encoding="utf-8")
             self.assertEqual(hv_a, hv_b)
+            ansible_cfg_a = ansible_cfg.read_text(encoding="utf-8")
+            ansible_cfg_b = ansible_cfg.read_text(encoding="utf-8")
+            self.assertEqual(ansible_cfg_a, ansible_cfg_b)
+            verify_a = verify_reachability_yaml.read_text(encoding="utf-8")
+            verify_b = verify_reachability_yaml.read_text(encoding="utf-8")
+            self.assertEqual(verify_a, verify_b)
             devices_a = devices_yaml.read_text(encoding="utf-8")
             devices_b = devices_yaml.read_text(encoding="utf-8")
             self.assertEqual(devices_a, devices_b)
