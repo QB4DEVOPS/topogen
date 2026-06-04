@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.8.0
+# Doc Version: v1.9.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -7,7 +7,7 @@
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main.main, yaml.safe_load
 #
-# Purpose: Verify TG-121/TG-137 canonical NaC writer output layout, keys, and deterministic rerun behavior.
+# Purpose: Verify TG-121/TG-137/TG-140 canonical NaC writer output layout, keys, and deterministic rerun behavior.
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import sys
@@ -33,10 +33,10 @@ from topogen.nac import (  # pylint: disable=wrong-import-position
     build_canonical_nac_model,
     project_nac_yaml,
     write_devices_yaml,
+    write_nac_metadata_yaml,
     write_nac_yaml,
     write_nac_tree,
     write_terraform_scaffold,
-    write_terraform_tfvars_json,
 )
 
 
@@ -76,7 +76,7 @@ class TestNacWriter(unittest.TestCase):
             terraform_gitignore = Path(tmp) / "out" / "iosv-test" / "nac" / ".gitignore"
             self.assertTrue(cml_yaml.exists())
             self.assertTrue(nac_yaml.exists())
-            self.assertTrue(tfvars_json.exists())
+            self.assertFalse(tfvars_json.exists())
             self.assertTrue(inventory_yaml.exists())
             self.assertTrue(group_all_yaml.exists())
             self.assertTrue(host_vars_yaml.exists())
@@ -124,13 +124,6 @@ class TestNacWriter(unittest.TestCase):
             self.assertEqual(loopback["id"], "0")
             self.assertEqual(list(loopback["ipv4"].keys()), ["address", "address_mask"])
 
-            tfvars = yaml.safe_load(tfvars_json.read_text(encoding="utf-8"))
-            self.assertIn("devices", tfvars)
-            self.assertEqual(len(tfvars["devices"]), 1)
-            tf_device = tfvars["devices"][0]
-            for key in ("name", "hostname", "platform", "mgmt_ip"):
-                self.assertIn(key, tf_device)
-
             inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
             self.assertIn("all", inv)
             self.assertIn("hosts", inv["all"])
@@ -147,6 +140,11 @@ class TestNacWriter(unittest.TestCase):
                 self.assertIn(key, host_vars)
 
             devices_doc = yaml.safe_load(devices_yaml.read_text(encoding="utf-8"))
+            self.assertIs(devices_doc["terraform_input"], False)
+            self.assertIn("NOT a Terraform input", devices_doc["note"])
+            self.assertIn("nac.yaml", devices_doc["note"])
+            self.assertIn("yaml_directories", devices_doc["note"])
+            self.assertEqual(list(devices_doc.keys()), ["terraform_input", "note", "devices"])
             self.assertIn("devices", devices_doc)
             self.assertEqual(len(devices_doc["devices"]), 1)
             dev = devices_doc["devices"][0]
@@ -154,22 +152,55 @@ class TestNacWriter(unittest.TestCase):
                 self.assertIn(key, dev)
 
             meta = yaml.safe_load(metadata_yaml.read_text(encoding="utf-8"))
+            self.assertIs(meta["terraform_input"], False)
+            self.assertIn("NOT a Terraform input", meta["note"])
+            self.assertIn("nac.yaml", meta["note"])
+            self.assertIn("yaml_directories", meta["note"])
+            self.assertEqual(list(meta.keys())[:2], ["terraform_input", "note"])
             for key in (
                 "schema",
                 "schema_version",
                 "canonical_root",
+                "contract",
+                "epic_ref",
+                "module",
+                "provider",
                 "generator",
-                "ticket_ref",
+                "mode",
+                "template",
+                "device_template",
+                "device_count",
                 "generated_artifacts",
             ):
                 self.assertIn(key, meta)
-            for artifact in (
-                "main.tf",
-                "versions.tf",
-                "terraform.tfvars.example",
-                ".gitignore",
-            ):
-                self.assertIn(artifact, meta["generated_artifacts"])
+            self.assertEqual(meta["schema"], "iosxe-devices-configuration-mvp")
+            self.assertEqual(meta["schema_version"], "3.0.0")
+            self.assertEqual(meta["canonical_root"], "iosxe.devices[]")
+            self.assertEqual(meta["contract"], "lean iosxe.devices[].configuration.*")
+            self.assertEqual(meta["epic_ref"], "TG-131")
+            self.assertEqual(meta["module"], "netascode/nac-iosxe/iosxe 0.1.0")
+            self.assertEqual(meta["provider"], "CiscoDevNet/iosxe 0.15.0")
+            self.assertEqual(meta["generator"], "topogen")
+            self.assertEqual(meta["mode"], "simple")
+            self.assertEqual(meta["template"], "iosv")
+            self.assertEqual(meta["device_template"], "iosv")
+            self.assertEqual(meta["device_count"], 1)
+            self.assertNotIn("ticket_ref", meta)
+            self.assertEqual(
+                meta["generated_artifacts"],
+                [
+                    "nac.yaml",
+                    "main.tf",
+                    "versions.tf",
+                    "terraform.tfvars.example",
+                    ".gitignore",
+                    "inventory.yaml",
+                    "group_vars/all.yaml",
+                    "host_vars/iosv-01.yaml",
+                    "devices.yaml",
+                    "nac_metadata.yaml",
+                ],
+            )
 
     def test_terraform_scaffold_content_is_pinned_and_secret_free(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -275,7 +306,7 @@ class TestNacWriter(unittest.TestCase):
             terraform_gitignore = Path(tmp) / "out" / "iosv-test" / "nac" / ".gitignore"
             nested_bad = Path(tmp) / "out" / "iosv-test" / "iosv-test" / "nac" / "nac.yaml"
             self.assertTrue(nac_yaml.exists())
-            self.assertTrue(tfvars_json.exists())
+            self.assertFalse(tfvars_json.exists())
             self.assertTrue(inventory_yaml.exists())
             self.assertTrue(group_all_yaml.exists())
             self.assertTrue(host_vars_yaml.exists())
@@ -290,9 +321,6 @@ class TestNacWriter(unittest.TestCase):
             content_a = nac_yaml.read_text(encoding="utf-8")
             content_b = nac_yaml.read_text(encoding="utf-8")
             self.assertEqual(content_a, content_b)
-            tf_a = tfvars_json.read_text(encoding="utf-8")
-            tf_b = tfvars_json.read_text(encoding="utf-8")
-            self.assertEqual(tf_a, tf_b)
             inv_a = inventory_yaml.read_text(encoding="utf-8")
             inv_b = inventory_yaml.read_text(encoding="utf-8")
             self.assertEqual(inv_a, inv_b)
@@ -321,24 +349,61 @@ class TestNacWriter(unittest.TestCase):
             gitignore_b = terraform_gitignore.read_text(encoding="utf-8")
             self.assertEqual(gitignore_a, gitignore_b)
 
-    def test_tfvars_mgmt_ip_uses_host_ip_for_cidr(self):
+    def test_write_nac_tree_does_not_emit_auto_loaded_tfvars_json(self):
         with tempfile.TemporaryDirectory() as tmp:
-            model = {
-                "iosxe": {
-                    "devices": [
-                        {
-                            "name": "iosv-01",
-                            "hostname": "iosv-01",
-                            "platform": "iosxe",
-                            "mgmt": {"ipv4": "10.254.0.11/24"},
-                        }
-                    ]
-                }
-            }
-            out_path = Path(tmp) / "terraform.tfvars.json"
-            write_terraform_tfvars_json(model, out_path, overwrite=True)
-            tfvars = yaml.safe_load(out_path.read_text(encoding="utf-8"))
-            self.assertEqual(tfvars["devices"][0]["mgmt_ip"], "10.254.0.11")
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                ],
+            )
+            nac_root = Path(tmp) / "nac"
+            write_nac_tree(
+                nac_root=nac_root,
+                node=node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+                overwrite=True,
+            )
+            self.assertFalse((nac_root / "terraform.tfvars.json").exists())
+            metadata = yaml.safe_load((nac_root / "nac_metadata.yaml").read_text(encoding="utf-8"))
+            self.assertNotIn("terraform.tfvars.json", metadata["generated_artifacts"])
+
+    def test_informational_yaml_writers_refuse_clobber_and_reemit_byte_identical(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                ],
+            )
+            model = build_canonical_nac_model(
+                node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+            )
+            devices_path = Path(tmp) / "devices.yaml"
+            metadata_path = Path(tmp) / "nac_metadata.yaml"
+            write_devices_yaml(model, devices_path, overwrite=True)
+            write_nac_metadata_yaml(model, metadata_path, overwrite=True)
+            first_devices = devices_path.read_text(encoding="utf-8")
+            first_metadata = metadata_path.read_text(encoding="utf-8")
+
+            with self.assertRaises(Exception) as devices_cm:
+                write_devices_yaml(model, devices_path, overwrite=False)
+            self.assertIn("Refusing to overwrite existing file", str(devices_cm.exception))
+            with self.assertRaises(Exception) as metadata_cm:
+                write_nac_metadata_yaml(model, metadata_path, overwrite=False)
+            self.assertIn("Refusing to overwrite existing file", str(metadata_cm.exception))
+
+            write_devices_yaml(model, devices_path, overwrite=True)
+            write_nac_metadata_yaml(model, metadata_path, overwrite=True)
+            self.assertEqual(first_devices, devices_path.read_text(encoding="utf-8"))
+            self.assertEqual(first_metadata, metadata_path.read_text(encoding="utf-8"))
 
     def test_inventory_ansible_host_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -390,6 +455,8 @@ class TestNacWriter(unittest.TestCase):
             devices_path = Path(tmp) / "devices.yaml"
             write_devices_yaml(model, devices_path, overwrite=True)
             devices_doc = yaml.safe_load(devices_path.read_text(encoding="utf-8"))
+            self.assertIs(devices_doc["terraform_input"], False)
+            self.assertIn("NOT a Terraform input", devices_doc["note"])
             self.assertEqual(list(devices_doc["devices"][0].keys()), ["name", "hostname", "platform", "role", "mgmt_ip"])
 
     def test_nac_yaml_dump_is_byte_identical_across_paths(self):
@@ -448,6 +515,8 @@ class TestNacWriter(unittest.TestCase):
             out_path = Path(tmp) / "devices.yaml"
             write_devices_yaml(model, out_path, overwrite=True)
             devices_doc = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+            self.assertIs(devices_doc["terraform_input"], False)
+            self.assertIn("NOT a Terraform input", devices_doc["note"])
             self.assertEqual(devices_doc["devices"][0]["mgmt_ip"], "10.254.0.11")
 
     def test_missing_interfaces_emits_empty_list_without_crash(self):
@@ -686,6 +755,7 @@ class TestNacWriter(unittest.TestCase):
             out_path = Path(tmp) / "devices.yaml"
             write_devices_yaml(model, out_path, overwrite=True)
             devices_doc = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+            self.assertIs(devices_doc["terraform_input"], False)
             self.assertEqual(devices_doc["devices"][0]["mgmt_ip"], "")
 
     def test_rerun_stability_with_fallback_paths(self):
@@ -739,7 +809,6 @@ class TestNacWriter(unittest.TestCase):
             for path in (
                 nac_yaml,
                 devices_yaml,
-                tfvars_json,
                 inventory_yaml,
                 group_all_yaml,
                 host_vars_1,
@@ -761,13 +830,7 @@ class TestNacWriter(unittest.TestCase):
                 [d["name"] for d in devices_doc["devices"]],
                 ["iosv-01", "iosv-02"],
             )
-
-            tfvars = yaml.safe_load(tfvars_json.read_text(encoding="utf-8"))
-            self.assertEqual(len(tfvars["devices"]), 2)
-            self.assertEqual(
-                [d["name"] for d in tfvars["devices"]],
-                ["iosv-01", "iosv-02"],
-            )
+            self.assertFalse(tfvars_json.exists())
 
             inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
             self.assertIn("iosv-01", inv["all"]["hosts"])
@@ -779,9 +842,14 @@ class TestNacWriter(unittest.TestCase):
             self.assertEqual(grp["nac_device_count"], 2)
 
             metadata = yaml.safe_load(metadata_yaml.read_text(encoding="utf-8"))
+            self.assertIs(metadata["terraform_input"], False)
+            self.assertEqual(metadata["epic_ref"], "TG-131")
+            self.assertEqual(metadata["module"], "netascode/nac-iosxe/iosxe 0.1.0")
+            self.assertEqual(metadata["provider"], "CiscoDevNet/iosxe 0.15.0")
             self.assertEqual(metadata["device_count"], 2)
             self.assertIn("host_vars/iosv-01.yaml", metadata["generated_artifacts"])
             self.assertIn("host_vars/iosv-02.yaml", metadata["generated_artifacts"])
+            self.assertNotIn("terraform.tfvars.json", metadata["generated_artifacts"])
 
     def test_two_router_flat_rerun_is_deterministic_and_not_nested(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -806,7 +874,6 @@ class TestNacWriter(unittest.TestCase):
             files = [
                 nac_root / "nac.yaml",
                 nac_root / "devices.yaml",
-                nac_root / "terraform.tfvars.json",
                 nac_root / "inventory.yaml",
                 nac_root / "group_vars" / "all.yaml",
                 nac_root / "host_vars" / "iosv-01.yaml",
