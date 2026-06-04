@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.1
+# Doc Version: v1.3.2
 # Date Modified: 2026-06-04
 #
 # - Called by: src/topogen/main.py
@@ -311,6 +311,42 @@ def validate_nac_supported_iosxe_nodes(
             + "; ".join(unsupported)
             + ". Supported IOS-XE device templates: iosv, csr1000v."
         )
+
+
+def _validate_nac_router_nodes_if_enabled(
+    nac_root: Path | None,
+    nodes: list[TopogenNode],
+    device_template: str,
+) -> None:
+    """Validate NaC router nodes before writing any offline artifacts."""
+    if nac_root is None:
+        return
+    validate_nac_supported_iosxe_nodes(nodes, device_template)
+
+
+def _write_nac_tree_if_enabled(
+    *,
+    nac_root: Path | None,
+    nodes: list[TopogenNode],
+    device_template: str,
+    template: str,
+    mode: str,
+    args: Namespace,
+) -> Path | None:
+    """Write a sibling nac/ tree when the offline path requested NaC artifacts."""
+    if nac_root is None or not nodes:
+        return None
+    nac_file = write_nac_tree(
+        nac_root=nac_root,
+        nodes=nodes,
+        device_template=device_template,
+        template=template,
+        mode=mode,
+        args=args,
+        overwrite=getattr(args, "overwrite", False),
+    )
+    _LOGGER.warning("NaC canonical output written to %s", nac_file)
+    return nac_file
 
 
 def _nac_restconf_lines() -> list[str]:
@@ -2904,8 +2940,7 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -2919,17 +2954,14 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
         write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
 
         if ticks:
@@ -3756,8 +3788,7 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -3771,17 +3802,14 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
         write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
 
         if ticks:
@@ -4503,8 +4531,7 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -4518,17 +4545,14 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
         write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
     @staticmethod
@@ -5274,8 +5298,7 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -5289,17 +5312,14 @@ class Renderer:
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
         write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
@@ -5780,8 +5800,7 @@ class Renderer:
                 lines.append(f"    i2: i{oob_acc_port}")
 
         # --- Write file ---
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -5798,17 +5817,14 @@ class Renderer:
             "Offline YAML (nx, %d nodes, %d edges) written to %s (%.1f KB)",
             graph.number_of_nodes(), graph.number_of_edges(), outfile, size_kb,
         )
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
         write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
@@ -6242,8 +6258,7 @@ class Renderer:
 
         # --- Write file ---
         num_edges = total - 1
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -6260,17 +6275,14 @@ class Renderer:
             "Offline YAML (simple, %d nodes, %d edges) written to %s (%.1f KB)",
             total, num_edges, outfile, size_kb,
         )
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
         write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
