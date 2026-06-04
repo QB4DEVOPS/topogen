@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.38
-Date Modified: 2026-06-03
+Doc Version: v1.3.1
+Date Modified: 2026-06-04
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,11 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(cml2): add Terraform lifecycle scaffold for generated offline labs (TG-150)
+    - Added `--terraform-cml2` for offline generation, emitting `out/<lab>/cml2/` alongside the generated CML YAML so users can run `terraform init` and `terraform apply` against the `CiscoDevNet/cml2` provider. `--cml2` remains available as a short compatibility alias.
+    - The scaffold writes `main.tf`, `versions.tf`, `variables.tf`, `outputs.tf`, and `.gitignore`; `main.tf` points to the generated YAML through `file(var.topology_file)`, with `variables.tf` defaulting to a relative `../<lab>.yaml` path.
+    - CML connection values are Terraform inputs only; no controller URLs, credentials, tokens, passwords, or machine-local paths are hardcoded. `--terraform-cml2` and `--nac` remain separate sibling workspaces when both are enabled.
+    - Files: src/topogen/main.py (rev v1.6.1 → v1.8.0), src/topogen/render.py (rev v1.2.15 → v1.3.1), src/topogen/cml2.py (rev v1.0.0 → v1.0.1), tests/test_cml2_lifecycle.py (rev v1.0.0 → v1.1.0), tests/test_nac_cli_guardrails.py (rev v1.4.0 → v1.6.0), tests/test_nac_output_paths.py (rev v1.1.0 → v1.2.0), README.md (rev v1.7.0 → v1.8.1), DEVELOPER.md (rev v1.7.17 → v1.8.1), TODO.md (rev v1.6.44 → v1.6.46), CHANGES.md (rev v1.2.38 → v1.3.1)
   - fix(nac): drive the Terraform module via `yaml_files = ["nac.yaml"]` (TG-145)
     - The generated `main.tf` used `yaml_directories = ["."]`, which made the `netascode/nac-iosxe` module recursively ingest every `*.yaml` under `nac/` (Ansible/informational files, and even the module's own examples under `.terraform/`). The Ansible playbook `verify_reachability.yaml` is a top-level sequence, so `terraform plan` failed in the module's `yaml_merge` (`cannot unmarshal !!seq into map`). `terraform validate` masked it because it never reads the YAML.
     - Switched the scaffold to the module's `yaml_files = ["nac.yaml"]` input so only the NaC model is ingested; corrected the `terraform.tfvars.example` comment and the `devices.yaml`/`nac_metadata.yaml` informational note.

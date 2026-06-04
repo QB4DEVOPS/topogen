@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.17
-Date Modified: 2026-06-03
+Doc Version: v1.8.1
+Date Modified: 2026-06-04
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -361,6 +361,50 @@ If you extend NaC scope:
    - `tests/test_nac_day0_restconf.py`
    - `tests/test_nac_render_e2e.py`
    - `tests/test_nac_golden_smoke.py` (regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*`)
+
+## CML2 Terraform lifecycle scaffold reference (TG-150)
+
+Use this section as the implementation baseline for `--terraform-cml2` lifecycle scaffold work.
+
+Guardrail implementation:
+
+- `src/topogen/main.py::validate_cml2_lifecycle_guardrails()`
+- `--terraform-cml2` requires `--offline-yaml`
+- `--cml2` is accepted as a short compatibility alias for `--terraform-cml2`
+- Import workflow flags are rejected with `--terraform-cml2` because the scaffold is generated only alongside new offline YAML output
+
+Path/layout contract:
+
+- Resolver: `src/topogen/render.py::resolve_offline_artifact_paths()`
+- Input: `--offline-yaml out/<lab>.yaml --terraform-cml2`
+- Output:
+  - `out/<lab>/<lab>.yaml` (offline CML YAML)
+  - Terraform lifecycle scaffold: `out/<lab>/cml2/{main.tf,versions.tf,variables.tf,outputs.tf,.gitignore}`
+  - The generated `variables.tf` defaults `topology_file` to `../<lab>.yaml` so no machine-local path is embedded
+  - CML connection values are Terraform inputs only; no credentials, tokens, passwords, or controller URLs are written by TopoGen
+
+Canonical writer:
+
+- `src/topogen/cml2.py`
+  - `write_cml2_lifecycle_scaffold(...)` (main.tf/versions.tf/variables.tf/outputs.tf/.gitignore)
+  - Terraform provider: `CiscoDevNet/cml2`
+  - Terraform resource: `cml2_lifecycle` with `topology = file(var.topology_file)`
+
+Relationship to NaC:
+
+- `--terraform-cml2` and `--nac` are independent. When both are enabled, `cml2/` and `nac/` are sibling directories under the generated lab root.
+- Do not place CML lifecycle files under `nac/`; the `nac/` Terraform workspace targets device configuration through `netascode/nac-iosxe`.
+
+If you extend CML2 lifecycle scope:
+
+1. Update guardrails first (`main.py`)
+2. Keep output under `out/<lab>/cml2/`
+3. Keep connection settings as Terraform variables or environment-provided values
+4. Update docs (`README.md`, `CHANGES.md`, this file)
+5. Add/adjust tests:
+   - `tests/test_cml2_lifecycle.py`
+   - `tests/test_nac_output_paths.py`
+   - `tests/test_nac_cli_guardrails.py`
 
 
 
@@ -1042,7 +1086,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.2.1
+- **Doc Version:** v1.8.0
 
 - **Called by**
 
@@ -1076,7 +1120,7 @@ Jinja2:
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.2.2
+- **Doc Version:** v1.3.1
 
 - **Called by**
 
@@ -1094,6 +1138,8 @@ Jinja2:
 
   - Offline YAML file (`--offline-yaml`)
 
+  - Optional offline artifact scaffolds (`--nac`, `--terraform-cml2`)
+
   - Online CML controller state (labs/nodes/links/configs) via `virl2_client.ClientLibrary`
 
 - **Calls into**
@@ -1106,8 +1152,31 @@ Jinja2:
 
   - `src/topogen/lxcfrr.py` (`lxcfrr_bootconfig()`)
 
+  - `src/topogen/cml2.py` (`write_cml2_lifecycle_scaffold()`)
+
   - `src/topogen/models.py` (TopogenNode/Interface models)
 
+
+
+### `src/topogen/cml2.py`
+
+- **Doc Version:** v1.0.1
+
+- **Called by**
+
+  - `src/topogen/render.py` (offline `--terraform-cml2` generation path)
+
+- **Reads from**
+
+  - Generated offline CML YAML artifact name
+
+- **Writes to**
+
+  - CML2 Terraform lifecycle scaffold under `out/<lab>/cml2/`
+
+- **Calls into**
+
+  - `src/topogen/models.py` (`TopogenError`)
 
 
 ### `src/topogen/__main__.py`

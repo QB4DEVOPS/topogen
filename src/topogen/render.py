@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.15
+# Doc Version: v1.3.1
 # Date Modified: 2026-06-04
 #
 # - Called by: src/topogen/main.py
@@ -110,6 +110,7 @@ from virl2_client import ClientLibrary, InitializationError
 from virl2_client.models import Interface, Lab, Node
 
 from topogen import templates
+from topogen.cml2 import write_cml2_lifecycle_scaffold
 from topogen.config import Config
 from topogen.dnshost import dnshostconfig
 from topogen.lxcfrr import lxcfrr_bootconfig
@@ -218,17 +219,21 @@ def _emit_config(lines: list[str], rendered: str, blank: bool) -> None:
             lines.append(f"      {ln}")
 
 
-def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -> tuple[Path, Path | None]:
+def resolve_offline_artifact_paths(
+    offline_yaml: str,
+    nac_enabled: bool = False,
+    cml2_enabled: bool = False,
+) -> tuple[Path, Path | None, Path | None]:
     """Resolve deterministic offline output paths.
 
-    Non-NaC behavior is unchanged (returns the original offline YAML path).
-    NaC MVP behavior normalizes output so CML YAML stays at the lab root and
-    all NaC/Ansible artifacts share the returned nac_root:
-      <parent>/<lab>/<lab>.yaml and <parent>/<lab>/nac/
+    Plain offline behavior is unchanged (returns the original offline YAML path).
+    Optional artifact flows normalize output so CML YAML stays at the lab root
+    and each scaffold has a separate directory:
+      <parent>/<lab>/<lab>.yaml, <parent>/<lab>/nac/, and/or <parent>/<lab>/cml2/
     """
     raw = Path(offline_yaml)
-    if not nac_enabled:
-        return raw, None
+    if not nac_enabled and not cml2_enabled:
+        return raw, None, None
 
     lab_name = raw.stem if raw.suffix else raw.name
     # Avoid duplicate nesting on reruns if caller already passed out/<lab>/<lab>.yaml
@@ -236,7 +241,33 @@ def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -
         lab_root = raw.parent
     else:
         lab_root = raw.parent / lab_name
-    return lab_root / f"{lab_name}.yaml", lab_root / "nac"
+    return (
+        lab_root / f"{lab_name}.yaml",
+        lab_root / "nac" if nac_enabled else None,
+        lab_root / "cml2" if cml2_enabled else None,
+    )
+
+
+def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -> tuple[Path, Path | None]:
+    """Resolve deterministic offline CML YAML and NaC output paths."""
+    outfile, nac_root, _ = resolve_offline_artifact_paths(
+        offline_yaml,
+        nac_enabled=nac_enabled,
+        cml2_enabled=False,
+    )
+    return outfile, nac_root
+
+
+def write_cml2_lifecycle_if_enabled(args: Namespace, outfile: Path, cml2_root: Path | None) -> None:
+    """Write CML2 Terraform lifecycle scaffold when requested."""
+    if cml2_root is None:
+        return
+    written = write_cml2_lifecycle_scaffold(
+        cml2_root,
+        topology_file=outfile.name,
+        overwrite=bool(getattr(args, "overwrite", False)),
+    )
+    _LOGGER.warning("CML2 Terraform lifecycle scaffold written to %s", written[0].parent)
 
 
 def _nac_unsupported_template_reason(device_template: str) -> str:
@@ -2141,9 +2172,11 @@ class Renderer:
             )
 
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
         dev_def = getattr(args, "dev_template", args.template)
 
@@ -2897,6 +2930,7 @@ class Renderer:
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -2993,9 +3027,11 @@ class Renderer:
             )
 
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
         dev_def = getattr(args, "dev_template", args.template)
 
@@ -3746,6 +3782,7 @@ class Renderer:
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -3777,9 +3814,11 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
@@ -4490,6 +4529,7 @@ class Renderer:
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
     @staticmethod
     def offline_flat_pair_yaml(args: Namespace, cfg: Config) -> int:
@@ -4514,9 +4554,11 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
@@ -5258,6 +5300,7 @@ class Renderer:
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
     @staticmethod
@@ -5287,9 +5330,11 @@ class Renderer:
         total = int(args.nodes)
         distance = int(getattr(args, "distance", 200))
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # --- Generate NX graph (mirrors create_nx_network) ---
@@ -5764,6 +5809,7 @@ class Renderer:
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
     @staticmethod
@@ -5794,9 +5840,11 @@ class Renderer:
         total = int(args.nodes)
         distance = int(getattr(args, "distance", 200))
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # --- Generate square spiral coordinates (mirrors CoordsGenerator) ---
@@ -6223,6 +6271,7 @@ class Renderer:
                 overwrite=getattr(args, "overwrite", False),
             )
             _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
     def render_flat_network(self) -> int:

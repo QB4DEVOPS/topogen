@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.0
+# Doc Version: v1.6.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -28,6 +28,7 @@ from topogen.main import (  # pylint: disable=wrong-import-position
     create_argparser,
     main,
     normalize_template_inputs,
+    validate_cml2_lifecycle_guardrails,
     validate_nac_mvp_guardrails,
     validate_nodes_for_mode,
 )
@@ -42,6 +43,7 @@ class TestNacCliGuardrails(unittest.TestCase):
         normalize_template_inputs(args)
         validate_nodes_for_mode(args, self.parser)
         validate_nac_mvp_guardrails(args, self.parser)
+        validate_cml2_lifecycle_guardrails(args, self.parser)
         return args
 
     def _run_main_exit(self, argv):
@@ -151,6 +153,27 @@ class TestNacCliGuardrails(unittest.TestCase):
                 )
         self.assertNotEqual(cm.exception.code, 0)
         self.assertIn("use --offline-yaml instead of --yaml online export", stderr.getvalue())
+
+    def test_terraform_cml2_requires_offline_yaml(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(["2", "--mode", "simple", "--terraform-cml2"])
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--terraform-cml2 requires --offline-yaml FILE", stderr.getvalue())
+
+    def test_terraform_cml2_rejects_import_workflow_flags(self):
+        cases = [
+            ["2", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--import", "--terraform-cml2"],
+            ["2", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--import-yaml", "in.yaml", "--terraform-cml2"],
+            ["2", "--mode", "simple", "--offline-yaml", "out/iosv-test.yaml", "--up", "in.yaml", "--terraform-cml2"],
+        ]
+        for argv in cases:
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit) as cm:
+                    with redirect_stderr(io.StringIO()) as stderr:
+                        self._parse_and_validate(argv)
+                self.assertNotEqual(cm.exception.code, 0)
+                self.assertIn("import workflow flags are not supported", stderr.getvalue())
 
     def test_nac_rejects_unsupported_platform_family(self):
         with self.assertRaises(SystemExit) as cm:

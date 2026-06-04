@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
+# Doc Version: v1.2.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -20,7 +20,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from topogen.render import resolve_offline_output_paths  # pylint: disable=wrong-import-position
+from topogen.render import (  # pylint: disable=wrong-import-position
+    resolve_offline_artifact_paths,
+    resolve_offline_output_paths,
+)
 
 
 class TestNacOutputPaths(unittest.TestCase):
@@ -62,6 +65,25 @@ class TestNacOutputPaths(unittest.TestCase):
         self.assertEqual(yaml_target.as_posix(), "out/iosv-test/iosv-test.yaml")
         self.assertIsNotNone(nac_root)
         self.assertEqual(nac_root.as_posix(), "out/iosv-test/nac")
+
+    def test_cml2_path_transforms_to_lifecycle_layout(self):
+        yaml_target, nac_root, cml2_root = resolve_offline_artifact_paths(
+            "out/iosv-test.yaml", cml2_enabled=True
+        )
+        self.assertEqual(yaml_target.as_posix(), "out/iosv-test/iosv-test.yaml")
+        self.assertIsNone(nac_root)
+        self.assertIsNotNone(cml2_root)
+        self.assertEqual(cml2_root.as_posix(), "out/iosv-test/cml2")
+
+    def test_nac_and_cml2_paths_are_siblings(self):
+        yaml_target, nac_root, cml2_root = resolve_offline_artifact_paths(
+            "out/iosv-test.yaml", nac_enabled=True, cml2_enabled=True
+        )
+        self.assertEqual(yaml_target.as_posix(), "out/iosv-test/iosv-test.yaml")
+        self.assertIsNotNone(nac_root)
+        self.assertIsNotNone(cml2_root)
+        self.assertEqual(nac_root.as_posix(), "out/iosv-test/nac")
+        self.assertEqual(cml2_root.as_posix(), "out/iosv-test/cml2")
 
 
 if __name__ == "__main__":
