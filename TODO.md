@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.43
-Date Modified: 2026-03-25
+Doc Version: v1.6.44
+Date Modified: 2026-06-03
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -134,8 +134,13 @@ Recent completions:
 - [x] GET VPN (Group Encrypted Transport VPN) support: `--getvpn` flag with `--getvpn-protocol {gdoi,gikev2}`, KS node (csr-getvpn-ks.jinja2), GM config injection on all routers, requires `--pki`. Works with flat, flat-pair, and dmvpn modes. See CHANGES.md.
 - [x] `--blank` flag: topology-only labs with empty configuration on all router nodes; enables CML Bootstrap Lab. Works offline and online for simple, nx, flat, and flat-pair modes. Not supported with DMVPN, `--pki`, `--getvpn`, or config-only flags (`--ntp`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf`). See CHANGES.md.
 - [x] NaC MVP baseline stories reconciled with git/Jira evidence (TG-116/117/118/119/120/121/122/123/124/127/128/129 marked Done; epic remains In Progress with TG-125/TG-126/TG-130 open).
+- [x] **Deployable NaC MVP (TG-131, TG-S1–S13)** — `--nac` now emits a deployable workspace: lean `nac.yaml` for `netascode/nac-iosxe/iosxe` 0.1.0 (provider `CiscoDevNet/iosxe` 0.15.0, Terraform `>= 1.8.0`), pinned Terraform scaffold (`main.tf`/`versions.tf`/`terraform.tfvars.example`/`.gitignore`), read-only Ansible stub, and day0 RESTCONF/NETCONF. Removed `terraform.tfvars.json`. Added golden-fixture smoke tests (`tests/fixtures/nac/golden-flat-*`). See CHANGES.md and README "NaC MVP scope".
 
 ## Future ideas
+
+- [ ] **NaC: `--nac` help text omits `nx`** — the `nodes` positional `--help` string lists `nodes=2 simple/flat/flat-pair` but omits `nx`, even though the standalone `--nac` help and `validate_nac_mvp_guardrails()` allow `nodes=2 --mode nx`. One-line fix in `src/topogen/main.py` argparse help; then refresh the README `--help` block. (Follow-up from TG-S13.)
+- [ ] **NaC: Terraform `init`/`validate` deployability gate** — add an opt-in (CI/manual) `terraform init` + `terraform validate` check against a generated `nac/` workspace to prove provider/module resolution and HCL validity end-to-end. Kept out of the committed pytest suite (needs the Terraform binary + network). (Follow-up from TG-S12/S13.)
+- [ ] **NaC: extend `--nac` to DMVPN** — DMVPN is currently blocked by the `--nac` allowlist. Wiring DMVPN topologies through `write_nac_tree()` would require collecting deterministic `nac_router_nodes` on those paths and emitting tunnel/overlay config in the NaC model. (Follow-up from TG-S11.)
 
 - [ ] **TG-109: New feature: FlexVPN** — add FlexVPN (IKEv2-native) hub-and-spoke overlay support
   - FlexVPN is the IKEv2-native replacement for DMVPN (no GRE/NHRP, pure IKEv2 + IPsec with virtual-template and route injection via IKEv2 routing or BGP)

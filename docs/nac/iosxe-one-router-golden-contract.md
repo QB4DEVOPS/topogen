@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.1.0
+Doc Version: v1.2.0
 Date Modified: 2026-06-03
 
 - Called by: Developers implementing TG-116, TG-117, TG-121
@@ -16,6 +16,13 @@ Blast Radius: Contract changes affect adapter projection behavior and fixture te
 
 This document defines the canonical NaC contract for a single IOS-XE router and is
 the implementation target for TG-116, TG-117, and TG-121.
+
+> **Superseded (TG-131 v3).** This describes the original device-level model
+> (`hostname`/`platform`/`role`/`mgmt`). The shipped `--nac` MVP targets the official
+> `netascode/nac-iosxe` schema (`iosxe.devices[].configuration.*`) and no longer emits
+> `terraform.tfvars.json`. For the current contract see `README.md` (NaC MVP scope),
+> `docs/nac/mapping-matrix.md`, and the golden fixtures under
+> `tests/fixtures/nac/golden-flat-*`. The sections below are retained for historical context.
 
 Field-source audit companion:
 
@@ -122,15 +129,13 @@ projections from `iosxe.devices[0]` with deterministic field order.
   - `role <- iosxe.devices[0].role`
   - `mgmt_ip <- iosxe.devices[0].mgmt.ipv4`
 
-### `terraform.tfvars.json`
+### `terraform.tfvars.json` (removed in TG-131 v3)
 
-- Must include one serializable device object derived from `iosxe.devices[0]`
-- Required projected fields:
-  - `name`
-  - `hostname`
-  - `platform`
-  - `mgmt_ip`
-- Output must be deterministic JSON (stable key order in emitter implementation)
+- **No longer emitted.** Terraform auto-loads `terraform.tfvars.json`, so it cannot
+  honestly be labeled "not a Terraform input." The v3 path instead emits a Terraform
+  workspace (`main.tf`/`versions.tf`/`terraform.tfvars.example`/`.gitignore`) that
+  consumes `nac.yaml` via the `netascode/nac-iosxe` module, plus an informational
+  `devices.yaml` device projection. Credentials are supplied via environment variables.
 
 ### `inventory.yaml`
 
