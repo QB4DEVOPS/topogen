@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.6.0
+# Doc Version: v1.7.0
 # Date Modified: 2026-06-03
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
@@ -10,7 +10,6 @@
 # Purpose: Build and write canonical NaC output for one-router IOS-XE MVP.
 # Blast Radius: Medium - affects NaC offline artifact generation when --nac is enabled.
 
-import json
 from ipaddress import ip_interface
 from pathlib import Path
 
@@ -74,6 +73,12 @@ TERRAFORM_GITIGNORE = """.terraform/
 *.tfstate*
 terraform.tfvars
 """
+
+
+INFORMATIONAL_NAC_NOTE = (
+    "Informational only. NOT a Terraform input. The netascode/nac-iosxe module "
+    "is driven solely by nac.yaml via yaml_directories."
+)
 
 
 def _normalize_ipv4_host(value) -> str:
@@ -349,34 +354,6 @@ def write_nac_yaml(model: dict, output_path: Path, overwrite: bool = False) -> P
     return output_path
 
 
-def write_terraform_tfvars_json(model: dict, output_path: Path, overwrite: bool = False) -> Path:
-    """Project an informational device list; the TG-S8 module scaffold reads nac.yaml."""
-    devices = model.get("iosxe", {}).get("devices", [])
-    projected_devices = []
-    for device in sorted(devices, key=lambda d: d.get("name", "")):
-        mgmt_ip = _normalize_ipv4_host(device.get("host") or device.get("mgmt", {}).get("ipv4", ""))
-        projected_devices.append(
-            {
-                "name": device.get("name", ""),
-                "hostname": device.get("hostname", ""),
-                "platform": device.get("platform", ""),
-                "mgmt_ip": mgmt_ip,
-            }
-        )
-
-    payload = {"devices": projected_devices}
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.exists() and not overwrite:
-        raise TopogenError(
-            f"Refusing to overwrite existing file: {output_path}. Use --overwrite to replace it."
-        )
-    output_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
-    return output_path
-
-
 def _write_static_text(output_path: Path, content: str, overwrite: bool = False) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists() and not overwrite:
@@ -514,7 +491,11 @@ def write_devices_yaml(model: dict, output_path: Path, overwrite: bool = False) 
                 "mgmt_ip": mgmt_ip,
             }
         )
-    payload = {"devices": projected_devices}
+    payload = {
+        "terraform_input": False,
+        "note": INFORMATIONAL_NAC_NOTE,
+        "devices": projected_devices,
+    }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists() and not overwrite:
         raise TopogenError(
@@ -534,6 +515,8 @@ def write_devices_yaml(model: dict, output_path: Path, overwrite: bool = False) 
 def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = False) -> Path:
     """Write deterministic nac_metadata.yaml for canonical outputs."""
     devices = sorted(model.get("iosxe", {}).get("devices", []), key=lambda d: d.get("name", ""))
+    first_device = devices[0] if devices else {}
+    topogen_metadata = first_device.get("metadata", {}).get("topogen", {})
     host_vars_artifacts = [f"host_vars/{d.get('name', '')}.yaml" for d in devices]
     generated_artifacts = [
         "nac.yaml",
@@ -541,7 +524,6 @@ def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = Fa
         "versions.tf",
         "terraform.tfvars.example",
         ".gitignore",
-        "terraform.tfvars.json",
         "inventory.yaml",
         "group_vars/all.yaml",
         *host_vars_artifacts,
@@ -549,11 +531,19 @@ def write_nac_metadata_yaml(model: dict, output_path: Path, overwrite: bool = Fa
         "nac_metadata.yaml",
     ]
     payload = {
-        "schema": "iosxe-one-router-golden-contract",
-        "schema_version": "1.0.0",
-        "canonical_root": "iosxe.devices[0]",
+        "terraform_input": False,
+        "note": INFORMATIONAL_NAC_NOTE,
+        "schema": "iosxe-devices-configuration-mvp",
+        "schema_version": "3.0.0",
+        "canonical_root": "iosxe.devices[]",
+        "contract": "lean iosxe.devices[].configuration.*",
+        "epic_ref": "TG-131",
+        "module": "netascode/nac-iosxe/iosxe 0.1.0",
+        "provider": "CiscoDevNet/iosxe 0.15.0",
         "generator": "topogen",
-        "ticket_ref": "TG-122",
+        "mode": topogen_metadata.get("mode", ""),
+        "template": first_device.get("template", ""),
+        "device_template": first_device.get("device_template", ""),
         "device_count": len(devices),
         "generated_artifacts": generated_artifacts,
     }
@@ -598,11 +588,6 @@ def write_nac_tree(
     nac_root.mkdir(parents=True, exist_ok=True)
     nac_yaml_path = write_nac_yaml(model, nac_root / "nac.yaml", overwrite=overwrite)
     write_terraform_scaffold(nac_root, overwrite=overwrite)
-    write_terraform_tfvars_json(
-        model,
-        nac_root / "terraform.tfvars.json",
-        overwrite=overwrite,
-    )
     write_inventory_yaml(
         model,
         nac_root / "inventory.yaml",
