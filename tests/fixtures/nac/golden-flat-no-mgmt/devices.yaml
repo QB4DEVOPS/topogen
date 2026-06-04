@@ -1,6 +1,6 @@
 terraform_input: false
 note: Informational only. NOT a Terraform input. The netascode/nac-iosxe module is
-  driven solely by nac.yaml via yaml_directories.
+  driven solely by nac.yaml via yaml_files.
 devices:
 - name: iosv-01
   hostname: R1

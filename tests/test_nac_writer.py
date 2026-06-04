@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.10.0
+# Doc Version: v1.11.0
 # Date Modified: 2026-06-03
 #
 # - Called by: Developers/CI via unittest discovery
@@ -173,7 +173,7 @@ class TestNacWriter(unittest.TestCase):
             self.assertIs(devices_doc["terraform_input"], False)
             self.assertIn("NOT a Terraform input", devices_doc["note"])
             self.assertIn("nac.yaml", devices_doc["note"])
-            self.assertIn("yaml_directories", devices_doc["note"])
+            self.assertIn("yaml_files", devices_doc["note"])
             self.assertEqual(list(devices_doc.keys()), ["terraform_input", "note", "devices"])
             self.assertIn("devices", devices_doc)
             self.assertEqual(len(devices_doc["devices"]), 1)
@@ -185,7 +185,7 @@ class TestNacWriter(unittest.TestCase):
             self.assertIs(meta["terraform_input"], False)
             self.assertIn("NOT a Terraform input", meta["note"])
             self.assertIn("nac.yaml", meta["note"])
-            self.assertIn("yaml_directories", meta["note"])
+            self.assertIn("yaml_files", meta["note"])
             self.assertEqual(list(meta.keys())[:2], ["terraform_input", "note"])
             for key in (
                 "schema",
@@ -312,9 +312,9 @@ class TestNacWriter(unittest.TestCase):
             write_terraform_scaffold(nac_root, overwrite=True)
 
             main_tf = (nac_root / "main.tf").read_text(encoding="utf-8")
-            self.assertIn('source           = "netascode/nac-iosxe/iosxe"', main_tf)
-            self.assertIn('version          = "0.1.0"', main_tf)
-            self.assertIn('yaml_directories = ["."]', main_tf)
+            self.assertIn('source     = "netascode/nac-iosxe/iosxe"', main_tf)
+            self.assertIn('version    = "0.1.0"', main_tf)
+            self.assertIn('yaml_files = ["nac.yaml"]', main_tf)
             self.assertIn("terraform -chdir=<lab>/nac", main_tf)
             self.assertIn("Run Terraform from this nac/ directory", main_tf)
             self.assertIn("IOSXE_URL", main_tf)
@@ -332,7 +332,7 @@ class TestNacWriter(unittest.TestCase):
             self.assertNotIn("0.18.0", versions_tf)
 
             tfvars_example = (nac_root / "terraform.tfvars.example").read_text(encoding="utf-8")
-            self.assertIn('yaml_directories = ["."]', tfvars_example)
+            self.assertIn('yaml_files = ["nac.yaml"]', tfvars_example)
             self.assertIn('IOSXE_URL="https://<lab-device-url>"', tfvars_example)
             self.assertIn('IOSXE_USERNAME="<lab-username>"', tfvars_example)
             self.assertIn('IOSXE_PASSWORD="<lab-password>"', tfvars_example)

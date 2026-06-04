@@ -1,4 +1,4 @@
-# This scaffold is intentionally driven by nac.yaml through yaml_directories = ["."].
+# This scaffold is intentionally driven by nac.yaml through yaml_files = ["nac.yaml"].
 # Supply provider connection settings with environment variables on your runner.
 #
 # Bash:

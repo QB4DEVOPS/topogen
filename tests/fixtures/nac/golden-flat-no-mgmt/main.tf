@@ -1,11 +1,16 @@
-# Run Terraform from this nac/ directory so yaml_directories = ["."] resolves
-# to the directory containing both main.tf and nac.yaml. From the lab root, use:
+# Run Terraform from this nac/ directory so yaml_files = ["nac.yaml"] resolves
+# to nac.yaml beside main.tf. From the lab root, use:
 # terraform -chdir=<lab>/nac <command>
+#
+# NOTE: the module is pointed at the single nac.yaml via yaml_files. Do NOT use
+# yaml_directories = ["."] here: it recurses this directory (and .terraform/)
+# and ingests the Ansible/informational YAML, which breaks the module's
+# yaml_merge (top-level sequences are not valid NaC model fragments).
 
 module "iosxe" {
-  source           = "netascode/nac-iosxe/iosxe"
-  version          = "0.1.0"
-  yaml_directories = ["."]
+  source     = "netascode/nac-iosxe/iosxe"
+  version    = "0.1.0"
+  yaml_files = ["nac.yaml"]
 }
 
 provider "iosxe" {
