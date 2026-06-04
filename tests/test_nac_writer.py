@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.14.2
+# Doc Version: v1.15.0
 # Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
@@ -1383,14 +1383,67 @@ class TestNacWriter(unittest.TestCase):
                 "--overwrite",
             ]
             first = self._run_main(argv)
-            second = self._run_main(argv)
             self.assertEqual(first, 0)
-            self.assertEqual(second, 0)
             nac_root = Path(tmp) / "out" / "two-router-flat-pair" / "nac"
+            data_a = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+
+            second = self._run_main(argv)
+            self.assertEqual(second, 0)
             nested_bad = Path(tmp) / "out" / "two-router-flat-pair" / "two-router-flat-pair" / "nac" / "nac.yaml"
             self.assertFalse(nested_bad.exists())
-            data_a = (nac_root / "nac.yaml").read_text(encoding="utf-8")
             data_b = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+            self.assertEqual(data_a, data_b)
+
+    def test_dmvpn_flat_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat.yaml"
+            argv = [
+                "3",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-hubs",
+                "1",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            self.assertEqual(self._run_main(argv), 0)
+            lab_root = Path(tmp) / "out" / "dmvpn-flat"
+            nac_yaml = lab_root / "nac" / "nac.yaml"
+            data_a = nac_yaml.read_text(encoding="utf-8")
+
+            self.assertEqual(self._run_main(argv), 0)
+            nested_bad = lab_root / "dmvpn-flat" / "nac" / "nac.yaml"
+            self.assertFalse(nested_bad.exists())
+            data_b = nac_yaml.read_text(encoding="utf-8")
+            self.assertEqual(data_a, data_b)
+
+    def test_dmvpn_flat_pair_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair.yaml"
+            argv = [
+                "4",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-underlay",
+                "flat-pair",
+                "--template",
+                "iosv-dmvpn",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            self.assertEqual(self._run_main(argv), 0)
+            lab_root = Path(tmp) / "out" / "dmvpn-flat-pair"
+            nac_yaml = lab_root / "nac" / "nac.yaml"
+            data_a = nac_yaml.read_text(encoding="utf-8")
+
+            self.assertEqual(self._run_main(argv), 0)
+            nested_bad = lab_root / "dmvpn-flat-pair" / "nac" / "nac.yaml"
+            self.assertFalse(nested_bad.exists())
+            data_b = nac_yaml.read_text(encoding="utf-8")
             self.assertEqual(data_a, data_b)
 
 

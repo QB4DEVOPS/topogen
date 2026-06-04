@@ -1,13 +1,13 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/main.py offline renderer
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main.main
 #
-# Purpose: End-to-end regression for TG-142 render.py -> nac.py offline wiring.
+# Purpose: End-to-end regression for offline render.py -> nac.py wiring (universal + DMVPN paths).
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import sys
@@ -91,6 +91,124 @@ class TestNacRenderEndToEnd(unittest.TestCase):
                 self.assertTrue(out_file.exists())
                 self.assertFalse((Path(tmp) / "out" / mode / "nac").exists())
                 self.assertFalse((Path(tmp) / "out" / "nac").exists())
+
+    def test_dmvpn_flat_nac_run_emits_complete_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "dmvpn-flat"
+            self.assertTrue((lab_root / "dmvpn-flat.yaml").exists())
+            self._assert_full_nac_tree(
+                lab_root / "nac",
+                ("iosv-01.yaml", "iosv-02.yaml", "iosv-03.yaml"),
+            )
+
+    def test_dmvpn_flat_pair_nac_run_emits_complete_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "dmvpn-flat-pair"
+            self.assertTrue((lab_root / "dmvpn-flat-pair.yaml").exists())
+            self._assert_full_nac_tree(
+                lab_root / "nac",
+                (
+                    "iosv-01.yaml",
+                    "iosv-02.yaml",
+                    "iosv-03.yaml",
+                    "iosv-04.yaml",
+                ),
+            )
+
+    def test_dmvpn_flat_and_flat_pair_non_nac_runs_keep_flat_output_path(self):
+        cases = (
+            (
+                "dmvpn-flat.yaml",
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--offline-yaml",
+                ],
+            ),
+            (
+                "dmvpn-flat-pair.yaml",
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                ],
+            ),
+        )
+        for lab_name, argv_prefix in cases:
+            with self.subTest(lab=lab_name), tempfile.TemporaryDirectory() as tmp:
+                out_file = Path(tmp) / "out" / lab_name
+                rc = self._run_main([*argv_prefix, str(out_file), "--overwrite"])
+                self.assertEqual(rc, 0)
+                self.assertTrue(out_file.exists())
+                self.assertFalse((Path(tmp) / "out" / lab_name.removesuffix(".yaml") / "nac").exists())
+
+    def test_dmvpn_flat_nac_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat.yaml"
+            argv = [
+                "3",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-hubs",
+                "1",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            self.assertEqual(self._run_main(argv), 0)
+            lab_root = Path(tmp) / "out" / "dmvpn-flat"
+            nac_yaml = lab_root / "nac" / "nac.yaml"
+            content_a = nac_yaml.read_text(encoding="utf-8")
+
+            self.assertEqual(self._run_main(argv), 0)
+            nested_bad = lab_root / "dmvpn-flat" / "nac" / "nac.yaml"
+            self.assertTrue(nac_yaml.exists())
+            self.assertFalse(nested_bad.exists())
+            content_b = nac_yaml.read_text(encoding="utf-8")
+            self.assertEqual(content_a, content_b)
 
 
 if __name__ == "__main__":

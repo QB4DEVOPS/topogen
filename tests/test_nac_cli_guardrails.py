@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.6.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.7.0
+# Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/main.py parser and validation helpers
@@ -72,41 +72,83 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertEqual(args.mode, "flat")
         self.assertEqual(args.offline_yaml, "out/one-router-flat.yaml")
 
-    def test_valid_nac_three_router_nx_command_shape(self):
+    def test_valid_nac_two_router_nx_command_shape(self):
         args = self._parse_and_validate(
-            ["3", "--mode", "nx", "--offline-yaml", "out/three-router-nx.yaml", "--nac"]
+            ["2", "--mode", "nx", "--offline-yaml", "out/two-router-nx.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 3)
+        self.assertEqual(args.nodes, 2)
         self.assertEqual(args.mode, "nx")
-        self.assertEqual(args.offline_yaml, "out/three-router-nx.yaml")
+        self.assertEqual(args.offline_yaml, "out/two-router-nx.yaml")
 
-    def test_valid_nac_three_router_simple_command_shape(self):
+    def test_valid_nac_two_router_simple_command_shape(self):
         args = self._parse_and_validate(
-            ["3", "--mode", "simple", "--offline-yaml", "out/three-router-simple.yaml", "--nac"]
+            ["2", "--mode", "simple", "--offline-yaml", "out/two-router-simple.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 3)
+        self.assertEqual(args.nodes, 2)
         self.assertEqual(args.mode, "simple")
-        self.assertEqual(args.offline_yaml, "out/three-router-simple.yaml")
+        self.assertEqual(args.offline_yaml, "out/two-router-simple.yaml")
 
-    def test_valid_nac_four_router_flat_pair_command_shape(self):
+    def test_valid_nac_two_router_flat_command_shape(self):
         args = self._parse_and_validate(
-            ["4", "--mode", "flat-pair", "--offline-yaml", "out/four-router-flat-pair.yaml", "--nac"]
+            ["2", "--mode", "flat", "--offline-yaml", "out/two-router-flat.yaml", "--nac"]
         )
         self.assertTrue(args.nac)
-        self.assertEqual(args.nodes, 4)
-        self.assertEqual(args.mode, "flat-pair")
-        self.assertEqual(args.offline_yaml, "out/four-router-flat-pair.yaml")
+        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.mode, "flat")
+        self.assertEqual(args.offline_yaml, "out/two-router-flat.yaml")
 
-    def test_valid_nac_dmvpn_command_shape(self):
+    def test_valid_nac_two_router_flat_pair_command_shape(self):
         args = self._parse_and_validate(
-            ["3", "--mode", "dmvpn", "--offline-yaml", "out/three-router-dmvpn.yaml", "--nac"]
+            ["2", "--mode", "flat-pair", "--offline-yaml", "out/two-router-flat-pair.yaml", "--nac"]
+        )
+        self.assertTrue(args.nac)
+        self.assertEqual(args.nodes, 2)
+        self.assertEqual(args.mode, "flat-pair")
+        self.assertEqual(args.offline_yaml, "out/two-router-flat-pair.yaml")
+
+    def test_valid_nac_dmvpn_flat_command_shape(self):
+        args = self._parse_and_validate(
+            [
+                "3",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-hubs",
+                "1",
+                "--offline-yaml",
+                "out/dmvpn-flat.yaml",
+                "--nac",
+            ]
         )
         self.assertTrue(args.nac)
         self.assertEqual(args.nodes, 3)
         self.assertEqual(args.mode, "dmvpn")
-        self.assertEqual(args.offline_yaml, "out/three-router-dmvpn.yaml")
+        self.assertEqual(getattr(args, "dmvpn_underlay", "flat"), "flat")
+        self.assertEqual(args.dmvpn_hubs, "1")
+        self.assertEqual(args.offline_yaml, "out/dmvpn-flat.yaml")
+
+    def test_valid_nac_dmvpn_flat_pair_command_shape(self):
+        args = self._parse_and_validate(
+            [
+                "4",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-underlay",
+                "flat-pair",
+                "--template",
+                "iosv-dmvpn",
+                "--offline-yaml",
+                "out/dmvpn-flat-pair.yaml",
+                "--nac",
+            ]
+        )
+        self.assertTrue(args.nac)
+        self.assertEqual(args.nodes, 4)
+        self.assertEqual(args.mode, "dmvpn")
+        self.assertEqual(args.dmvpn_underlay, "flat-pair")
+        self.assertEqual(args.template, "iosv-dmvpn")
+        self.assertEqual(args.offline_yaml, "out/dmvpn-flat-pair.yaml")
 
     def test_nac_requires_offline_yaml(self):
         with self.assertRaises(SystemExit) as cm:
