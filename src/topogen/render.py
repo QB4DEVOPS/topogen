@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.2
+# Doc Version: v1.3.3
 # Date Modified: 2026-06-04
 #
 # - Called by: src/topogen/main.py
@@ -186,6 +186,161 @@ def _intent_notes_lines(intent: str) -> list[str]:
         "  notes: |-",
         f"    {hidden_span}",
     ]
+
+
+def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None:
+    """Append offline artifact flags shared by provenance metadata builders."""
+    if getattr(args, "nac", False):
+        args_bits.append("--nac")
+    if getattr(args, "terraform_cml2", False):
+        args_bits.append("--terraform-cml2")
+    cafile = getattr(args, "cafile", None)
+    if cafile:
+        args_bits.append(f"--ca {cafile}")
+    if getattr(args, "pki_enabled", False) and not any(
+        b == "--pki" or b.startswith("--pki ") for b in args_bits
+    ):
+        args_bits.append("--pki")
+    if getattr(args, "enable_mgmt", False) and not any(
+        b == "--mgmt" or b.startswith("--mgmt") for b in args_bits
+    ):
+        args_bits.append("--mgmt")
+
+
+def _offline_ca_mgmt_scep_url(args: object, total_routers: int) -> str:
+    """SCEP URL for CA-ROOT on the OOB mgmt fabric (simple/nx offline)."""
+    mgmt_net = IPv4Network(str(getattr(args, "mgmt_cidr", "10.254.0.0/16")), strict=False)
+    ca_ip = mgmt_net.network_address + total_routers + 1
+    return f"http://{ca_ip}:80"
+
+
+def _emit_offline_ca_root_mgmt_node(
+    env: Environment,
+    cfg: Config,
+    args: Namespace,
+    lines: list[str],
+    node_ids: dict[str, str],
+    nid: int,
+    tpl,
+    enable_mgmt: bool,
+    mgmt_slot: int,
+    staging: bool,
+    total_routers: int,
+    distance: int,
+) -> int:
+    """Append CA-ROOT (CSR1000v) for offline simple/nx labs using OOB mgmt reachability."""
+    ca_label = "CA-ROOT"
+    node_ids[ca_label] = f"n{nid}"
+    nid += 1
+    ca_scep_url = _offline_ca_mgmt_scep_url(args, total_routers)
+    ca_ip = ca_scep_url.split("://", 1)[1].rsplit(":", 1)[0]
+    mgmt_net = IPv4Network(str(getattr(args, "mgmt_cidr", "10.254.0.0/16")), strict=False)
+    ca_mgmt_addr = IPv4Interface(f"{ca_ip}/{mgmt_net.prefixlen}")
+
+    template_name = getattr(args, "template", "iosv")
+    if "ospf" in template_name or template_name == "iosv":
+        ca_template_name = "csr-ospf"
+    elif "eigrp" in template_name:
+        ca_template_name = "csr-eigrp"
+    else:
+        ca_template_name = "csr-eigrp"
+    try:
+        ca_base_tpl = env.get_template(f"{ca_template_name}{Renderer.J2SUFFIX}")
+    except TemplateNotFound:
+        ca_base_tpl = tpl
+
+    ca_node = TopogenNode(
+        hostname=ca_label,
+        loopback=IPv4Interface(f"{ca_ip}/32"),
+        interfaces=[
+            TopogenInterface(
+                address=ca_mgmt_addr,
+                description="=== SCEP Enrollment URL (OOB) ===",
+                slot=mgmt_slot - 1,
+            )
+        ],
+    )
+    ca_mgmt_ctx = None
+    if enable_mgmt:
+        ca_mgmt_ctx = {
+            "enabled": True,
+            "slot": mgmt_slot,
+            "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+            "gw": getattr(args, "mgmt_gw", None),
+        }
+    ca_ntp_ctx = None
+    if getattr(args, "ntp_server", None):
+        ca_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
+    ca_ntp_oob_ctx = None
+    if getattr(args, "ntp_oob_server", None):
+        ca_ntp_oob_ctx = {
+            "server": args.ntp_oob_server,
+            "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+        }
+    ca_base_config = ca_base_tpl.render(
+        config=cfg,
+        node=ca_node,
+        date=datetime.now(timezone.utc),
+        origin="",
+        mgmt=ca_mgmt_ctx,
+        ntp=ca_ntp_ctx,
+        ntp_oob=ca_ntp_oob_ctx,
+        archive=getattr(args, "archive", False),
+    )
+    ca_config_lines = ca_base_config.rstrip().split("\n")
+    if ca_config_lines and ca_config_lines[-1].strip() == "end":
+        ca_config_lines.pop()
+    for i, line in enumerate(ca_config_lines):
+        if line.strip() == "crypto key generate rsa modulus 2048":
+            ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+            break
+    pki_config_lines = [
+        "ntp master 6",
+        "!",
+        "ip http server",
+        "!",
+        "crypto pki server CA-ROOT",
+        " database level complete",
+        " no database archive",
+        " grant auto",
+        " lifetime certificate 7300",
+        " lifetime ca-certificate 7300",
+        " database url flash:",
+        " no shutdown",
+        "!",
+    ]
+    non_eem_block = (
+        pki_config_lines
+        + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+        + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
+    )
+    try:
+        eem_idx = next(
+            i for i, line in enumerate(ca_config_lines) if line.strip().startswith("event manager")
+        )
+    except StopIteration:
+        eem_idx = len(ca_config_lines)
+    ca_config_lines[eem_idx:eem_idx] = non_eem_block
+    ca_config_lines.extend(_pki_ca_authenticate_eem_lines())
+    ca_config_lines.append("end")
+    ca_rendered = "\n".join(ca_config_lines)
+
+    ca_x = -distance * 3
+    lines.append(f"  - id: {node_ids[ca_label]}")
+    lines.append(f"    label: {ca_label}")
+    lines.append("    node_definition: csr1000v")
+    if staging:
+        lines.append(f"    priority: {STAGING_PRIORITY_CA_ROOT}")
+    lines.append(f"    x: {ca_x}")
+    lines.append("    y: 0")
+    lines.append("    interfaces:")
+    csr_slot = mgmt_slot - 1
+    lines.append(f"      - id: i{csr_slot}")
+    lines.append(f"        slot: {csr_slot}")
+    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+    lines.append("        type: physical")
+    _emit_config(lines, ca_rendered, getattr(args, "blank", False))
+    return nid
 
 
 STAGING_PRIORITY_EXT_CONN_OOB = 1000
@@ -2269,6 +2424,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
 
@@ -3121,6 +3277,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -3924,6 +4081,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -4644,6 +4802,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -5460,6 +5619,8 @@ class Renderer:
         mgmt_slot = getattr(args, "mgmt_slot", 5)
         version = getattr(args, "cml_version", "0.3.0")
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        pki_enabled = getattr(args, "pki_enabled", False)
+        ca_scep_url = _offline_ca_mgmt_scep_url(args, total) if pki_enabled else None
         nac_router_nodes: list[TopogenNode] = []
 
         # --- Build YAML header ---
@@ -5494,6 +5655,7 @@ class Renderer:
             args_bits.append("--archive")
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {str(outfile).replace(chr(92), '/')}")
         desc = (
@@ -5574,7 +5736,8 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            swoob0_extra = 1 if pki_enabled else 0
+            for p in range(num_oob_sw + swoob0_extra):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -5613,12 +5776,14 @@ class Renderer:
             topo_ifaces = []
             for iface in ifaces:
                 if iface.get("dns_link"):
-                    desc = f"to {DNS_HOST_NAME}"
+                    iface_desc = f"to {DNS_HOST_NAME}"
+                elif iface["neighbor"] < 0:
+                    iface_desc = "stub"
                 else:
-                    desc = f"to R{iface['neighbor'] + 1}"
+                    iface_desc = f"to R{iface['neighbor'] + 1}"
                 topo_ifaces.append(TopogenInterface(
                     address=iface["address"],
-                    description=desc,
+                    description=iface_desc,
                     slot=iface["slot"],
                 ))
             topo_ifaces.sort(key=lambda xi: xi.slot)
@@ -5663,6 +5828,10 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if pki_enabled and ca_scep_url:
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_scep_url
+                )
             if nac_enabled:
                 rendered = _inject_nac_restconf_day0(rendered)
 
@@ -5695,6 +5864,22 @@ class Renderer:
                 lines.append("        type: physical")
             _emit_config(lines, rendered, getattr(args, "blank", False))
             dns_zone.append(DNShost(label.lower(), loopback.ip))
+
+        if pki_enabled and enable_mgmt:
+            nid = _emit_offline_ca_root_mgmt_node(
+                env,
+                cfg,
+                args,
+                lines,
+                node_ids,
+                nid,
+                tpl,
+                enable_mgmt,
+                mgmt_slot,
+                staging,
+                total,
+                distance,
+            )
 
         # --- DNS / NAT host node (alpine, emitted after routers so dns_zone is complete) ---
         dns_zone.append(DNShost(f"{DNS_HOST_NAME}-eth1", dns_addr.ip))
@@ -5798,6 +5983,16 @@ class Renderer:
                 lines.append(f"    i1: i{router_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
+
+            if pki_enabled:
+                ca_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['CA-ROOT']}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
 
         # --- Write file ---
         _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
@@ -5924,6 +6119,8 @@ class Renderer:
         mgmt_slot = getattr(args, "mgmt_slot", 5)
         version = getattr(args, "cml_version", "0.3.0")
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        pki_enabled = getattr(args, "pki_enabled", False)
+        ca_scep_url = _offline_ca_mgmt_scep_url(args, total) if pki_enabled else None
 
         # --- Build YAML header ---
         lines: list[str] = []
@@ -5957,6 +6154,7 @@ class Renderer:
             args_bits.append("--archive")
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {str(outfile).replace(chr(92), '/')}")
         desc = (
@@ -6064,7 +6262,8 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            swoob0_extra = 1 if pki_enabled else 0
+            for p in range(num_oob_sw + swoob0_extra):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -6103,12 +6302,14 @@ class Renderer:
             topo_ifaces = []
             for iface in ifaces:
                 if iface.get("dns_link"):
-                    desc = f"to {DNS_HOST_NAME}"
+                    iface_desc = f"to {DNS_HOST_NAME}"
+                elif iface["neighbor"] < 0:
+                    iface_desc = "stub"
                 else:
-                    desc = f"to R{iface['neighbor'] + 1}"
+                    iface_desc = f"to R{iface['neighbor'] + 1}"
                 topo_ifaces.append(TopogenInterface(
                     address=iface["address"],
-                    description=desc,
+                    description=iface_desc,
                     slot=iface["slot"],
                 ))
             topo_ifaces.sort(key=lambda xi: xi.slot)
@@ -6150,6 +6351,10 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if pki_enabled and ca_scep_url:
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_scep_url
+                )
             if nac_enabled:
                 rendered = _inject_nac_restconf_day0(rendered)
 
@@ -6188,6 +6393,22 @@ class Renderer:
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
             _emit_config(lines, rendered, getattr(args, "blank", False))
+
+        if pki_enabled and enable_mgmt:
+            nid = _emit_offline_ca_root_mgmt_node(
+                env,
+                cfg,
+                args,
+                lines,
+                node_ids,
+                nid,
+                tpl,
+                enable_mgmt,
+                mgmt_slot,
+                staging,
+                total,
+                distance,
+            )
 
         # --- Links section ---
         lines.append("links:")
@@ -6255,6 +6476,16 @@ class Renderer:
                 lines.append(f"    i1: i{router_mgmt_iface_id}")
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
+
+            if pki_enabled:
+                ca_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['CA-ROOT']}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
 
         # --- Write file ---
         num_edges = total - 1

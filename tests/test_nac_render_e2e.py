@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
+# Doc Version: v1.2.0
 # Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
@@ -16,6 +16,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -29,6 +31,17 @@ class TestNacRenderEndToEnd(unittest.TestCase):
     def _run_main(self, argv):
         with patch.object(sys, "argv", ["topogen", *argv]):
             return main()
+
+    def _assert_provenance_flags(self, cml_yaml: Path, *flags: str) -> None:
+        data = yaml.safe_load(cml_yaml.read_text(encoding="utf-8"))
+        lab = data["lab"]
+        for flag in flags:
+            self.assertIn(flag, lab["description"], flag)
+            self.assertIn(flag, lab["notes"], flag)
+            self.assertTrue(
+                any(flag in annotation.get("text_content", "") for annotation in data["annotations"]),
+                flag,
+            )
 
     def _assert_full_nac_tree(self, nac_root: Path, host_vars: tuple[str, ...]):
         expected_artifacts = [
@@ -71,6 +84,100 @@ class TestNacRenderEndToEnd(unittest.TestCase):
                     lab_root / "nac",
                     ("iosv-01.yaml", "iosv-02.yaml"),
                 )
+
+    def test_flat_nac_provenance_includes_nac_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "flat-nac.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "flat",
+                    "-T",
+                    "iosv",
+                    "--device-template",
+                    "iosv",
+                    "-L",
+                    "test-nac",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "flat-nac"
+            cml_yaml = lab_root / "flat-nac.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self._assert_full_nac_tree(
+                lab_root / "nac",
+                ("iosv-01.yaml", "iosv-02.yaml"),
+            )
+
+            self._assert_provenance_flags(cml_yaml, "--nac")
+
+    def test_flat_cml2_provenance_includes_cml2_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "flat-cml2.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "flat",
+                    "-T",
+                    "iosv",
+                    "--device-template",
+                    "iosv",
+                    "-L",
+                    "test-cml2",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--cml2",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "flat-cml2"
+            cml_yaml = lab_root / "flat-cml2.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self.assertTrue((lab_root / "cml2" / "main.tf").exists())
+            self.assertFalse((lab_root / "nac").exists())
+            self._assert_provenance_flags(cml_yaml, "--terraform-cml2")
+
+    def test_flat_nac_and_cml2_provenance_and_sibling_trees(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "flat-nac-cml2.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "flat",
+                    "-T",
+                    "iosv",
+                    "--device-template",
+                    "iosv",
+                    "-L",
+                    "test-nac-cml2",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--cml2",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "flat-nac-cml2"
+            cml_yaml = lab_root / "flat-nac-cml2.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self._assert_full_nac_tree(
+                lab_root / "nac",
+                ("iosv-01.yaml", "iosv-02.yaml"),
+            )
+            self.assertTrue((lab_root / "cml2" / "main.tf").exists())
+            self._assert_provenance_flags(cml_yaml, "--nac", "--terraform-cml2")
 
     def test_flat_and_flat_pair_non_nac_runs_do_not_emit_nac_tree(self):
         for mode in ("flat", "flat-pair"):

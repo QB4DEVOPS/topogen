@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.3
+Doc Version: v1.8.4
 Date Modified: 2026-06-04
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -1473,6 +1473,28 @@ The standard workflow for implementing a new feature or config change:
 
 **Important:** Do not skip step 1. Manual device testing catches IOS parser issues, ordering dependencies, and behavioral surprises that offline generation cannot reveal.
 
+## CLI flag change checklist
+
+When adding, renaming, or changing a CLI flag, update every place that surfaces
+or records CLI behavior. Do not assume argparse parameters are automatically
+reflected in generated lab metadata.
+
+- Parser/help: update `src/topogen/main.py` so `--help` text is accurate.
+- User docs: update `README.md` examples and refresh the embedded `--help` block
+  when help text or available flags change.
+- Developer docs/changelog: update `DEVELOPER.md` and `CHANGES.md` for every new
+  CLI flag or alias, even if it only exposes an existing behavior. This includes
+  short aliases such as `--cml2` for `--terraform-cml2`.
+- Offline provenance: update the args metadata embedded by `src/topogen/render.py`
+  in lab `description`, hidden `notes`, and annotation `text_content`.
+- Tests: add or update coverage that proves the flag appears in generated YAML
+  behavior and provenance when applicable.
+
+Offline provenance is built manually in renderer `args_bits` lists. New flags
+that affect generated artifacts, output layout, lab behavior, or validation
+state must be explicitly appended there or through a shared helper such as
+`_append_common_offline_args_bits()`.
+
 ## How to validate changes
 
 
@@ -1516,7 +1538,6 @@ Online (basic smoke checks once routers boot):
 - Config presence:
 
   - `show run | include eigrp stub`
-
 
 
 ## Git workflow for this repo
