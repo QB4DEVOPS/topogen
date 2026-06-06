@@ -239,6 +239,8 @@ def build_canonical_nac_model(
             }
             iface_type, iface_id = _split_interface_label(iface_label)
             config_iface_entry = {"id": str(iface_id)}
+            if iface_type == "Tunnel":
+                config_iface_entry["name"] = str(iface_id)
             if iface_type == "GigabitEthernet":
                 config_iface_entry = {"type": iface_type, **config_iface_entry}
             iface_address = _get_iface_value(iface, "address", None)

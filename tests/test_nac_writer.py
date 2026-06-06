@@ -274,6 +274,7 @@ class TestNacWriter(unittest.TestCase):
                 tunnels = device["configuration"]["interfaces"]["tunnels"]
                 self.assertEqual(ethernets[0]["description"], "dmvpn nbma")
                 self.assertEqual(tunnels[0]["id"], "0")
+                self.assertEqual(tunnels[0]["name"], "0")
                 self.assertEqual(tunnels[0]["description"], "dmvpn tunnel")
             for host_name in ("iosv-01", "iosv-02", "iosv-03"):
                 host_vars = nac_root / "host_vars" / f"{host_name}.yaml"
@@ -362,6 +363,10 @@ class TestNacWriter(unittest.TestCase):
                 [("0", "dmvpn tunnel")],
             )
             self.assertEqual(
+                [(iface["name"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            self.assertEqual(
                 [iface["description"] for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
                 ["pair link"],
             )
@@ -406,6 +411,10 @@ class TestNacWriter(unittest.TestCase):
             hub_interfaces = devices[0]["configuration"]["interfaces"]
             self.assertEqual(
                 [(iface["id"], iface["description"]) for iface in hub_interfaces["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            self.assertEqual(
+                [(iface["name"], iface["description"]) for iface in hub_interfaces["tunnels"]],
                 [("0", "dmvpn tunnel")],
             )
             self.assertTrue(
