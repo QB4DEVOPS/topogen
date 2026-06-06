@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.4
-Date Modified: 2026-06-04
+Doc Version: v1.8.5
+Date Modified: 2026-06-06
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -114,7 +114,7 @@ The `--cml-version` flag controls the `version:` field in offline YAML **and** w
 - CML 2.7 = schema `0.2.2` (max). Accepted: `0.0.1`–`0.2.2`. Fields: `annotations`, `notes`. No `smart_annotations`.
 - CML 2.8.1 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Introduced `smart_annotations`, `parameters` (node), `mac_address` (interface). Fields: `annotations`, `notes`, `smart_annotations`.
 - CML 2.9 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
-- CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`.
+- CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`. **TG-165:** `--pki` auto-enables staging via `resolve_staging_flags()` in `main.py` unless `--no-staging` is set; requires `--cml-version >= 0.3.1` or staging is omitted with a warning.
 
 TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`.
 
@@ -375,6 +375,12 @@ If you extend NaC scope:
 3. Call `_write_nac_tree_if_enabled(...)` (or equivalent) in that offline path
 4. Update docs (`README.md`, `CHANGES.md`, this file)
 5. Add or adjust the tests in the table above
+
+Tests (run when touching staging / PKI boot order):
+
+| File | Purpose |
+|------|---------|
+| `tests/test_staging_pki.py` | TG-165: `--pki` auto-enables staging, `--no-staging` opt-out, CML version guardrail, offline YAML emits `node_staging` + CA-ROOT priority |
 
 ## CML2 Terraform lifecycle scaffold reference (TG-150)
 
@@ -1113,7 +1119,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.8.0
+- **Doc Version:** v1.9.0
 
 - **Called by**
 
@@ -1142,6 +1148,14 @@ Jinja2:
   - `src/topogen/render.py` (`Renderer`, `get_templates()`)
 
   - `src/topogen/models.py` (`TopogenError`)
+
+- **Staging flags (TG-165)**
+
+  - `resolve_staging_flags(args)` — after validation, sets `args.staging` when `--pki` is enabled (unless `--no-staging`); applies CML version guardrail (`>= 0.3.1`)
+
+  - CLI: `--staging` (explicit), `--no-staging` (opt-out), `--no-abort-on-failure` (maps to `staging_no_abort`)
+
+  - Non-PKI labs unchanged unless `--staging` is passed explicitly
 
 
 
