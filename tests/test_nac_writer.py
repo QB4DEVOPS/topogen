@@ -417,13 +417,17 @@ class TestNacWriter(unittest.TestCase):
                 [(iface["name"], iface["description"]) for iface in hub_interfaces["tunnels"]],
                 [("0", "dmvpn tunnel")],
             )
-            self.assertTrue(
+            # TG-163: the OOB management interface is provisioned out-of-band
+            # (DHCP) by the CML day-0 template and must never be emitted as a
+            # Terraform-managed interface. It only drives connection-host
+            # selection (asserted via device["host"] above).
+            self.assertFalse(
                 any(
                     iface.get("description") == "OOB Management"
-                    and iface.get("vrf_forwarding") == "Mgmt-vrf"
                     for iface in hub_interfaces["ethernets"]
                 )
             )
+            self.assertNotIn("vrfs", devices[0]["configuration"])
 
             host_vars = yaml.safe_load((nac_root / "host_vars" / "iosv-01.yaml").read_text(encoding="utf-8"))
             self.assertEqual(host_vars["hostname"], "R1")
@@ -1008,7 +1012,10 @@ class TestNacWriter(unittest.TestCase):
                 )
             )
 
-    def test_mgmt_cli_emits_mgmt_host_interface_and_vrf(self):
+    def test_mgmt_cli_sets_oob_host_but_does_not_manage_mgmt_interface(self):
+        # TG-163: --mgmt selects the OOB management address as the connection
+        # host, but the OOB interface (DHCP, day-0 owned) must NOT appear as a
+        # Terraform-managed interface, and its Mgmt-vrf must not be emitted.
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "mgmt-simple.yaml"
             rc = self._run_main(
@@ -1030,15 +1037,15 @@ class TestNacWriter(unittest.TestCase):
             inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
             self.assertEqual(device["host"], "10.254.0.1")
             self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.254.0.1")
-            self.assertEqual(device["configuration"]["vrfs"], [{"name": "Mgmt-vrf"}])
-            mgmt_iface = next(
-                iface
-                for iface in device["configuration"]["interfaces"]["ethernets"]
-                if iface.get("description") == "OOB Management"
+            self.assertNotIn("vrfs", device["configuration"])
+            self.assertFalse(
+                any(
+                    iface.get("description") == "OOB Management"
+                    for iface in device["configuration"]["interfaces"]["ethernets"]
+                )
             )
-            self.assertEqual(mgmt_iface["vrf_forwarding"], "Mgmt-vrf")
 
-    def test_mgmt_global_vrf_omits_vrf_keys(self):
+    def test_mgmt_global_vrf_does_not_manage_mgmt_interface(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "mgmt-global.yaml"
             rc = self._run_main(
@@ -1061,12 +1068,12 @@ class TestNacWriter(unittest.TestCase):
             config = device["configuration"]
             self.assertEqual(device["host"], "10.254.0.1")
             self.assertNotIn("vrfs", config)
-            mgmt_iface = next(
-                iface
-                for iface in config["interfaces"]["ethernets"]
-                if iface.get("description") == "OOB Management"
+            self.assertFalse(
+                any(
+                    iface.get("description") == "OOB Management"
+                    for iface in config["interfaces"]["ethernets"]
+                )
             )
-            self.assertNotIn("vrf_forwarding", mgmt_iface)
 
     def test_name_and_hostname_sources_are_distinct(self):
         node = TopogenNode(

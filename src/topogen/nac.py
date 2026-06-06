@@ -248,6 +248,14 @@ def build_canonical_nac_model(
                 entry["ipv4"] = str(iface_address)
                 config_iface_entry["ipv4"] = _ipv4_mapping(iface_address)
             iface_description = _get_iface_value(iface, "description", "")
+            # The OOB management interface is provisioned out-of-band by the CML
+            # day-0 template ("ip address dhcp") and is the transport the NaC
+            # provider connects through. It must never be emitted as a
+            # Terraform-managed interface: writing a fabricated static address on
+            # it overlaps data subnets and severs the management session (TG-163).
+            # It is retained in the informational fat model and still feeds
+            # connection-host selection via _select_host.
+            is_oob_mgmt = str(iface_description) == "OOB Management"
             if iface_description:
                 entry["description"] = str(iface_description)
                 config_iface_entry["description"] = str(iface_description)
@@ -255,9 +263,10 @@ def build_canonical_nac_model(
             if iface_vrf:
                 entry["vrf"] = str(iface_vrf)
                 config_iface_entry["vrf_forwarding"] = str(iface_vrf)
-                vrf_names.add(str(iface_vrf))
+                if not is_oob_mgmt:
+                    vrf_names.add(str(iface_vrf))
             interfaces.append(entry)
-            if iface_address:
+            if iface_address and not is_oob_mgmt:
                 collection = _configuration_interface_collection(iface_type)
                 config_interface_groups.setdefault(collection, []).append(config_iface_entry)
         loopback = getattr(node_obj, "loopback", None)

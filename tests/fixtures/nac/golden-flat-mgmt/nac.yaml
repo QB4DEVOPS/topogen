@@ -5,8 +5,6 @@ iosxe:
     configuration:
       system:
         hostname: R1
-      vrfs:
-      - name: Mgmt-vrf
       interfaces:
         ethernets:
         - type: GigabitEthernet
@@ -15,13 +13,6 @@ iosxe:
             address: 10.10.0.1
             address_mask: 255.255.0.0
           description: mgmt flat
-        - type: GigabitEthernet
-          id: 0/5
-          ipv4:
-            address: 10.254.0.1
-            address_mask: 255.255.0.0
-          description: OOB Management
-          vrf_forwarding: Mgmt-vrf
         loopbacks:
         - id: '0'
           ipv4:
@@ -32,8 +23,6 @@ iosxe:
     configuration:
       system:
         hostname: R2
-      vrfs:
-      - name: Mgmt-vrf
       interfaces:
         ethernets:
         - type: GigabitEthernet
@@ -42,13 +31,6 @@ iosxe:
             address: 10.10.0.2
             address_mask: 255.255.0.0
           description: mgmt flat
-        - type: GigabitEthernet
-          id: 0/5
-          ipv4:
-            address: 10.254.0.2
-            address_mask: 255.255.0.0
-          description: OOB Management
-          vrf_forwarding: Mgmt-vrf
         loopbacks:
         - id: '0'
           ipv4:
