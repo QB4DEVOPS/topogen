@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.4
-Date Modified: 2026-06-06
+Doc Version: v1.3.5
+Date Modified: 2026-06-07
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,15 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(nx): reserve `--mgmt-slot` when assigning offline nx mesh interfaces (TG-167)
+    - Offline `offline_nx_yaml()` numbered mesh interfaces 0, 1, 2, … and also placed OOB mgmt on the default `--mgmt-slot 5` (`GigabitEthernet0/5`), double-booking slot 5 on high-degree routers and causing CML import failures at scale. Online nx avoids this because CML auto-assigns data links after mgmt is created on slot 5.
+    - Mesh slot assignment now skips the reserved mgmt slot (CSR: `mgmt_slot - 1`), matching online behavior. `--mgmt-slot 5` unchanged; busy routers use e.g. `Gi0/6` for an extra mesh link while `Gi0/5` stays OOB. NaC and CML2 consume the corrected `TopogenNode` / YAML paths; no `nac.py` or `cml2.py` changes.
+    - Live-validated: `nx` 200 IOSv with `--mgmt --mgmt-bridge --nac --cml2` imports and starts on CML 2.10.
+    - Files: src/topogen/render.py (rev v1.3.3 → v1.3.4), CHANGES.md (rev v1.3.4 → v1.3.5)
+  - fix(cml): place offline intent metadata below topology for Workbench zoom (TG-167)
+    - Hidden intent annotation moved from off-canvas `x=-9999, y=-9999` to down-only scaled coordinates `(max(node x), max(node y) + 1500)` so CML Fit/zoom stays on the real lab. Keeps all three metadata copies: `lab.description`, hidden `lab.notes`, and white 1pt canvas annotation.
+    - Adds `_scaled_intent_annotation_xy()`, `_finalize_offline_yaml_with_intent()`, optional `INTENT-SPOT` QA marker (default on; disable before production merge), and `tests/test_intent_annotation.py`.
+    - Files: src/topogen/render.py (rev v1.3.2 → v1.3.3), tests/test_intent_annotation.py (rev v1.0.0), TODO.md, CHANGES.md (rev v1.3.4 → v1.3.5)
   - feat(staging): auto-enable node staging when `--pki` is used (TG-165)
     - PKI labs need CA-ROOT online before enrolling routers. Staging and the CA-ROOT priority ladder already existed but required a separate `--staging` flag. With `--pki`, TopoGen now sets staging on by default (CA-ROOT priority 900) unless `--no-staging` is passed — the first behavior that auto-enables without a dedicated enable flag, though still effectively opt-in because it only applies when `--pki` is set and staging is emitted only with `--cml-version 0.3.1` (CML 2.10); default schema `0.3.0` logs a warning and omits `node_staging`.
     - Added `resolve_staging_flags()` in `main.py`, `--no-staging` opt-out, `tests/test_staging_pki.py`, closeout runbook `docs/validation/TG-165-pipeline.md`, and offline gate script `scripts/validate-tg165.ps1`. Live-validated on CML 2.10 (TG-166).
