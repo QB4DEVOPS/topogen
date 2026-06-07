@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.8.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.9.0
+# Date Modified: 2026-06-06
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -572,7 +572,15 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="staging",
         action="store_true",
         default=False,
-        help="Enable CML 2.10 node staging for boot ordering (requires --cml-version >= 0.3.1)",
+        help="Enable CML 2.10 node staging for boot ordering (requires --cml-version >= 0.3.1). "
+        "Also enabled automatically when --pki is used unless --no-staging is set.",
+    )
+    parser.add_argument(
+        "--no-staging",
+        dest="no_staging",
+        action="store_true",
+        default=False,
+        help="Disable node staging even when --pki would auto-enable it; also disables --staging",
     )
     parser.add_argument(
         "--no-abort-on-failure",
@@ -751,6 +759,31 @@ def setup_logging(loglevel: str):
         _LOGGER.warning("Unknown log level: %s", loglevel.upper())
 
 
+def _cml_version_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in version.split("."))
+
+
+def resolve_staging_flags(args) -> None:
+    """Apply PKI auto-staging defaults and CML version guardrails to args.staging (TG-165)."""
+    if getattr(args, "no_staging", False):
+        args.staging = False
+    elif getattr(args, "pki_enabled", False) and not getattr(args, "staging", False):
+        args.staging = True
+        _LOGGER.warning(
+            "Enabling node staging for --pki so CA-ROOT boots before enrolling routers. "
+            "Pass --no-staging to disable."
+        )
+
+    if getattr(args, "staging", False):
+        if _cml_version_tuple(getattr(args, "cml_version", "0.3.0")) < (0, 3, 1):
+            _LOGGER.warning("--staging ignored: requires --cml-version >= 0.3.1")
+            args.staging = False
+            if getattr(args, "pki_enabled", False) and not getattr(args, "no_staging", False):
+                _LOGGER.warning(
+                    "PKI lab will boot all nodes simultaneously; CA may not be ready for enrollment."
+                )
+
+
 def main():
     """main function, returns 0 on success, 1 otherwise"""
     parser = create_argparser()
@@ -883,11 +916,7 @@ def main():
             if args.mode not in ("flat", "flat-pair", "dmvpn"):
                 parser.error("--getvpn requires mode flat, flat-pair, or dmvpn")
 
-        # Validate --staging flags
-        if getattr(args, "staging", False):
-            if tuple(int(x) for x in getattr(args, "cml_version", "0.3.0").split(".")) < (0, 3, 1):
-                _LOGGER.warning("--staging ignored: requires --cml-version >= 0.3.1")
-                args.staging = False
+        resolve_staging_flags(args)
 
         # Validate mgmt flags
         if getattr(args, "enable_mgmt", False):
