@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.6
-Date Modified: 2026-06-06
+Doc Version: v1.8.7
+Date Modified: 2026-06-07
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -116,7 +116,7 @@ The `--cml-version` flag controls the `version:` field in offline YAML **and** w
 - CML 2.9 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
 - CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`. **TG-165:** `--pki` auto-enables staging via `resolve_staging_flags()` in `main.py` unless `--no-staging` is set; requires `--cml-version >= 0.3.1` or staging is omitted with a warning.
 
-TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`.
+TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`. **TG-167:** intent metadata (description, hidden notes, scaled down-only annotation) is applied offline via `_finalize_offline_yaml_with_intent()` and online via `Renderer._apply_online_lab_intent()` after topology build. Optional `--intent-spot` adds an `unmanaged_switch` marker node (default off).
 
 ## 5-minute environment validation
 
@@ -1121,7 +1121,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.9.0
+- **Doc Version:** v1.9.2
 
 - **Called by**
 
@@ -1159,11 +1159,15 @@ Jinja2:
 
   - Non-PKI labs unchanged unless `--staging` is passed explicitly
 
+- **Intent spot (TG-167)**
+
+  - CLI: `--intent-spot` — opt-in QA `unmanaged_switch` at scaled intent coordinates (online + offline; default off; no router license)
+
 
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.3.1
+- **Doc Version:** v1.3.7
 
 - **Called by**
 
@@ -1198,6 +1202,20 @@ Jinja2:
   - `src/topogen/cml2.py` (`write_cml2_lifecycle_scaffold()`)
 
   - `src/topogen/models.py` (TopogenNode/Interface models)
+
+- **Intent metadata (TG-167)**
+
+  - `_scaled_intent_annotation_xy()` — down-only placement `(max_x, max_y + 1500)`; never `-9999`
+
+  - `_build_intent_description()` — shared provenance string for online/offline
+
+  - `_finalize_offline_yaml_with_intent()` — offline YAML: annotation + notes + optional INTENT-SPOT
+
+  - `_apply_online_lab_intent()` — online API: `description`, `notes`, `create_annotation()`, optional INTENT-SPOT switch
+
+  - Offline nx: mesh interface slot assignment skips reserved `--mgmt-slot` (parity with online CML auto-assign)
+
+  - Validation: `tests/test_intent_annotation.py`, `scripts/validate-intent-spot-matrix.py` (offline `--nac --cml2` matrix)
 
 
 

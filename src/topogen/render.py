@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.4
+# Doc Version: v1.3.7
 # Date Modified: 2026-06-07
 #
 # - Called by: src/topogen/main.py
@@ -226,27 +226,27 @@ def _intent_annotation_lines(
     return lines
 
 
+INTENT_SPOT_NODE_DEF = "unmanaged_switch"
+
+
 def _intent_marker_node_lines(x: int, y: int, node_id: str = "n_intent_spot") -> list[str]:
-    """Visible marker router at the hidden intent annotation coordinates."""
+    """Visible marker switch at the hidden intent annotation coordinates (no router license)."""
     return [
         f"  - id: {node_id}",
         "    label: INTENT-SPOT",
-        "    node_definition: iosv",
+        f"    node_definition: {INTENT_SPOT_NODE_DEF}",
         f"    x: {x}",
         f"    y: {y}",
         "    interfaces:",
         "      - id: i0",
         "        slot: 0",
-        "        label: GigabitEthernet0/0",
+        "        label: port0",
         "        type: physical",
-        "    configuration: |-",
-        "      hostname INTENT-SPOT",
-        "      !",
     ]
 
 
 def _insert_intent_marker_node(lines: list[str], x: int, y: int) -> list[str]:
-    """Insert INTENT-SPOT iosv node immediately before the links: section."""
+    """Insert INTENT-SPOT unmanaged_switch node immediately before the links: section."""
     marker = _intent_marker_node_lines(x, y)
     out: list[str] = []
     inserted = False
@@ -264,15 +264,20 @@ def _finalize_offline_yaml_with_intent(
     lines: list[str],
     intent: str,
     version: str,
-    *,
-    intent_marker: bool = True,
+    args: Namespace,
 ) -> list[str]:
-    """Prepend scaled intent annotation and optionally place INTENT-SPOT at the same x/y."""
+    """Prepend scaled intent annotation; optional INTENT-SPOT switch when --intent-spot."""
     coords = _node_coords_from_offline_lines(lines)
     x1, y1 = _scaled_intent_annotation_xy(coords)
-    if intent_marker:
+    if getattr(args, "intent_spot", False):
         lines = _insert_intent_marker_node(lines, x1, y1)
     return _intent_annotation_lines(intent, version, node_coords=coords) + lines
+
+
+def _intent_notes_html(intent: str) -> str:
+    """Hidden HTML span for lab.notes (invisible in CML guide, grep-friendly in YAML/export)."""
+    hidden_content = html_module.escape(intent)
+    return f'<span style="color: white; font-size: 1pt; opacity: 0;">{hidden_content}</span>'
 
 
 def _intent_notes_lines(intent: str) -> list[str]:
@@ -280,12 +285,76 @@ def _intent_notes_lines(intent: str) -> list[str]:
 
     Entire notes are invisible (color: white; opacity: 0). CI/CD can grep the YAML for the intent.
     """
-    hidden_content = html_module.escape(intent)
-    hidden_span = f'<span style="color: white; font-size: 1pt; opacity: 0;">{hidden_content}</span>'
     return [
         "  notes: |-",
-        f"    {hidden_span}",
+        f"    {_intent_notes_html(intent)}",
     ]
+
+
+def _node_coords_from_cml_lab(lab: Lab) -> list[tuple[int, int]]:
+    """Collect canvas x/y from live CML nodes for scaled intent placement."""
+    coords: list[tuple[int, int]] = []
+    for node in lab.nodes():
+        try:
+            coords.append((int(node.x), int(node.y)))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return coords
+
+
+def _build_intent_description(args: Namespace, *, context: str) -> str:
+    """Build provenance string for lab description (online API and offline YAML)."""
+    args_bits: list[str] = [
+        f"nodes={args.nodes}",
+        f"-m {args.mode}",
+        f"-T {args.template}",
+    ]
+    dev_def = getattr(args, "dev_template", args.template)
+    if dev_def != args.template:
+        args_bits.append(f"--device-template {dev_def}")
+    if getattr(args, "enable_vrf", False):
+        args_bits.append("--vrf")
+        if getattr(args, "pair_vrf", None):
+            args_bits.append(f"--pair-vrf {args.pair_vrf}")
+    if str(args.mode).startswith("flat"):
+        args_bits.append(f"--flat-group-size {args.flat_group_size}")
+        if getattr(args, "loopback_255", False):
+            args_bits.append("--loopback-255")
+        if getattr(args, "gi0_zero", False):
+            args_bits.append("--gi0-zero")
+    if getattr(args, "enable_mgmt", False):
+        args_bits.append("--mgmt")
+        if getattr(args, "mgmt_vrf", None):
+            args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+        if getattr(args, "mgmt_bridge", False):
+            args_bits.append("--mgmt-bridge")
+    if getattr(args, "ntp_server", None):
+        args_bits.append(f"--ntp {args.ntp_server}")
+        if getattr(args, "ntp_vrf", None):
+            args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+    if getattr(args, "start_lab", False):
+        args_bits.append("--start")
+    cml_ver = getattr(args, "cml_version", None)
+    if cml_ver:
+        args_bits.append(f"--cml-version {cml_ver}")
+    if getattr(args, "staging", False):
+        args_bits.append("--staging")
+    if getattr(args, "yaml_output", None):
+        args_bits.append(f"--yaml {str(args.yaml_output).replace(chr(92), '/')}")
+    _append_common_offline_args_bits(args_bits, args)
+    if getattr(args, "labname", None):
+        args_bits.append(f"-L {args.labname}")
+    if getattr(args, "offline_yaml", None):
+        args_bits.append(
+            f"--offline-yaml {str(args.offline_yaml).replace(chr(92), '/')}"
+        )
+    desc = (
+        f"Generated by topogen v{TOPGEN_VERSION} ({context}) | args: "
+        + " ".join(args_bits)
+    )
+    if getattr(args, "remark", None):
+        desc += f" | remark: {args.remark}"
+    return desc
 
 
 def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None:
@@ -305,6 +374,8 @@ def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None
         b == "--mgmt" or b.startswith("--mgmt") for b in args_bits
     ):
         args_bits.append("--mgmt")
+    if getattr(args, "intent_spot", False):
+        args_bits.append("--intent-spot")
 
 
 def _offline_ca_mgmt_scep_url(args: object, total_routers: int) -> str:
@@ -1243,46 +1314,6 @@ class Renderer:
         self.lab = self.client.create_lab(args.labname)
         _LOGGER.info("lab: %s", self.lab.id)
 
-        # Populate lab description online with version and key flags (best-effort, ignore errors)
-        try:
-            args_bits: list[str] = [f"nodes={args.nodes}", f"-m {args.mode}", f"-T {args.template}"]
-            dev_def = getattr(args, "dev_template", args.template)
-            if dev_def != args.template:
-                args_bits.append(f"--device-template {dev_def}")
-            if getattr(args, "enable_vrf", False):
-                args_bits.append("--vrf")
-                if getattr(args, "pair_vrf", None):
-                    args_bits.append(f"--pair-vrf {args.pair_vrf}")
-            if str(args.mode).startswith("flat"):
-                args_bits.append(f"--flat-group-size {args.flat_group_size}")
-                if getattr(args, "loopback_255", False):
-                    args_bits.append("--loopback-255")
-                if getattr(args, "gi0_zero", False):
-                    args_bits.append("--gi0-zero")
-            if getattr(args, "enable_mgmt", False):
-                args_bits.append("--mgmt")
-                if getattr(args, "mgmt_vrf", None):
-                    args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
-                if getattr(args, "mgmt_bridge", False):
-                    args_bits.append("--mgmt-bridge")
-            if getattr(args, "ntp_server", None):
-                args_bits.append(f"--ntp {args.ntp_server}")
-                if getattr(args, "ntp_vrf", None):
-                    args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
-            if getattr(args, "start_lab", False):
-                args_bits.append("--start")
-            desc = (
-                f"Generated by topogen v{TOPGEN_VERSION} (online) | args: " + " ".join(args_bits)
-            )
-            if getattr(args, "remark", None):
-                desc += f" | remark: {args.remark}"
-            if hasattr(self.lab, "description"):
-                setattr(self.lab, "description", desc)  # type: ignore[attr-defined]
-            elif hasattr(self.lab, "set_notes"):
-                getattr(self.lab, "set_notes")(desc)  # type: ignore[misc]
-        except Exception:  # pragma: no cover - best effort only
-            pass
-
         # these will be /32 addresses
         self.loopbacks = IPv4Network(cfg.loopbacks).subnets(
             prefixlen_diff=IPV4LENGTH - cfg.loopbacks.prefixlen
@@ -1466,6 +1497,39 @@ class Renderer:
         for key, value in pos.items():
             graph.nodes[key]["pos"] = Point(int(value[0]), int(value[1]))
         return graph
+
+    def _apply_online_lab_intent(self) -> None:
+        """Set description, hidden notes, scaled annotation; optional INTENT-SPOT node."""
+        try:
+            context = f"online, {self.args.mode}"
+            desc = _build_intent_description(self.args, context=context)
+            coords = _node_coords_from_cml_lab(self.lab)
+            x1, y1 = _scaled_intent_annotation_xy(coords)
+
+            self.lab.description = desc
+            self.lab.notes = _intent_notes_html(desc)
+            self.lab.create_annotation(
+                "text",
+                border_color="#FFFFFF",
+                border_style="",
+                color="#FFFFFF",
+                rotation=0,
+                text_bold=False,
+                text_content=desc,
+                text_font="monospace",
+                text_italic=False,
+                text_size=1,
+                text_unit="pt",
+                thickness=1,
+                x1=x1,
+                y1=y1,
+                z_index=0,
+            )
+
+            if getattr(self.args, "intent_spot", False):
+                self.create_node("INTENT-SPOT", INTENT_SPOT_NODE_DEF, Point(x1, y1))
+        except Exception as exc:  # pragma: no cover - best effort only
+            _LOGGER.warning("Online intent metadata failed (best-effort): %s", exc)
 
     def create_node(self, label: str, node_def: str, coords=Point(0, 0)):
         """create a CML2 node with the given attributes"""
@@ -1791,6 +1855,8 @@ class Renderer:
             nprog.close()  # type: ignore
             manager.stop()  # type: ignore
 
+        self._apply_online_lab_intent()
+
         # Print lab URL
         import os
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
@@ -2009,6 +2075,8 @@ class Renderer:
             hubs_str,
         )
 
+        self._apply_online_lab_intent()
+
         outfile = getattr(self.args, "yaml_output", None)
         if outfile:
             try:
@@ -2211,6 +2279,8 @@ class Renderer:
             hubs_str,
         )
 
+        self._apply_online_lab_intent()
+
         outfile = getattr(self.args, "yaml_output", None)
         if outfile:
             try:
@@ -2403,6 +2473,7 @@ class Renderer:
             _LOGGER.info("pair-link: R%d Gi0/1 <-> R%d Gi0/0", odd, even)
 
         _LOGGER.warning("Flat-pair management network created")
+        self._apply_online_lab_intent()
         return 0
 
     @staticmethod
@@ -3206,7 +3277,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
@@ -4055,7 +4126,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
@@ -4799,7 +4870,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
@@ -5567,7 +5638,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
@@ -6121,7 +6192,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning(
@@ -6615,7 +6686,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning(
@@ -6973,6 +7044,8 @@ class Renderer:
             _LOGGER.warning("GET VPN Key Server created: %s at %s", ks_label, ks_g_ip)
 
         _LOGGER.warning("Flat management network created")
+        self._apply_online_lab_intent()
+
         # Get lab definition size (and optionally export to file) so we can log size for online create
         outfile = getattr(self.args, "yaml_output", None)
         content = None
@@ -7169,6 +7242,8 @@ class Renderer:
         if self.args.progress:
             ticks.close()  # type: ignore
             manager.stop()  # type: ignore
+
+        self._apply_online_lab_intent()
 
         # Print lab URL
         import os
