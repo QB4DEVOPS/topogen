@@ -143,14 +143,65 @@ except Exception:  # pragma: no cover - best effort
     TOPGEN_VERSION = "unknown"
 
 
-def _intent_annotation_lines(intent: str, version: str = "0.3.0") -> list[str]:
+INTENT_ANNOTATION_PADDING = 1500
+CML_COORD_LIMIT = 15000
+
+
+def _node_coords_from_offline_lines(lines: list[str]) -> list[tuple[int, int]]:
+    """Collect node x/y pairs from generated offline YAML lines (nodes: section only)."""
+    coords: list[tuple[int, int]] = []
+    in_nodes = False
+    pending_x: int | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "nodes:":
+            in_nodes = True
+            continue
+        if in_nodes and stripped == "links:":
+            break
+        if not in_nodes:
+            continue
+        if stripped.startswith("x:"):
+            pending_x = int(stripped.split(":", 1)[1].strip())
+        elif stripped.startswith("y:") and pending_x is not None:
+            coords.append((pending_x, int(stripped.split(":", 1)[1].strip())))
+            pending_x = None
+    return coords
+
+
+def _scaled_intent_annotation_xy(
+    node_coords: list[tuple[int, int]],
+    padding: int = INTENT_ANNOTATION_PADDING,
+) -> tuple[int, int]:
+    """Place hidden intent annotation directly below the topology (down only, no x padding)."""
+    if not node_coords:
+        return 0, padding
+    max_x = max(x for x, _ in node_coords)
+    max_y = max(y for _, y in node_coords)
+    return (
+        min(max_x, CML_COORD_LIMIT),
+        min(max_y + padding, CML_COORD_LIMIT),
+    )
+
+
+def _intent_annotation_lines(
+    intent: str,
+    version: str = "0.3.0",
+    *,
+    offline_lines: list[str] | None = None,
+    node_coords: list[tuple[int, int]] | None = None,
+) -> list[str]:
     """Return YAML lines for annotations + smart_annotations with one hidden intent annotation.
 
-    Embeds intent at x=-9999, y=-9999 (off-canvas) for CI/CD to grep. Same intent is also
-    in lab.notes inside a hidden HTML span (visible in YAML/grep, not in CML guide).
+    Embeds intent at max(node x), max(node y)+padding (below the topology, not offset right).
+    Same intent is also in
+    lab.notes inside a hidden HTML span (visible in YAML/grep, not in CML guide).
 
     smart_annotations is omitted for schema versions <= 0.2.2 (CML 2.7 and earlier).
     """
+    if node_coords is None and offline_lines is not None:
+        node_coords = _node_coords_from_offline_lines(offline_lines)
+    x1, y1 = _scaled_intent_annotation_xy(node_coords or [])
     content = intent.replace("'", "''")
     lines = [
         "annotations:",
@@ -166,13 +217,62 @@ def _intent_annotation_lines(intent: str, version: str = "0.3.0") -> list[str]:
         "    text_unit: pt",
         "    thickness: 1",
         "    type: text",
-        "    x1: -9999",
-        "    y1: -9999",
+        f"    x1: {x1}",
+        f"    y1: {y1}",
         "    z_index: 0",
     ]
     if tuple(int(x) for x in version.split(".")) > (0, 2, 2):
         lines.append("smart_annotations: []")
     return lines
+
+
+def _intent_marker_node_lines(x: int, y: int, node_id: str = "n_intent_spot") -> list[str]:
+    """Visible marker router at the hidden intent annotation coordinates."""
+    return [
+        f"  - id: {node_id}",
+        "    label: INTENT-SPOT",
+        "    node_definition: iosv",
+        f"    x: {x}",
+        f"    y: {y}",
+        "    interfaces:",
+        "      - id: i0",
+        "        slot: 0",
+        "        label: GigabitEthernet0/0",
+        "        type: physical",
+        "    configuration: |-",
+        "      hostname INTENT-SPOT",
+        "      !",
+    ]
+
+
+def _insert_intent_marker_node(lines: list[str], x: int, y: int) -> list[str]:
+    """Insert INTENT-SPOT iosv node immediately before the links: section."""
+    marker = _intent_marker_node_lines(x, y)
+    out: list[str] = []
+    inserted = False
+    for line in lines:
+        if not inserted and line.strip() == "links:":
+            out.extend(marker)
+            inserted = True
+        out.append(line)
+    if not inserted:
+        out.extend(marker)
+    return out
+
+
+def _finalize_offline_yaml_with_intent(
+    lines: list[str],
+    intent: str,
+    version: str,
+    *,
+    intent_marker: bool = True,
+) -> list[str]:
+    """Prepend scaled intent annotation and optionally place INTENT-SPOT at the same x/y."""
+    coords = _node_coords_from_offline_lines(lines)
+    x1, y1 = _scaled_intent_annotation_xy(coords)
+    if intent_marker:
+        lines = _insert_intent_marker_node(lines, x1, y1)
+    return _intent_annotation_lines(intent, version, node_coords=coords) + lines
 
 
 def _intent_notes_lines(intent: str) -> list[str]:
@@ -3106,7 +3206,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
@@ -3955,7 +4055,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
@@ -4699,7 +4799,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
@@ -5467,7 +5567,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
@@ -6005,7 +6105,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning(
@@ -6499,7 +6599,7 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning(
