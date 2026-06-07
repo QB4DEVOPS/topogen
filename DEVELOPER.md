@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.7
-Date Modified: 2026-06-07
+Doc Version: v1.8.8
+Date Modified: 2026-06-08
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -138,7 +138,9 @@ topogen -v
 
 
 
-Expected: version should match `pyproject.toml` or show "Unreleased" if installed editable with `-e .`
+Expected: version should match `pyproject.toml` (`[project].version`, currently read by `topogen.__version__`). Do not hardcode the package version elsewhere in docs — update examples when releasing.
+
+**Not the same as `--cml-version`:** the CLI flag sets the CML lab YAML schema (e.g. `0.3.1` for CML 2.10), not the TopoGen package version.
 
 
 

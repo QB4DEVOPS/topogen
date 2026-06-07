@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.8
+Doc Version: v1.3.9
 Date Modified: 2026-06-08
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - docs(version): sync package v0.3.0 in README provenance example and DEVELOPER version guidance (TG-168)
+    - README intent-metadata example updated from `v0.2.5` to `v0.3.0`; DEVELOPER clarifies package version vs `--cml-version`; TODO bump task note updated for TG-147 release.
+    - Files: README.md (rev v1.8.5 → v1.8.6), DEVELOPER.md (rev v1.8.7 → v1.8.8), TODO.md (rev v1.6.48 → v1.6.49), CHANGES.md (rev v1.3.8 → v1.3.9)
 
 - version 0.3.0
   - release(epic): close TG-147 Universal NaC Offline Support With DMVPN — merge `epic/TG-147-universal-nac-dmvpn` to `main` (topogen v0.3.0); post-epic follow-ups TG-161 (terraform plan CI gate), TG-162 (DMVPN NaC fidelity vs day-0 config)
