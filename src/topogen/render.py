@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.3
-# Date Modified: 2026-06-04
+# Doc Version: v1.3.4
+# Date Modified: 2026-06-07
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -5674,11 +5674,26 @@ class Renderer:
             edge_info[edge] = (prefix, hosts[0], hosts[1])
 
         # --- Build per-node interface lists (sorted by neighbor for determinism) ---
+        enable_mgmt = getattr(args, "enable_mgmt", False)
+        mgmt_slot = getattr(args, "mgmt_slot", 5)
+        dev_def_early = getattr(args, "dev_template", args.template)
+        reserved_mgmt_slot: int | None = None
+        if enable_mgmt:
+            reserved_mgmt_slot = (
+                mgmt_slot - 1 if dev_def_early == "csr1000v" else mgmt_slot
+            )
+
+        def _next_topo_slot(slot: int) -> int:
+            if reserved_mgmt_slot is not None and slot == reserved_mgmt_slot:
+                return slot + 1
+            return slot
+
         node_ifaces: dict[int, list[dict[str, Any]]] = {}
         for node_index in graph.nodes:
             ifaces: list[dict[str, Any]] = []
             slot = 0
             for neighbor in sorted(graph.adj[node_index]):
+                slot = _next_topo_slot(slot)
                 canonical = (min(node_index, neighbor), max(node_index, neighbor))
                 prefix, host0, host1 = edge_info[canonical]
                 if node_index == canonical[0]:
@@ -5693,6 +5708,7 @@ class Renderer:
                 slot += 1
             # Core node gets an extra interface for the DNS host link
             if node_index == core:
+                slot = _next_topo_slot(slot)
                 ifaces.append({
                     "slot": slot,
                     "neighbor": -1,
