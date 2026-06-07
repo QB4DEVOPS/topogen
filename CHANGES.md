@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.7
-Date Modified: 2026-06-07
+Doc Version: v1.3.8
+Date Modified: 2026-06-08
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+
+- version 0.3.0
+  - release(epic): close TG-147 Universal NaC Offline Support With DMVPN — merge `epic/TG-147-universal-nac-dmvpn` to `main` (topogen v0.3.0); post-epic follow-ups TG-161 (terraform plan CI gate), TG-162 (DMVPN NaC fidelity vs day-0 config)
+    - Files: pyproject.toml (rev v1.0.2 → v1.0.3), CHANGES.md (rev v1.3.7 → v1.3.8)
   - fix(cml): INTENT-SPOT marker uses unmanaged_switch (no router license) (TG-167)
     - `--intent-spot` QA node changed from iosv router to `unmanaged_switch` (offline YAML and online create).
     - Files: src/topogen/render.py (rev v1.3.6 → v1.3.7), src/topogen/main.py (rev v1.9.1 → v1.9.2), tests/test_intent_annotation.py (rev v1.1.0 → v1.1.1), CHANGES.md (rev v1.3.6 → v1.3.7)
