@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.3
-Date Modified: 2026-06-04
+Doc Version: v1.3.4
+Date Modified: 2026-06-06
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,10 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(staging): auto-enable node staging when `--pki` is used (TG-165)
+    - PKI labs need CA-ROOT online before enrolling routers. Staging and the CA-ROOT priority ladder already existed but required a separate `--staging` flag. With `--pki`, TopoGen now sets staging on by default (CA-ROOT priority 900) unless `--no-staging` is passed — the first behavior that auto-enables without a dedicated enable flag, though still effectively opt-in because it only applies when `--pki` is set and staging is emitted only with `--cml-version 0.3.1` (CML 2.10); default schema `0.3.0` logs a warning and omits `node_staging`.
+    - Added `resolve_staging_flags()` in `main.py`, `--no-staging` opt-out, `tests/test_staging_pki.py`, closeout runbook `docs/validation/TG-165-pipeline.md`, and offline gate script `scripts/validate-tg165.ps1`. Live-validated on CML 2.10 (TG-166).
+    - Files: src/topogen/main.py (rev v1.8.0 → v1.9.0), tests/test_staging_pki.py (rev v1.0.0), README.md (rev v1.8.3 → v1.8.4), DEVELOPER.md (rev v1.8.4 → v1.8.6), docs/validation/TG-165-pipeline.md (rev v1.0.0), CHANGES.md (rev v1.3.3 → v1.3.4)
   - docs(nac,cml2): universal offline NaC, DMVPN NaC examples, CML2 Terraform workflow (TG-154)
     - README no longer documents `--nac` as limited to fixed MVP command shapes; describes all offline modes, DMVPN `--nac` examples, and `terraform init` / `plan` / `apply` for both `nac/` and `cml2/` workspaces
     - DEVELOPER.md updates NaC/CML2 file chains, guardrail split (CLI vs render), and test tables for universal + DMVPN paths

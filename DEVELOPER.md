@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.5
+Doc Version: v1.8.6
 Date Modified: 2026-06-06
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -381,6 +381,8 @@ Tests (run when touching staging / PKI boot order):
 | File | Purpose |
 |------|---------|
 | `tests/test_staging_pki.py` | TG-165: `--pki` auto-enables staging, `--no-staging` opt-out, CML version guardrail, offline YAML emits `node_staging` + CA-ROOT priority |
+
+**Story closeout pipeline (TG-165):** Offline gates 1–2 — `.\scripts\validate-tg165.ps1`. Live CML 2.10 gate 3 required before Jira Done. See `docs/validation/TG-165-pipeline.md`.
 
 ## CML2 Terraform lifecycle scaffold reference (TG-150)
 
