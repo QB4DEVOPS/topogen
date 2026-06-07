@@ -1,13 +1,13 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.11.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.15.0
+# Date Modified: 2026-06-04
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/main.py, src/topogen/nac.py
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main.main, yaml.safe_load
 #
-# Purpose: Verify TG-121/TG-137/TG-140 canonical NaC writer output layout, keys, and deterministic rerun behavior.
+# Purpose: Verify canonical NaC writer output layout, keys, deterministic rerun behavior, and DMVPN artifact paths.
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import sys
@@ -233,6 +233,262 @@ class TestNacWriter(unittest.TestCase):
                     "nac_metadata.yaml",
                 ],
             )
+
+    def test_dmvpn_flat_nac_writes_cml_yaml_and_nac_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "dmvpn-flat"
+            cml_yaml = lab_root / "dmvpn-flat.yaml"
+            nac_root = lab_root / "nac"
+            nac_yaml = nac_root / "nac.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self.assertTrue(nac_yaml.exists())
+            self.assertTrue((nac_root / "inventory.yaml").exists())
+            self.assertTrue((nac_root / "host_vars" / "iosv-01.yaml").exists())
+            self.assertFalse((lab_root / "nac.yaml").exists())
+
+            data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            devices = data["iosxe"]["devices"]
+            self.assertEqual([device["name"] for device in devices], ["iosv-01", "iosv-02", "iosv-03"])
+            self.assertEqual(
+                [device["configuration"]["system"]["hostname"] for device in devices],
+                ["R1", "R2", "R3"],
+            )
+            for device in devices:
+                ethernets = device["configuration"]["interfaces"]["ethernets"]
+                tunnels = device["configuration"]["interfaces"]["tunnels"]
+                self.assertEqual(ethernets[0]["description"], "dmvpn nbma")
+                self.assertEqual(tunnels[0]["id"], "0")
+                self.assertEqual(tunnels[0]["name"], "0")
+                self.assertEqual(tunnels[0]["description"], "dmvpn tunnel")
+            for host_name in ("iosv-01", "iosv-02", "iosv-03"):
+                host_vars = nac_root / "host_vars" / f"{host_name}.yaml"
+                self.assertTrue(host_vars.exists())
+
+    def test_dmvpn_flat_pair_nac_writes_cml_yaml_and_nac_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "dmvpn-flat-pair"
+            cml_yaml = lab_root / "dmvpn-flat-pair.yaml"
+            nac_root = lab_root / "nac"
+            nac_yaml = nac_root / "nac.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self.assertTrue(nac_yaml.exists())
+            expected_nac_files = [
+                "nac.yaml",
+                "main.tf",
+                "versions.tf",
+                "terraform.tfvars.example",
+                ".gitignore",
+                "ansible.cfg",
+                "inventory.yaml",
+                "group_vars/all.yaml",
+                "host_vars/iosv-01.yaml",
+                "host_vars/iosv-02.yaml",
+                "host_vars/iosv-03.yaml",
+                "host_vars/iosv-04.yaml",
+                "verify_reachability.yaml",
+                "devices.yaml",
+                "nac_metadata.yaml",
+            ]
+            for rel_path in expected_nac_files:
+                self.assertTrue((nac_root / rel_path).exists(), rel_path)
+            self.assertFalse((lab_root / "nac.yaml").exists())
+
+            cml_text = cml_yaml.read_text(encoding="utf-8")
+            self.assertIn("restconf", cml_text)
+            self.assertIn("netconf-yang", cml_text)
+
+            main_tf = (nac_root / "main.tf").read_text(encoding="utf-8")
+            tfvars_example = (nac_root / "terraform.tfvars.example").read_text(encoding="utf-8")
+            self.assertIn("IOSXE_URL", main_tf)
+            self.assertIn("IOSXE_USERNAME", main_tf)
+            self.assertIn("IOSXE_PASSWORD", main_tf)
+            self.assertIn('IOSXE_URL="https://<lab-device-url>"', tfvars_example)
+            self.assertNotIn("password =", tfvars_example)
+            self.assertNotIn("cisco", main_tf.lower().replace("ciscodevnet", ""))
+
+            data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            devices = data["iosxe"]["devices"]
+            self.assertEqual(
+                [device["name"] for device in devices],
+                ["iosv-01", "iosv-02", "iosv-03", "iosv-04"],
+            )
+            self.assertEqual(
+                [device["configuration"]["system"]["hostname"] for device in devices],
+                ["R1", "R2", "R3", "R4"],
+            )
+            self.assertEqual(
+                [iface["description"] for iface in devices[0]["configuration"]["interfaces"]["ethernets"]],
+                ["dmvpn nbma", "pair link"],
+            )
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["ethernets"]],
+                [("0/0", "dmvpn nbma"), ("0/1", "pair link")],
+            )
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            self.assertEqual(
+                [(iface["name"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            self.assertEqual(
+                [iface["description"] for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
+                ["pair link"],
+            )
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
+                [("0/0", "pair link")],
+            )
+            self.assertNotIn("tunnels", devices[1]["configuration"]["interfaces"])
+
+    def test_dmvpn_flat_nac_with_mgmt_uses_oob_hosts_and_tunnel_interfaces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-mgmt.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--mgmt",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            nac_root = Path(tmp) / "out" / "dmvpn-flat-mgmt" / "nac"
+            nac_yaml = nac_root / "nac.yaml"
+            inventory_yaml = nac_root / "inventory.yaml"
+            data = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            inventory = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
+            devices = data["iosxe"]["devices"]
+            self.assertEqual([device["name"] for device in devices], ["iosv-01", "iosv-02", "iosv-03"])
+            self.assertEqual([device["host"] for device in devices], ["10.254.0.1", "10.254.0.2", "10.254.0.3"])
+            self.assertEqual(
+                [inventory["all"]["hosts"][device["name"]]["ansible_host"] for device in devices],
+                ["10.254.0.1", "10.254.0.2", "10.254.0.3"],
+            )
+
+            hub_interfaces = devices[0]["configuration"]["interfaces"]
+            self.assertEqual(
+                [(iface["id"], iface["description"]) for iface in hub_interfaces["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            self.assertEqual(
+                [(iface["name"], iface["description"]) for iface in hub_interfaces["tunnels"]],
+                [("0", "dmvpn tunnel")],
+            )
+            # TG-163: the OOB management interface is provisioned out-of-band
+            # (DHCP) by the CML day-0 template and must never be emitted as a
+            # Terraform-managed interface. It only drives connection-host
+            # selection (asserted via device["host"] above).
+            self.assertFalse(
+                any(
+                    iface.get("description") == "OOB Management"
+                    for iface in hub_interfaces["ethernets"]
+                )
+            )
+            self.assertNotIn("vrfs", devices[0]["configuration"])
+
+            host_vars = yaml.safe_load((nac_root / "host_vars" / "iosv-01.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(host_vars["hostname"], "R1")
+            self.assertTrue(
+                any(iface.get("name") == "Tunnel0" and iface.get("description") == "dmvpn tunnel"
+                    for iface in host_vars["interfaces"])
+            )
+            self.assertTrue(
+                any(iface.get("description") == "OOB Management" for iface in host_vars["interfaces"])
+            )
+
+    def test_dmvpn_flat_pair_without_nac_keeps_original_output_path_and_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "dmvpn-flat-pair"
+            self.assertTrue(out_file.exists())
+            self.assertFalse((lab_root / "dmvpn-flat-pair.yaml").exists())
+            self.assertFalse((lab_root / "nac").exists())
+
+            cml_text = out_file.read_text(encoding="utf-8")
+            self.assertIn("label: R1", cml_text)
+            self.assertIn("label: R4", cml_text)
+            self.assertIn("label: GigabitEthernet0/1", cml_text)
+            self.assertNotIn("restconf", cml_text)
+            self.assertNotIn("netconf-yang", cml_text)
+
+    def test_dmvpn_flat_without_nac_keeps_original_output_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            self.assertTrue(out_file.exists())
+            self.assertFalse((Path(tmp) / "out" / "dmvpn-flat" / "dmvpn-flat.yaml").exists())
+            self.assertFalse((Path(tmp) / "out" / "dmvpn-flat" / "nac").exists())
 
     def test_ansible_stub_content_is_parseable_read_only_and_secret_free(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -756,7 +1012,10 @@ class TestNacWriter(unittest.TestCase):
                 )
             )
 
-    def test_mgmt_cli_emits_mgmt_host_interface_and_vrf(self):
+    def test_mgmt_cli_sets_oob_host_but_does_not_manage_mgmt_interface(self):
+        # TG-163: --mgmt selects the OOB management address as the connection
+        # host, but the OOB interface (DHCP, day-0 owned) must NOT appear as a
+        # Terraform-managed interface, and its Mgmt-vrf must not be emitted.
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "mgmt-simple.yaml"
             rc = self._run_main(
@@ -778,15 +1037,15 @@ class TestNacWriter(unittest.TestCase):
             inv = yaml.safe_load(inventory_yaml.read_text(encoding="utf-8"))
             self.assertEqual(device["host"], "10.254.0.1")
             self.assertEqual(inv["all"]["hosts"]["iosv-01"]["ansible_host"], "10.254.0.1")
-            self.assertEqual(device["configuration"]["vrfs"], [{"name": "Mgmt-vrf"}])
-            mgmt_iface = next(
-                iface
-                for iface in device["configuration"]["interfaces"]["ethernets"]
-                if iface.get("description") == "OOB Management"
+            self.assertNotIn("vrfs", device["configuration"])
+            self.assertFalse(
+                any(
+                    iface.get("description") == "OOB Management"
+                    for iface in device["configuration"]["interfaces"]["ethernets"]
+                )
             )
-            self.assertEqual(mgmt_iface["vrf_forwarding"], "Mgmt-vrf")
 
-    def test_mgmt_global_vrf_omits_vrf_keys(self):
+    def test_mgmt_global_vrf_does_not_manage_mgmt_interface(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "mgmt-global.yaml"
             rc = self._run_main(
@@ -809,12 +1068,12 @@ class TestNacWriter(unittest.TestCase):
             config = device["configuration"]
             self.assertEqual(device["host"], "10.254.0.1")
             self.assertNotIn("vrfs", config)
-            mgmt_iface = next(
-                iface
-                for iface in config["interfaces"]["ethernets"]
-                if iface.get("description") == "OOB Management"
+            self.assertFalse(
+                any(
+                    iface.get("description") == "OOB Management"
+                    for iface in config["interfaces"]["ethernets"]
+                )
             )
-            self.assertNotIn("vrf_forwarding", mgmt_iface)
 
     def test_name_and_hostname_sources_are_distinct(self):
         node = TopogenNode(
@@ -1089,6 +1348,44 @@ class TestNacWriter(unittest.TestCase):
             metadata = yaml.safe_load((nac_root / "nac_metadata.yaml").read_text(encoding="utf-8"))
             self.assertEqual(metadata["device_count"], 2)
 
+    def test_four_router_flat_pair_nac_uses_layout_without_dmvpn_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "flat-pair.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "flat-pair",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "flat-pair"
+            cml_yaml = lab_root / "flat-pair.yaml"
+            nac_root = lab_root / "nac"
+            nac_yaml = nac_root / "nac.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self.assertTrue(nac_yaml.exists())
+            self.assertTrue((nac_root / "inventory.yaml").exists())
+            self.assertTrue((nac_root / "host_vars" / "iosv-04.yaml").exists())
+            self.assertFalse(out_file.exists())
+            self.assertFalse((lab_root / "nac.yaml").exists())
+
+            canonical = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))
+            devices = canonical["iosxe"]["devices"]
+            self.assertEqual(
+                [device["name"] for device in devices],
+                ["iosv-01", "iosv-02", "iosv-03", "iosv-04"],
+            )
+            self.assertEqual(
+                [device["configuration"]["system"]["hostname"] for device in devices],
+                ["R1", "R2", "R3", "R4"],
+            )
+
     def test_two_router_flat_pair_rerun_is_deterministic_and_not_nested(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "two-router-flat-pair.yaml"
@@ -1102,14 +1399,67 @@ class TestNacWriter(unittest.TestCase):
                 "--overwrite",
             ]
             first = self._run_main(argv)
-            second = self._run_main(argv)
             self.assertEqual(first, 0)
-            self.assertEqual(second, 0)
             nac_root = Path(tmp) / "out" / "two-router-flat-pair" / "nac"
+            data_a = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+
+            second = self._run_main(argv)
+            self.assertEqual(second, 0)
             nested_bad = Path(tmp) / "out" / "two-router-flat-pair" / "two-router-flat-pair" / "nac" / "nac.yaml"
             self.assertFalse(nested_bad.exists())
-            data_a = (nac_root / "nac.yaml").read_text(encoding="utf-8")
             data_b = (nac_root / "nac.yaml").read_text(encoding="utf-8")
+            self.assertEqual(data_a, data_b)
+
+    def test_dmvpn_flat_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat.yaml"
+            argv = [
+                "3",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-hubs",
+                "1",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            self.assertEqual(self._run_main(argv), 0)
+            lab_root = Path(tmp) / "out" / "dmvpn-flat"
+            nac_yaml = lab_root / "nac" / "nac.yaml"
+            data_a = nac_yaml.read_text(encoding="utf-8")
+
+            self.assertEqual(self._run_main(argv), 0)
+            nested_bad = lab_root / "dmvpn-flat" / "nac" / "nac.yaml"
+            self.assertFalse(nested_bad.exists())
+            data_b = nac_yaml.read_text(encoding="utf-8")
+            self.assertEqual(data_a, data_b)
+
+    def test_dmvpn_flat_pair_rerun_is_deterministic_and_not_nested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair.yaml"
+            argv = [
+                "4",
+                "--mode",
+                "dmvpn",
+                "--dmvpn-underlay",
+                "flat-pair",
+                "--template",
+                "iosv-dmvpn",
+                "--offline-yaml",
+                str(out_file),
+                "--nac",
+                "--overwrite",
+            ]
+            self.assertEqual(self._run_main(argv), 0)
+            lab_root = Path(tmp) / "out" / "dmvpn-flat-pair"
+            nac_yaml = lab_root / "nac" / "nac.yaml"
+            data_a = nac_yaml.read_text(encoding="utf-8")
+
+            self.assertEqual(self._run_main(argv), 0)
+            nested_bad = lab_root / "dmvpn-flat-pair" / "nac" / "nac.yaml"
+            self.assertFalse(nested_bad.exists())
+            data_b = nac_yaml.read_text(encoding="utf-8")
             self.assertEqual(data_a, data_b)
 
 

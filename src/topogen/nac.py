@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.9.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.9.1
+# Date Modified: 2026-06-04
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
 # - Reads from: TopogenNode/TopogenInterface objects, render context (mode/template/device-template)
@@ -125,16 +125,26 @@ def _get_iface_value(iface, key: str, default):
 
 
 def _interface_label(device_template: str, slot: int) -> str:
+    if slot >= 1000:
+        return f"Tunnel{slot - 1000}"
     if device_template == "csr1000v":
         return f"GigabitEthernet{slot + 1}"
     return f"GigabitEthernet0/{slot}"
 
 
 def _split_interface_label(label: str) -> tuple[str, str]:
-    for prefix in ("GigabitEthernet",):
+    for prefix in ("GigabitEthernet", "Tunnel"):
         if label.startswith(prefix):
             return prefix, label[len(prefix):]
     return label, ""
+
+
+def _configuration_interface_collection(iface_type: str) -> str:
+    if iface_type == "GigabitEthernet":
+        return "ethernets"
+    if iface_type == "Tunnel":
+        return "tunnels"
+    return f"{iface_type.lower()}s"
 
 
 def _platform_from_device_template(device_template: str) -> str:
@@ -207,7 +217,7 @@ def build_canonical_nac_model(
         canonical_name = _canonical_name_for_index(index)
         system_hostname = str(getattr(node_obj, "hostname", ""))
         interfaces = []
-        ethernets = []
+        config_interface_groups = {}
         vrf_names = set()
         node_interfaces = getattr(node_obj, "interfaces", None) or []
         sorted_interfaces = sorted(
@@ -228,26 +238,37 @@ def build_canonical_nac_model(
                 "slot": slot,
             }
             iface_type, iface_id = _split_interface_label(iface_label)
-            ethernet_entry = {
-                "type": iface_type,
-                "id": str(iface_id),
-            }
+            config_iface_entry = {"id": str(iface_id)}
+            if iface_type == "Tunnel":
+                config_iface_entry["name"] = str(iface_id)
+            if iface_type == "GigabitEthernet":
+                config_iface_entry = {"type": iface_type, **config_iface_entry}
             iface_address = _get_iface_value(iface, "address", None)
             if iface_address:
                 entry["ipv4"] = str(iface_address)
-                ethernet_entry["ipv4"] = _ipv4_mapping(iface_address)
+                config_iface_entry["ipv4"] = _ipv4_mapping(iface_address)
             iface_description = _get_iface_value(iface, "description", "")
+            # The OOB management interface is provisioned out-of-band by the CML
+            # day-0 template ("ip address dhcp") and is the transport the NaC
+            # provider connects through. It must never be emitted as a
+            # Terraform-managed interface: writing a fabricated static address on
+            # it overlaps data subnets and severs the management session (TG-163).
+            # It is retained in the informational fat model and still feeds
+            # connection-host selection via _select_host.
+            is_oob_mgmt = str(iface_description) == "OOB Management"
             if iface_description:
                 entry["description"] = str(iface_description)
-                ethernet_entry["description"] = str(iface_description)
+                config_iface_entry["description"] = str(iface_description)
             iface_vrf = _get_iface_value(iface, "vrf", None)
             if iface_vrf:
                 entry["vrf"] = str(iface_vrf)
-                ethernet_entry["vrf_forwarding"] = str(iface_vrf)
-                vrf_names.add(str(iface_vrf))
+                config_iface_entry["vrf_forwarding"] = str(iface_vrf)
+                if not is_oob_mgmt:
+                    vrf_names.add(str(iface_vrf))
             interfaces.append(entry)
-            if iface_address:
-                ethernets.append(ethernet_entry)
+            if iface_address and not is_oob_mgmt:
+                collection = _configuration_interface_collection(iface_type)
+                config_interface_groups.setdefault(collection, []).append(config_iface_entry)
         loopback = getattr(node_obj, "loopback", None)
         host = _select_host(node_obj, args)
         loopbacks = []
@@ -273,8 +294,8 @@ def build_canonical_nac_model(
         if vrf_names:
             configuration["vrfs"] = [{"name": name} for name in sorted(vrf_names)]
         config_interfaces = {}
-        if ethernets:
-            config_interfaces["ethernets"] = ethernets
+        for collection in sorted(config_interface_groups):
+            config_interfaces[collection] = config_interface_groups[collection]
         if config_loopbacks:
             config_interfaces["loopbacks"] = config_loopbacks
         if config_interfaces:

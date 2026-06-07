@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.7.17
-Date Modified: 2026-06-03
+Doc Version: v1.8.7
+Date Modified: 2026-06-07
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -114,9 +114,9 @@ The `--cml-version` flag controls the `version:` field in offline YAML **and** w
 - CML 2.7 = schema `0.2.2` (max). Accepted: `0.0.1`–`0.2.2`. Fields: `annotations`, `notes`. No `smart_annotations`.
 - CML 2.8.1 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Introduced `smart_annotations`, `parameters` (node), `mac_address` (interface). Fields: `annotations`, `notes`, `smart_annotations`.
 - CML 2.9 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
-- CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`.
+- CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`. **TG-165:** `--pki` auto-enables staging via `resolve_staging_flags()` in `main.py` unless `--no-staging` is set; requires `--cml-version >= 0.3.1` or staging is omitted with a warning.
 
-TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`.
+TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`. **TG-167:** intent metadata (description, hidden notes, scaled down-only annotation) is applied offline via `_finalize_offline_yaml_with_intent()` and online via `Renderer._apply_online_lab_intent()` after topology build. Optional `--intent-spot` adds an `unmanaged_switch` marker node (default off).
 
 ## 5-minute environment validation
 
@@ -308,23 +308,29 @@ Maintenance note:
 
 Use this section as the implementation baseline for all `--nac` work.
 
-Current MVP command shapes (guardrail-enforced):
+**Universal offline scope:** `--nac` is supported on every offline renderer listed
+below. CLI guardrails no longer restrict specific mode/node-count pairs; users
+compose the same offline flags as without `--nac` and add `--nac` when they want
+the sibling `nac/` tree.
 
-- `nodes=1, mode=simple`
-- `nodes=2, mode=simple`
-- `nodes=2, mode=nx`
-- `nodes=2, mode=flat`
-- `nodes=2, mode=flat-pair`
+CLI guardrails (`src/topogen/main.py`):
 
-Guardrail implementation:
+- `validate_nac_mvp_guardrails()` — historical name; enforces offline-only path,
+  IOS-XE `--device-template` (`iosv`, `csr1000v`), and rejects import/online
+  YAML workflows
+- `validate_nodes_for_mode()` — allows `nodes=1` when `--nac` is set; non-NaC
+  paths still require `nodes>=2`
 
-- `src/topogen/main.py::validate_nac_mvp_guardrails()`
-- Platform scope is IOS-XE templates only: `iosv`, `csr1000v`
-- `--nac` requires `--offline-yaml`
+Render-time guardrails (`src/topogen/render.py`):
+
+- `validate_nac_supported_iosxe_nodes()` / `_validate_nac_router_nodes_if_enabled()`
+  — abort before any `nac/` artifact exists if the router set cannot be projected
+- `describe_nac_unsupported_nodes()` — error text for CLI and render paths
 
 Path/layout contract:
 
-- Resolver: `src/topogen/render.py::resolve_offline_output_paths()`
+- Resolver: `src/topogen/render.py::resolve_offline_artifact_paths()` (and
+  `resolve_offline_output_paths()` where still used)
 - Input: `--offline-yaml out/<lab>.yaml --nac`
 - Output:
   - `out/<lab>/<lab>.yaml` (offline CML YAML)
@@ -342,25 +348,98 @@ Canonical writer and adapters:
   - `write_nac_yaml(...)`
   - `write_terraform_scaffold(...)` (main.tf/versions.tf/tfvars.example/.gitignore)
   - `write_nac_tree(...)` (top-level coordinator: NaC + Terraform + Ansible)
+- `src/topogen/render.py::_write_nac_tree_if_enabled()` — shared hook used by all offline NaC paths
 - Offline renderers that emit NaC trees:
   - `offline_simple_yaml(...)`
   - `offline_nx_yaml(...)`
   - `offline_flat_yaml(...)`
   - `offline_flat_pair_yaml(...)`
+  - `offline_dmvpn_yaml(...)` (flat underlay)
+  - `offline_dmvpn_flat_pair_yaml(...)`
+
+Tests (run when touching NaC):
+
+| File | Purpose |
+|------|---------|
+| `tests/test_nac_cli_guardrails.py` | CLI parsing, offline/import rejection, IOS-XE template checks, `nodes=1` with `--nac`, composed flags (mgmt/VRF/CSR) |
+| `tests/test_nac_output_paths.py` | `out/<lab>/` layout, no nested `nac/` on rerun |
+| `tests/test_nac_writer.py` | `nac.py` scaffold content, `yaml_files = ["nac.yaml"]`, DMVPN naming |
+| `tests/test_nac_day0_restconf.py` | RESTCONF/NETCONF lines in day0 when `--nac` |
+| `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair; non-NaC paths skip `nac/` |
+| `tests/test_nac_golden_smoke.py` | Regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*` |
 
 If you extend NaC scope:
 
-1. Update guardrails first (`main.py`)
-2. Ensure renderer collects deterministic `nac_router_nodes`
-3. Emit `write_nac_tree(...)` in that path
+1. Update CLI and render guardrails (`main.py`, `render.py`)
+2. Ensure the renderer collects deterministic `nac_router_nodes`
+3. Call `_write_nac_tree_if_enabled(...)` (or equivalent) in that offline path
 4. Update docs (`README.md`, `CHANGES.md`, this file)
-5. Add/adjust tests:
-   - `tests/test_nac_cli_guardrails.py`
-   - `tests/test_nac_output_paths.py`
-   - `tests/test_nac_writer.py`
-   - `tests/test_nac_day0_restconf.py`
-   - `tests/test_nac_render_e2e.py`
-   - `tests/test_nac_golden_smoke.py` (regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*`)
+5. Add or adjust the tests in the table above
+
+Tests (run when touching staging / PKI boot order):
+
+| File | Purpose |
+|------|---------|
+| `tests/test_staging_pki.py` | TG-165: `--pki` auto-enables staging, `--no-staging` opt-out, CML version guardrail, offline YAML emits `node_staging` + CA-ROOT priority |
+
+**Story closeout pipeline (TG-165):** Offline gates 1–2 — `.\scripts\validate-tg165.ps1`. Live CML 2.10 gate 3 required before Jira Done. See `docs/validation/TG-165-pipeline.md`.
+
+## CML2 Terraform lifecycle scaffold reference (TG-150)
+
+Use this section as the implementation baseline for `--terraform-cml2` lifecycle scaffold work.
+
+Guardrail implementation:
+
+- `src/topogen/main.py::validate_cml2_lifecycle_guardrails()`
+- `--terraform-cml2` requires `--offline-yaml`
+- `--cml2` is accepted as a short compatibility alias for `--terraform-cml2`
+- Import workflow flags are rejected with `--terraform-cml2` because the scaffold is generated only alongside new offline YAML output
+
+Path/layout contract:
+
+- Resolver: `src/topogen/render.py::resolve_offline_artifact_paths()`
+- Input: `--offline-yaml out/<lab>.yaml --terraform-cml2`
+- Output:
+  - `out/<lab>/<lab>.yaml` (offline CML YAML)
+  - Terraform lifecycle scaffold: `out/<lab>/cml2/{main.tf,versions.tf,variables.tf,outputs.tf,.gitignore}`
+  - The generated `variables.tf` defaults `topology_file` to `../<lab>.yaml` so no machine-local path is embedded
+  - CML connection values are Terraform inputs only; no credentials, tokens, passwords, or controller URLs are written by TopoGen
+
+Canonical writer:
+
+- `src/topogen/cml2.py`
+  - `write_cml2_lifecycle_scaffold(...)` (main.tf/versions.tf/variables.tf/outputs.tf/.gitignore)
+  - Terraform provider: `CiscoDevNet/cml2`
+  - Terraform resource: `cml2_lifecycle` with `topology = file(var.topology_file)`
+
+User workflow (documented in README, not executed by TopoGen):
+
+1. `topogen ... --offline-yaml out/<lab>.yaml --terraform-cml2 [--overwrite]`
+2. `terraform -chdir=out/<lab>/cml2 init`
+3. Set `TF_VAR_address`, `TF_VAR_username`, `TF_VAR_password` (or `TF_VAR_token`) — never commit these
+4. `terraform -chdir=out/<lab>/cml2 plan` then `apply`
+5. Optional: `--nac` in step 1 adds `out/<lab>/nac/` for device config after the lab is up
+
+Relationship to NaC:
+
+- `--terraform-cml2` and `--nac` are independent. When both are enabled, `cml2/` and `nac/` are sibling directories under the generated lab root.
+- Do not place CML lifecycle files under `nac/`; the `nac/` Terraform workspace targets device configuration through `netascode/nac-iosxe`.
+
+Tests (run when touching CML2 lifecycle):
+
+| File | Purpose |
+|------|---------|
+| `tests/test_cml2_lifecycle.py` | Scaffold files, secret-free content, CLI emits `cml2/` only, `--cml2` alias, `cml2/` + `nac/` siblings |
+| `tests/test_nac_output_paths.py` | Shared offline path resolver behavior |
+| `tests/test_nac_cli_guardrails.py` | CML2 guardrails alongside NaC |
+
+If you extend CML2 lifecycle scope:
+
+1. Update guardrails first (`main.py`)
+2. Keep output under `out/<lab>/cml2/`
+3. Keep connection settings as Terraform variables or environment-provided values
+4. Update docs (`README.md`, `CHANGES.md`, this file)
+5. Add or adjust the tests in the table above
 
 
 
@@ -1042,7 +1121,7 @@ Jinja2:
 
 ### `src/topogen/main.py`
 
-- **Doc Version:** v1.2.1
+- **Doc Version:** v1.9.2
 
 - **Called by**
 
@@ -1072,11 +1151,23 @@ Jinja2:
 
   - `src/topogen/models.py` (`TopogenError`)
 
+- **Staging flags (TG-165)**
+
+  - `resolve_staging_flags(args)` — after validation, sets `args.staging` when `--pki` is enabled (unless `--no-staging`); applies CML version guardrail (`>= 0.3.1`)
+
+  - CLI: `--staging` (explicit), `--no-staging` (opt-out), `--no-abort-on-failure` (maps to `staging_no_abort`)
+
+  - Non-PKI labs unchanged unless `--staging` is passed explicitly
+
+- **Intent spot (TG-167)**
+
+  - CLI: `--intent-spot` — opt-in QA `unmanaged_switch` at scaled intent coordinates (online + offline; default off; no router license)
+
 
 
 ### `src/topogen/render.py`
 
-- **Doc Version:** v1.2.2
+- **Doc Version:** v1.3.7
 
 - **Called by**
 
@@ -1094,6 +1185,8 @@ Jinja2:
 
   - Offline YAML file (`--offline-yaml`)
 
+  - Optional offline artifact scaffolds (`--nac`, `--terraform-cml2`)
+
   - Online CML controller state (labs/nodes/links/configs) via `virl2_client.ClientLibrary`
 
 - **Calls into**
@@ -1106,8 +1199,45 @@ Jinja2:
 
   - `src/topogen/lxcfrr.py` (`lxcfrr_bootconfig()`)
 
+  - `src/topogen/cml2.py` (`write_cml2_lifecycle_scaffold()`)
+
   - `src/topogen/models.py` (TopogenNode/Interface models)
 
+- **Intent metadata (TG-167)**
+
+  - `_scaled_intent_annotation_xy()` — down-only placement `(max_x, max_y + 1500)`; never `-9999`
+
+  - `_build_intent_description()` — shared provenance string for online/offline
+
+  - `_finalize_offline_yaml_with_intent()` — offline YAML: annotation + notes + optional INTENT-SPOT
+
+  - `_apply_online_lab_intent()` — online API: `description`, `notes`, `create_annotation()`, optional INTENT-SPOT switch
+
+  - Offline nx: mesh interface slot assignment skips reserved `--mgmt-slot` (parity with online CML auto-assign)
+
+  - Validation: `tests/test_intent_annotation.py`, `scripts/validate-intent-spot-matrix.py` (offline `--nac --cml2` matrix)
+
+
+
+### `src/topogen/cml2.py`
+
+- **Doc Version:** v1.0.1
+
+- **Called by**
+
+  - `src/topogen/render.py` (offline `--terraform-cml2` generation path)
+
+- **Reads from**
+
+  - Generated offline CML YAML artifact name
+
+- **Writes to**
+
+  - CML2 Terraform lifecycle scaffold under `out/<lab>/cml2/`
+
+- **Calls into**
+
+  - `src/topogen/models.py` (`TopogenError`)
 
 
 ### `src/topogen/__main__.py`
@@ -1377,6 +1507,28 @@ The standard workflow for implementing a new feature or config change:
 
 **Important:** Do not skip step 1. Manual device testing catches IOS parser issues, ordering dependencies, and behavioral surprises that offline generation cannot reveal.
 
+## CLI flag change checklist
+
+When adding, renaming, or changing a CLI flag, update every place that surfaces
+or records CLI behavior. Do not assume argparse parameters are automatically
+reflected in generated lab metadata.
+
+- Parser/help: update `src/topogen/main.py` so `--help` text is accurate.
+- User docs: update `README.md` examples and refresh the embedded `--help` block
+  when help text or available flags change.
+- Developer docs/changelog: update `DEVELOPER.md` and `CHANGES.md` for every new
+  CLI flag or alias, even if it only exposes an existing behavior. This includes
+  short aliases such as `--cml2` for `--terraform-cml2`.
+- Offline provenance: update the args metadata embedded by `src/topogen/render.py`
+  in lab `description`, hidden `notes`, and annotation `text_content`.
+- Tests: add or update coverage that proves the flag appears in generated YAML
+  behavior and provenance when applicable.
+
+Offline provenance is built manually in renderer `args_bits` lists. New flags
+that affect generated artifacts, output layout, lab behavior, or validation
+state must be explicitly appended there or through a shared helper such as
+`_append_common_offline_args_bits()`.
+
 ## How to validate changes
 
 
@@ -1420,7 +1572,6 @@ Online (basic smoke checks once routers boot):
 - Config presence:
 
   - `show run | include eigrp stub`
-
 
 
 ## Git workflow for this repo

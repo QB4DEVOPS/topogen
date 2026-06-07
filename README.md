@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.7.0
-Date Modified: 2026-06-03
+Doc Version: v1.8.5
+Date Modified: 2026-06-07
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -38,6 +38,7 @@ controller, creating the lab, nodes and links on the fly.
 - flat L2 mode for large-scale labs (star of unmanaged switches with grouped routers)
 - YAML export of generated labs via controller API
 - offline YAML generation for CML (no controller needed) with `--offline-yaml`
+- optional CML2 Terraform lifecycle scaffold with `--terraform-cml2`
 - offline-to-CML import: `--import-yaml FILE` and `--import` to push YAML into CML (file size and lab URL printed; `--start` runs in background)
 
 ## Documentation map
@@ -70,26 +71,62 @@ They define canonical shape, required fields, deterministic ordering, and field
 projection targets. Runtime CLI or adapter execution logic is intentionally out
 of scope for this documentation-only contract baseline.
 
-## NaC MVP scope (TG-131)
+## Offline Network-as-Code (`--nac`)
 
-`--nac` is an offline MVP path that, alongside the offline CML YAML, emits a
+`--nac` is an **offline-only** path that, alongside the offline CML YAML, emits a
 deployable Network-as-Code workspace: a lean `nac.yaml` for the official
 `netascode/nac-iosxe` Terraform module, a ready-to-run Terraform workspace, and
 a read-only Ansible reachability stub.
 
-Current supported command shapes:
+It works with **any supported offline topology mode** (`simple`, `nx`, `flat`,
+`flat-pair`, and `dmvpn` with `flat` or `flat-pair` underlay). You are not
+limited to a fixed set of node counts or modes — use the same flags you would
+for offline YAML generation and add `--nac`.
 
-- `topogen 1 --mode simple --offline-yaml out/iosv-test.yaml --nac`
-- `topogen 2 --mode simple --offline-yaml out/two-router-simple.yaml --nac`
-- `topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac`
-- `topogen 2 --mode flat --offline-yaml out/two-router-flat.yaml --nac`
-- `topogen 2 --mode flat-pair --offline-yaml out/two-router-flat-pair.yaml --nac`
+Guardrails:
 
-Platform guardrail (MVP):
+- `--nac` requires `--offline-yaml` (local generation only; no `--import`,
+  `--import-yaml`, `--up`, or online `--yaml` export)
+- Router nodes must use an IOS-XE CML definition: `iosv` or `csr1000v` (align
+  `-T` / `--template` with `--device-template`, e.g. `iosv-dmvpn` on `iosv`)
+- With `--nac`, `nodes=1` is allowed when the selected mode supports a single
+  router; without `--nac`, the minimum is `nodes=2`
+- Labs that add non–IOS-XE nodes (e.g. `--pki` CA-ROOT on `csr1000v` while
+  spokes use `iosv`) still fail fast before any `nac/` tree is written
+- DMVPN semantics are unchanged: default `dmvpn` uses `nodes` as spoke count
+  (R1 hub); with `--dmvpn-hubs`, `nodes` is total routers. DMVPN `flat-pair`
+  uses odd routers as DMVPN endpoints and even routers as pair partners — only
+  IOS-XE routers are projected into `nac.yaml`
 
-- Supported device templates: `iosv`, `csr1000v`
-- `--nac` requires `--offline-yaml`
-- Unsupported combinations fail fast with actionable CLI errors
+Example shapes (not an exhaustive list):
+
+```powershell
+topogen 1 --mode simple --offline-yaml out/iosv-test.yaml --nac --overwrite
+topogen 2 --mode nx --offline-yaml out/two-router-nx.yaml --nac --overwrite
+topogen 2 --mode flat-pair --device-template csr1000v -T csr-eigrp `
+  --mgmt --vrf --offline-yaml out/flat-pair-csr.yaml --nac --overwrite
+```
+
+DMVPN with NaC (offline YAML + `nac/` sibling tree):
+
+```powershell
+# Flat underlay: 3 total routers (R1 hub + R2,R3 spokes) when --dmvpn-hubs 1
+topogen 3 --mode dmvpn --dmvpn-hubs 1 -T iosv-dmvpn --device-template iosv `
+  --offline-yaml out/dmvpn-flat-nac.yaml --nac --overwrite
+
+# Flat-pair underlay: nodes = total routers; odd = DMVPN endpoints
+topogen 4 --mode dmvpn --dmvpn-underlay flat-pair -T iosv-dmvpn --device-template iosv `
+  --offline-yaml out/dmvpn-flat-pair-nac.yaml --nac --overwrite
+```
+
+Deploy device config from the generated tree (after the lab is reachable):
+
+```powershell
+terraform -chdir=out\<lab>\nac init
+# Set IOSXE_USERNAME, IOSXE_PASSWORD, IOSXE_URL (and lab mgmt reachability) in the shell
+terraform -chdir=out\<lab>\nac plan
+terraform -chdir=out\<lab>\nac apply
+```
 
 For `--offline-yaml out/<lab>.yaml --nac`, output layout is:
 
@@ -129,6 +166,61 @@ Offline vs. deployment (what TopoGen guarantees vs. what you supply):
 - You supply the deployment: running `terraform init/plan/apply`, running Ansible,
   device reachability, and credentials. `topogen` does not run any deployment or
   reachability tooling — those runners are intentionally out of scope.
+
+## CML2 Terraform lifecycle scaffold (`--terraform-cml2`)
+
+`--terraform-cml2` is an offline-only path that emits a Terraform lifecycle
+workspace for the generated CML YAML. It uses the official `CiscoDevNet/cml2`
+provider and the `cml2_lifecycle` resource so Terraform can import and start the
+generated lab. `--cml2` is accepted as a short compatibility alias.
+
+`--terraform-cml2` and `--nac` are independent: when both are set, `cml2/` and
+`nac/` are sibling directories under `out/<lab>/` (lab topology in
+`out/<lab>/<lab>.yaml`).
+
+### Generate the scaffold
+
+```powershell
+topogen 2 --mode simple --offline-yaml out\cml2-simple.yaml --terraform-cml2 --overwrite
+```
+
+Optional: also emit NaC artifacts in the same run:
+
+```powershell
+topogen 2 --mode flat --offline-yaml out\cml2-nac.yaml --terraform-cml2 --nac --overwrite
+```
+
+### Apply with Terraform
+
+From the repo (or any directory), point Terraform at the generated workspace.
+Provide CML connection values via `TF_VAR_*` or a local `terraform.tfvars` (not
+written by TopoGen — do not commit credentials).
+
+```powershell
+terraform -chdir=out\cml2-simple\cml2 init
+$env:TF_VAR_address = "https://<your-cml-controller>/"
+$env:TF_VAR_username = "<cml-user>"
+$env:TF_VAR_password = "<cml-password>"
+# Or use TF_VAR_token instead of username/password where your provider setup allows
+terraform -chdir=out\cml2-simple\cml2 plan
+terraform -chdir=out\cml2-simple\cml2 apply
+```
+
+After apply, use `terraform output` in that directory for lab ID, lifecycle
+state, and node details. Device configuration (if you also used `--nac`) is a
+separate step in `out/<lab>/nac/` after routers are reachable.
+
+For `--offline-yaml out/<lab>.yaml --terraform-cml2`, output layout is:
+
+- `out/<lab>/<lab>.yaml` — offline CML YAML
+- `out/<lab>/cml2/main.tf` — `cml2_lifecycle` resource using `file(var.topology_file)`
+- `out/<lab>/cml2/variables.tf` — CML connection inputs and lifecycle controls
+- `out/<lab>/cml2/versions.tf` — Terraform/provider version constraints
+- `out/<lab>/cml2/outputs.tf` — lab ID, lifecycle ID, state, boot status, and node details
+- `out/<lab>/cml2/.gitignore` — ignores Terraform state/vars
+
+No CML credentials are written. The generated `topology_file` default is a
+relative path such as `../<lab>.yaml`; no machine-local paths are embedded.
 
 ## Code structure and dependencies
 
@@ -273,10 +365,12 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--ntp-oob NTP_OOB_SERVER] [--pki] [--archive] [--getvpn]
                [--getvpn-group-id GETVPN_GROUP_ID]
                [--getvpn-rekey-interval GETVPN_REKEY_INTERVAL]
-               [--getvpn-protocol {gdoi,gikev2}] [--staging]
+               [--getvpn-protocol {gdoi,gikev2}] [--staging] [--no-staging]
                [--no-abort-on-failure] [--pki-enroll {scep,cli}] [--start]
-               [--yaml FILE] [--offline-yaml FILE] [--nac] [--overwrite]
-               [--import-yaml FILE] [--import] [--up FILE] [--print-up-cmd]
+               [--yaml FILE] [--offline-yaml FILE] [--nac]
+               [--terraform-cml2] [--overwrite] [--intent-spot]
+               [--import-yaml FILE]
+               [--import] [--up FILE] [--print-up-cmd]
                [--cml-version {0.0.1,0.0.2,0.0.3,0.0.4,0.0.5,0.1.0,0.2.0,0.2.1,0.2.2,0.3.0,0.3.1}]
                [--allow-oversubscribe] [--blank]
                [nodes]
@@ -284,9 +378,9 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
 Generate test topology files and configurations for CML2
 
 positional arguments:
-  nodes                 Number of nodes to generate (2-1000; --nac MVP also
-                        allows nodes=1 simple and nodes=2 simple/flat/flat-
-                        pair)
+  nodes                 Number of nodes to generate (2-1000; --nac offline
+                        generation also allows 1 where supported by the
+                        selected mode)
 
 options:
   -h, --help            show this help message and exit
@@ -392,7 +486,11 @@ options:
                         GET VPN control plane protocol: gdoi (ISAKMP/IKEv1) or
                         gikev2 (IKEv2), default "gdoi"
   --staging             Enable CML 2.10 node staging for boot ordering
-                        (requires --cml-version >= 0.3.1)
+                        (requires --cml-version >= 0.3.1). Also enabled
+                        automatically when --pki is used unless --no-staging
+                        is set.
+  --no-staging          Disable node staging even when --pki would auto-enable
+                        it; also disables --staging
   --no-abort-on-failure
                         With --staging, disable abort-on-failure so all nodes
                         attempt to boot even if a higher-priority node fails
@@ -403,10 +501,17 @@ options:
   --yaml FILE           Export the created lab to a YAML file at FILE
   --offline-yaml FILE   Generate a CML-compatible YAML locally (no controller
                         required)
-  --nac                 Enable NaC MVP guardrails (offline paths: one-router
-                        simple, two-router simple/nx/flat/flat-pair)
+  --nac                 Enable NaC artifacts for offline YAML generation
+                        (requires IOS-XE router templates)
+  --terraform-cml2, --cml2
+                        Enable Terraform lifecycle scaffold generation for
+                        offline CML2 labs
   --overwrite           Allow overwriting an existing output file when using
                         --offline-yaml
+  --intent-spot         Add INTENT-SPOT debug unmanaged_switch at intent
+                        annotation coordinates for visual QA in CML Workbench
+                        (no router license; online and offline; not for
+                        production)
   --import-yaml FILE    Path to existing offline YAML to import (skip
                         generation); use with --import
   --import              Import the generated or specified YAML into CML
@@ -766,28 +871,36 @@ Workflows:
 - Import existing (e.g. after editing) and start: `topogen --import-yaml out\lab.yaml --import --start` or **`topogen --up out\lab.yaml`**
 - Generate, then deploy when ready: `topogen ... --offline-yaml out\lab.yaml --print-up-cmd` (prints "When you're ready: topogen --up out/lab.yaml"), then later run `topogen --up out\lab.yaml`
 
-**Intent/metadata:** Lab description, notes (hidden span), and an off-canvas annotation with the full CLI args (including `-L` and `--offline-yaml`) are embedded only when generating **offline YAML** (`--offline-yaml`). This metadata is not added when creating labs online (no `--offline-yaml`). Intended for CI/CD to grep the generated YAML.
+**Intent/metadata (TG-167):** TopoGen embeds the same provenance string in three places — `lab.description` (visible), `lab.notes` (hidden white 1pt span in the Guide), and a white 1pt canvas text annotation — for **both** offline YAML (`--offline-yaml`) and **online** lab create (live CML API). Placement is scaled **down-only** below the topology at `(max(node x), max(node y) + 1500)` so Workbench Fit/zoom stays on the lab (never use off-canvas coordinates like `-9999`).
 
-Example — generate and grep (PowerShell):
+Optional **`--intent-spot`** adds a debug `INTENT-SPOT` **`unmanaged_switch`** at the annotation coordinates for visual QA in Workbench. Default is **off** (no extra node). Does not consume a router license.
+
+Example — offline generate and grep (PowerShell):
 
 ```powershell
 topogen -T iosv-eigrp -m flat -L my-lab --offline-yaml out\my-lab.yaml 3
 Select-String -Path out\my-lab.yaml -Pattern "Generated by topogen"
 ```
 
-The embedded string (identical in all three locations — `description`, `notes`, and off-canvas annotation) looks like:
+Example — online create with QA marker (requires `VIRL2_*` env vars):
+
+```powershell
+topogen -m simple --device-template iosv --intent-spot -i 4
+```
+
+The embedded string (identical in `description`, `notes`, and annotation `text_content`) looks like:
 
 ```
-Generated by topogen v0.2.4 (offline YAML) | args: nodes=3 -m flat -T iosv-eigrp --device-template iosv --flat-group-size 20 --cml-version 0.3.0 -L my-lab --offline-yaml out\my-lab.yaml
+Generated by topogen v0.2.5 (offline YAML, simple) | args: nodes=3 -m simple -T iosv --device-template iosv --cml-version 0.3.1 -L my-lab --offline-yaml out/my-lab.yaml
 ```
 
-Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are recorded even when not passed explicitly, making the string self-contained for regeneration.
+Online labs use `(online, <mode>)` in the context field instead of `(offline YAML, …)`. Defaults (`--device-template`, `--cml-version`, etc.) are recorded even when not passed explicitly, making the string self-contained for regeneration.
 
 **PKI:** PKI (CA-ROOT) is validated. DMVPN with `--dmvpn-security ikev2-pki` and `--pki` brings up tunnels with IKEv2 certificate-based authentication. Manual certificate enrollment is required on first boot (see **PKI client EEM** below).
 
-**CA server boot order:** When using `--pki`, bring the CA-ROOT node online first. Once the root CA is available (certificate server enabled), start the rest of the lab (R1..R*n*). Clients need the CA to be up for SCEP enrollment and authentication.
+**CA server boot order:** When using `--pki`, CA-ROOT must be online before enrolling routers. With `--cml-version 0.3.1` or later, TopoGen **auto-enables node staging** when `--pki` is set (CA-ROOT boots first via priority 900) — you do not need a separate `--staging` flag. Pass `--no-staging` to boot all nodes simultaneously. On older schemas (`--cml-version < 0.3.1`), staging is skipped with a warning; bring CA-ROOT online manually before R1..R*n*.
 
-**Node staging (`--staging`):** CML 2.10 (schema `0.3.1`) supports automated boot ordering via node staging. Use `--staging` with `--cml-version 0.3.1` to embed boot priorities in the offline YAML. Priority tiers (higher boots first):
+**Node staging (`--staging` / `--pki`):** CML 2.10 (schema `0.3.1`) supports automated boot ordering via node staging. Use `--staging` with `--cml-version 0.3.1`, or use `--pki` (staging is auto-enabled unless `--no-staging`). Priority tiers (higher boots first):
 
 | Priority | Node type |
 |----------|-----------|
@@ -797,13 +910,19 @@ Note: defaults (`--device-template`, `--flat-group-size`, `--cml-version`) are r
 | 800 | Key Server (KS, when `--getvpn`), DMVPN hubs |
 | *(none)* | All other routers — boot via "Start Remaining Nodes" |
 
-Example:
+Example (explicit staging, non-PKI lab):
 
 ```powershell
 topogen -m flat-pair -T iosv-eigrp --cml-version 0.3.1 --staging --offline-yaml out/staging-lab.yaml 10
 ```
 
-When `--staging` is used with `--cml-version < 0.3.1`, a warning is logged and the flag is ignored.
+Example (PKI lab — staging auto-enabled; use `--cml-version 0.3.1`):
+
+```powershell
+topogen -m dmvpn -T csr-dmvpn --device-template csr1000v --pki --dmvpn-security ikev2-pki --cml-version 0.3.1 --offline-yaml out/pki-staged.yaml --overwrite 4
+```
+
+When staging is requested (via `--staging` or `--pki`) with `--cml-version < 0.3.1`, a warning is logged and staging is omitted.
 
 > **CML 2.10 import note:** CML includes `node_staging` in exported YAML but does not apply the lab-level enable switch on import — per-node priorities are imported, but "Enable Node Staging" remains off. When using `--up` or `--import`, topogen enables node staging automatically via the CML API after import. For manual UI imports, enable "Node Staging" in the lab settings dialog after importing.
 
@@ -976,7 +1095,7 @@ python -m topogen -T iosv -m nx --device-template iosv --blank -i -L "blank-nx-1
 - `--blank` works with simple, nx, flat, and flat-pair modes. It is not supported with DMVPN mode.
 - `--blank` cannot be combined with `--pki` or `--getvpn` (Bootstrap Lab cannot generate PKI or GET VPN configs).
 - Config-only flags are also rejected: `--ntp`, `--ntp-vrf`, `--ntp-inband`, `--ntp-oob`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf` (no configs are rendered, so these have no effect).
-- Topology flags (`--mgmt`, `--mgmt-bridge`, `--flat-group-size`, `--staging`, `--distance`, etc.) remain allowed.
+- Topology flags (`--mgmt`, `--mgmt-bridge`, `--flat-group-size`, `--staging`, `--no-staging`, `--distance`, etc.) remain allowed.
 - Unmanaged switches and external connectors are not affected — they never carry configuration.
 
 ## Examples

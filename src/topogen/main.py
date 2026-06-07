@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.6.1
-# Date Modified: 2026-06-03
+# Doc Version: v1.9.2
+# Date Modified: 2026-06-07
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -80,27 +80,11 @@ def validate_nodes_for_mode(args, parser):
 
 
 def validate_nac_mvp_guardrails(args, parser):
-    """Fail-fast guardrails for NaC MVP CLI combinations."""
+    """Fail-fast guardrails for NaC CLI combinations."""
     if not getattr(args, "nac", False):
         return
     if not getattr(args, "offline_yaml", None):
         parser.error("--nac requires --offline-yaml FILE (offline generation path)")
-    allowed_shapes = {
-        ("simple", 1),
-        ("simple", 2),
-        ("nx", 2),
-        ("flat", 2),
-        ("flat-pair", 2),
-    }
-    if (args.mode, args.nodes) not in allowed_shapes:
-        parser.error(
-            "--nac MVP currently supports only: "
-            "nodes=1 --mode simple --offline-yaml FILE OR "
-            "nodes=2 --mode simple --offline-yaml FILE OR "
-            "nodes=2 --mode nx --offline-yaml FILE OR "
-            "nodes=2 --mode flat --offline-yaml FILE OR "
-            "nodes=2 --mode flat-pair --offline-yaml FILE"
-        )
     dev_template = getattr(args, "dev_template", "iosv")
     if dev_template not in SUPPORTED_NAC_DEVICE_TEMPLATES:
         node_names = [f"R{i}" for i in range(1, int(args.nodes or 0) + 1)]
@@ -110,10 +94,42 @@ def validate_nac_mvp_guardrails(args, parser):
             + "; ".join(unsupported)
             + ". Supported IOS-XE device templates: iosv, csr1000v."
         )
-    if getattr(args, "do_import", False) or getattr(args, "import_yaml", None) or getattr(args, "up", None):
-        parser.error("--nac MVP does not support import workflow flags (--import/--import-yaml/--up)")
+    if (
+        getattr(args, "do_import", False)
+        or getattr(args, "import_yaml", None)
+        or getattr(args, "up", None)
+    ):
+        parser.error(
+            "--nac requires local offline generation; "
+            "import workflow flags are not supported (--import/--import-yaml/--up)"
+        )
     if getattr(args, "yaml_output", None):
-        parser.error("--nac MVP does not support --yaml online export; use --offline-yaml")
+        parser.error(
+            "--nac requires local offline generation; "
+            "use --offline-yaml instead of --yaml online export"
+        )
+
+
+def validate_cml2_lifecycle_guardrails(args, parser):
+    """Fail-fast guardrails for CML2 Terraform lifecycle scaffold generation."""
+    if not getattr(args, "terraform_cml2", False):
+        return
+    if not getattr(args, "offline_yaml", None):
+        parser.error("--terraform-cml2 requires --offline-yaml FILE (offline generation path)")
+    if (
+        getattr(args, "do_import", False)
+        or getattr(args, "import_yaml", None)
+        or getattr(args, "up", None)
+    ):
+        parser.error(
+            "--terraform-cml2 requires local offline generation; "
+            "import workflow flags are not supported (--import/--import-yaml/--up)"
+        )
+    if getattr(args, "yaml_output", None):
+        parser.error(
+            "--terraform-cml2 requires local offline generation; "
+            "use --offline-yaml instead of --yaml online export"
+        )
 
 
 def normalize_template_inputs(args):
@@ -556,7 +572,15 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="staging",
         action="store_true",
         default=False,
-        help="Enable CML 2.10 node staging for boot ordering (requires --cml-version >= 0.3.1)",
+        help="Enable CML 2.10 node staging for boot ordering (requires --cml-version >= 0.3.1). "
+        "Also enabled automatically when --pki is used unless --no-staging is set.",
+    )
+    parser.add_argument(
+        "--no-staging",
+        dest="no_staging",
+        action="store_true",
+        default=False,
+        help="Disable node staging even when --pki would auto-enable it; also disables --staging",
     )
     parser.add_argument(
         "--no-abort-on-failure",
@@ -617,7 +641,15 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="nac",
         action="store_true",
         default=False,
-        help="Enable NaC MVP guardrails (offline paths: one-router simple, two-router simple/nx/flat/flat-pair)",
+        help="Enable NaC artifacts for offline YAML generation (requires IOS-XE router templates)",
+    )
+    parser.add_argument(
+        "--terraform-cml2",
+        "--cml2",
+        dest="terraform_cml2",
+        action="store_true",
+        default=False,
+        help="Enable Terraform lifecycle scaffold generation for offline CML2 labs",
     )
     parser.add_argument(
         "--overwrite",
@@ -625,6 +657,14 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         action="store_true",
         default=False,
         help="Allow overwriting an existing output file when using --offline-yaml",
+    )
+    parser.add_argument(
+        "--intent-spot",
+        dest="intent_spot",
+        action="store_true",
+        default=False,
+        help="Add INTENT-SPOT debug unmanaged_switch at intent annotation coordinates for "
+        "visual QA in CML Workbench (no router license; online and offline; not for production)",
     )
     parser.add_argument(
         "--import-yaml",
@@ -678,7 +718,7 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         "nodes",
         nargs="?",
         type=valid_node_count,
-        help="Number of nodes to generate (2-1000; --nac MVP also allows nodes=1 simple and nodes=2 simple/flat/flat-pair)",
+        help="Number of nodes to generate (2-1000; --nac offline generation also allows 1 where supported by the selected mode)",
     )
     parser.add_argument(
         "--allow-oversubscribe",
@@ -725,6 +765,31 @@ def setup_logging(loglevel: str):
         handler.setFormatter(custom_formatter)
     if unknown_loglevel:
         _LOGGER.warning("Unknown log level: %s", loglevel.upper())
+
+
+def _cml_version_tuple(version: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in version.split("."))
+
+
+def resolve_staging_flags(args) -> None:
+    """Apply PKI auto-staging defaults and CML version guardrails to args.staging (TG-165)."""
+    if getattr(args, "no_staging", False):
+        args.staging = False
+    elif getattr(args, "pki_enabled", False) and not getattr(args, "staging", False):
+        args.staging = True
+        _LOGGER.warning(
+            "Enabling node staging for --pki so CA-ROOT boots before enrolling routers. "
+            "Pass --no-staging to disable."
+        )
+
+    if getattr(args, "staging", False):
+        if _cml_version_tuple(getattr(args, "cml_version", "0.3.0")) < (0, 3, 1):
+            _LOGGER.warning("--staging ignored: requires --cml-version >= 0.3.1")
+            args.staging = False
+            if getattr(args, "pki_enabled", False) and not getattr(args, "no_staging", False):
+                _LOGGER.warning(
+                    "PKI lab will boot all nodes simultaneously; CA may not be ready for enrollment."
+                )
 
 
 def main():
@@ -775,6 +840,7 @@ def main():
         validate_nodes_for_mode(args, parser)
         args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
         validate_nac_mvp_guardrails(args, parser)
+        validate_cml2_lifecycle_guardrails(args, parser)
 
         if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-psk":
             psk = getattr(args, "dmvpn_psk", None)
@@ -858,11 +924,7 @@ def main():
             if args.mode not in ("flat", "flat-pair", "dmvpn"):
                 parser.error("--getvpn requires mode flat, flat-pair, or dmvpn")
 
-        # Validate --staging flags
-        if getattr(args, "staging", False):
-            if tuple(int(x) for x in getattr(args, "cml_version", "0.3.0").split(".")) < (0, 3, 1):
-                _LOGGER.warning("--staging ignored: requires --cml-version >= 0.3.1")
-                args.staging = False
+        resolve_staging_flags(args)
 
         # Validate mgmt flags
         if getattr(args, "enable_mgmt", False):

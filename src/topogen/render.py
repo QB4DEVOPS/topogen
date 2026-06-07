@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.2.13
-# Date Modified: 2026-06-03
+# Doc Version: v1.3.7
+# Date Modified: 2026-06-07
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -110,6 +110,7 @@ from virl2_client import ClientLibrary, InitializationError
 from virl2_client.models import Interface, Lab, Node
 
 from topogen import templates
+from topogen.cml2 import write_cml2_lifecycle_scaffold
 from topogen.config import Config
 from topogen.dnshost import dnshostconfig
 from topogen.lxcfrr import lxcfrr_bootconfig
@@ -142,14 +143,65 @@ except Exception:  # pragma: no cover - best effort
     TOPGEN_VERSION = "unknown"
 
 
-def _intent_annotation_lines(intent: str, version: str = "0.3.0") -> list[str]:
+INTENT_ANNOTATION_PADDING = 1500
+CML_COORD_LIMIT = 15000
+
+
+def _node_coords_from_offline_lines(lines: list[str]) -> list[tuple[int, int]]:
+    """Collect node x/y pairs from generated offline YAML lines (nodes: section only)."""
+    coords: list[tuple[int, int]] = []
+    in_nodes = False
+    pending_x: int | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "nodes:":
+            in_nodes = True
+            continue
+        if in_nodes and stripped == "links:":
+            break
+        if not in_nodes:
+            continue
+        if stripped.startswith("x:"):
+            pending_x = int(stripped.split(":", 1)[1].strip())
+        elif stripped.startswith("y:") and pending_x is not None:
+            coords.append((pending_x, int(stripped.split(":", 1)[1].strip())))
+            pending_x = None
+    return coords
+
+
+def _scaled_intent_annotation_xy(
+    node_coords: list[tuple[int, int]],
+    padding: int = INTENT_ANNOTATION_PADDING,
+) -> tuple[int, int]:
+    """Place hidden intent annotation directly below the topology (down only, no x padding)."""
+    if not node_coords:
+        return 0, padding
+    max_x = max(x for x, _ in node_coords)
+    max_y = max(y for _, y in node_coords)
+    return (
+        min(max_x, CML_COORD_LIMIT),
+        min(max_y + padding, CML_COORD_LIMIT),
+    )
+
+
+def _intent_annotation_lines(
+    intent: str,
+    version: str = "0.3.0",
+    *,
+    offline_lines: list[str] | None = None,
+    node_coords: list[tuple[int, int]] | None = None,
+) -> list[str]:
     """Return YAML lines for annotations + smart_annotations with one hidden intent annotation.
 
-    Embeds intent at x=-9999, y=-9999 (off-canvas) for CI/CD to grep. Same intent is also
-    in lab.notes inside a hidden HTML span (visible in YAML/grep, not in CML guide).
+    Embeds intent at max(node x), max(node y)+padding (below the topology, not offset right).
+    Same intent is also in
+    lab.notes inside a hidden HTML span (visible in YAML/grep, not in CML guide).
 
     smart_annotations is omitted for schema versions <= 0.2.2 (CML 2.7 and earlier).
     """
+    if node_coords is None and offline_lines is not None:
+        node_coords = _node_coords_from_offline_lines(offline_lines)
+    x1, y1 = _scaled_intent_annotation_xy(node_coords or [])
     content = intent.replace("'", "''")
     lines = [
         "annotations:",
@@ -165,8 +217,8 @@ def _intent_annotation_lines(intent: str, version: str = "0.3.0") -> list[str]:
         "    text_unit: pt",
         "    thickness: 1",
         "    type: text",
-        "    x1: -9999",
-        "    y1: -9999",
+        f"    x1: {x1}",
+        f"    y1: {y1}",
         "    z_index: 0",
     ]
     if tuple(int(x) for x in version.split(".")) > (0, 2, 2):
@@ -174,17 +226,292 @@ def _intent_annotation_lines(intent: str, version: str = "0.3.0") -> list[str]:
     return lines
 
 
+INTENT_SPOT_NODE_DEF = "unmanaged_switch"
+
+
+def _intent_marker_node_lines(x: int, y: int, node_id: str = "n_intent_spot") -> list[str]:
+    """Visible marker switch at the hidden intent annotation coordinates (no router license)."""
+    return [
+        f"  - id: {node_id}",
+        "    label: INTENT-SPOT",
+        f"    node_definition: {INTENT_SPOT_NODE_DEF}",
+        f"    x: {x}",
+        f"    y: {y}",
+        "    interfaces:",
+        "      - id: i0",
+        "        slot: 0",
+        "        label: port0",
+        "        type: physical",
+    ]
+
+
+def _insert_intent_marker_node(lines: list[str], x: int, y: int) -> list[str]:
+    """Insert INTENT-SPOT unmanaged_switch node immediately before the links: section."""
+    marker = _intent_marker_node_lines(x, y)
+    out: list[str] = []
+    inserted = False
+    for line in lines:
+        if not inserted and line.strip() == "links:":
+            out.extend(marker)
+            inserted = True
+        out.append(line)
+    if not inserted:
+        out.extend(marker)
+    return out
+
+
+def _finalize_offline_yaml_with_intent(
+    lines: list[str],
+    intent: str,
+    version: str,
+    args: Namespace,
+) -> list[str]:
+    """Prepend scaled intent annotation; optional INTENT-SPOT switch when --intent-spot."""
+    coords = _node_coords_from_offline_lines(lines)
+    x1, y1 = _scaled_intent_annotation_xy(coords)
+    if getattr(args, "intent_spot", False):
+        lines = _insert_intent_marker_node(lines, x1, y1)
+    return _intent_annotation_lines(intent, version, node_coords=coords) + lines
+
+
+def _intent_notes_html(intent: str) -> str:
+    """Hidden HTML span for lab.notes (invisible in CML guide, grep-friendly in YAML/export)."""
+    hidden_content = html_module.escape(intent)
+    return f'<span style="color: white; font-size: 1pt; opacity: 0;">{hidden_content}</span>'
+
+
 def _intent_notes_lines(intent: str) -> list[str]:
     """Return YAML lines for lab.notes: all content in white/hidden span so GUIDE shows nothing.
 
     Entire notes are invisible (color: white; opacity: 0). CI/CD can grep the YAML for the intent.
     """
-    hidden_content = html_module.escape(intent)
-    hidden_span = f'<span style="color: white; font-size: 1pt; opacity: 0;">{hidden_content}</span>'
     return [
         "  notes: |-",
-        f"    {hidden_span}",
+        f"    {_intent_notes_html(intent)}",
     ]
+
+
+def _node_coords_from_cml_lab(lab: Lab) -> list[tuple[int, int]]:
+    """Collect canvas x/y from live CML nodes for scaled intent placement."""
+    coords: list[tuple[int, int]] = []
+    for node in lab.nodes():
+        try:
+            coords.append((int(node.x), int(node.y)))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return coords
+
+
+def _build_intent_description(args: Namespace, *, context: str) -> str:
+    """Build provenance string for lab description (online API and offline YAML)."""
+    args_bits: list[str] = [
+        f"nodes={args.nodes}",
+        f"-m {args.mode}",
+        f"-T {args.template}",
+    ]
+    dev_def = getattr(args, "dev_template", args.template)
+    if dev_def != args.template:
+        args_bits.append(f"--device-template {dev_def}")
+    if getattr(args, "enable_vrf", False):
+        args_bits.append("--vrf")
+        if getattr(args, "pair_vrf", None):
+            args_bits.append(f"--pair-vrf {args.pair_vrf}")
+    if str(args.mode).startswith("flat"):
+        args_bits.append(f"--flat-group-size {args.flat_group_size}")
+        if getattr(args, "loopback_255", False):
+            args_bits.append("--loopback-255")
+        if getattr(args, "gi0_zero", False):
+            args_bits.append("--gi0-zero")
+    if getattr(args, "enable_mgmt", False):
+        args_bits.append("--mgmt")
+        if getattr(args, "mgmt_vrf", None):
+            args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
+        if getattr(args, "mgmt_bridge", False):
+            args_bits.append("--mgmt-bridge")
+    if getattr(args, "ntp_server", None):
+        args_bits.append(f"--ntp {args.ntp_server}")
+        if getattr(args, "ntp_vrf", None):
+            args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
+    if getattr(args, "start_lab", False):
+        args_bits.append("--start")
+    cml_ver = getattr(args, "cml_version", None)
+    if cml_ver:
+        args_bits.append(f"--cml-version {cml_ver}")
+    if getattr(args, "staging", False):
+        args_bits.append("--staging")
+    if getattr(args, "yaml_output", None):
+        args_bits.append(f"--yaml {str(args.yaml_output).replace(chr(92), '/')}")
+    _append_common_offline_args_bits(args_bits, args)
+    if getattr(args, "labname", None):
+        args_bits.append(f"-L {args.labname}")
+    if getattr(args, "offline_yaml", None):
+        args_bits.append(
+            f"--offline-yaml {str(args.offline_yaml).replace(chr(92), '/')}"
+        )
+    desc = (
+        f"Generated by topogen v{TOPGEN_VERSION} ({context}) | args: "
+        + " ".join(args_bits)
+    )
+    if getattr(args, "remark", None):
+        desc += f" | remark: {args.remark}"
+    return desc
+
+
+def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None:
+    """Append offline artifact flags shared by provenance metadata builders."""
+    if getattr(args, "nac", False):
+        args_bits.append("--nac")
+    if getattr(args, "terraform_cml2", False):
+        args_bits.append("--terraform-cml2")
+    cafile = getattr(args, "cafile", None)
+    if cafile:
+        args_bits.append(f"--ca {cafile}")
+    if getattr(args, "pki_enabled", False) and not any(
+        b == "--pki" or b.startswith("--pki ") for b in args_bits
+    ):
+        args_bits.append("--pki")
+    if getattr(args, "enable_mgmt", False) and not any(
+        b == "--mgmt" or b.startswith("--mgmt") for b in args_bits
+    ):
+        args_bits.append("--mgmt")
+    if getattr(args, "intent_spot", False):
+        args_bits.append("--intent-spot")
+
+
+def _offline_ca_mgmt_scep_url(args: object, total_routers: int) -> str:
+    """SCEP URL for CA-ROOT on the OOB mgmt fabric (simple/nx offline)."""
+    mgmt_net = IPv4Network(str(getattr(args, "mgmt_cidr", "10.254.0.0/16")), strict=False)
+    ca_ip = mgmt_net.network_address + total_routers + 1
+    return f"http://{ca_ip}:80"
+
+
+def _emit_offline_ca_root_mgmt_node(
+    env: Environment,
+    cfg: Config,
+    args: Namespace,
+    lines: list[str],
+    node_ids: dict[str, str],
+    nid: int,
+    tpl,
+    enable_mgmt: bool,
+    mgmt_slot: int,
+    staging: bool,
+    total_routers: int,
+    distance: int,
+) -> int:
+    """Append CA-ROOT (CSR1000v) for offline simple/nx labs using OOB mgmt reachability."""
+    ca_label = "CA-ROOT"
+    node_ids[ca_label] = f"n{nid}"
+    nid += 1
+    ca_scep_url = _offline_ca_mgmt_scep_url(args, total_routers)
+    ca_ip = ca_scep_url.split("://", 1)[1].rsplit(":", 1)[0]
+    mgmt_net = IPv4Network(str(getattr(args, "mgmt_cidr", "10.254.0.0/16")), strict=False)
+    ca_mgmt_addr = IPv4Interface(f"{ca_ip}/{mgmt_net.prefixlen}")
+
+    template_name = getattr(args, "template", "iosv")
+    if "ospf" in template_name or template_name == "iosv":
+        ca_template_name = "csr-ospf"
+    elif "eigrp" in template_name:
+        ca_template_name = "csr-eigrp"
+    else:
+        ca_template_name = "csr-eigrp"
+    try:
+        ca_base_tpl = env.get_template(f"{ca_template_name}{Renderer.J2SUFFIX}")
+    except TemplateNotFound:
+        ca_base_tpl = tpl
+
+    ca_node = TopogenNode(
+        hostname=ca_label,
+        loopback=IPv4Interface(f"{ca_ip}/32"),
+        interfaces=[
+            TopogenInterface(
+                address=ca_mgmt_addr,
+                description="=== SCEP Enrollment URL (OOB) ===",
+                slot=mgmt_slot - 1,
+            )
+        ],
+    )
+    ca_mgmt_ctx = None
+    if enable_mgmt:
+        ca_mgmt_ctx = {
+            "enabled": True,
+            "slot": mgmt_slot,
+            "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+            "gw": getattr(args, "mgmt_gw", None),
+        }
+    ca_ntp_ctx = None
+    if getattr(args, "ntp_server", None):
+        ca_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
+    ca_ntp_oob_ctx = None
+    if getattr(args, "ntp_oob_server", None):
+        ca_ntp_oob_ctx = {
+            "server": args.ntp_oob_server,
+            "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
+        }
+    ca_base_config = ca_base_tpl.render(
+        config=cfg,
+        node=ca_node,
+        date=datetime.now(timezone.utc),
+        origin="",
+        mgmt=ca_mgmt_ctx,
+        ntp=ca_ntp_ctx,
+        ntp_oob=ca_ntp_oob_ctx,
+        archive=getattr(args, "archive", False),
+    )
+    ca_config_lines = ca_base_config.rstrip().split("\n")
+    if ca_config_lines and ca_config_lines[-1].strip() == "end":
+        ca_config_lines.pop()
+    for i, line in enumerate(ca_config_lines):
+        if line.strip() == "crypto key generate rsa modulus 2048":
+            ca_config_lines[i] = "crypto key generate rsa modulus 2048 label CA-ROOT.server"
+            break
+    pki_config_lines = [
+        "ntp master 6",
+        "!",
+        "ip http server",
+        "!",
+        "crypto pki server CA-ROOT",
+        " database level complete",
+        " no database archive",
+        " grant auto",
+        " lifetime certificate 7300",
+        " lifetime ca-certificate 7300",
+        " database url flash:",
+        " no shutdown",
+        "!",
+    ]
+    non_eem_block = (
+        pki_config_lines
+        + _pki_ca_self_enroll_block_lines("CA-ROOT", cfg.domainname, ca_scep_url)
+        + ["alias exec servcerts sh crypto pki server CA-ROOT cer", "!"]
+    )
+    try:
+        eem_idx = next(
+            i for i, line in enumerate(ca_config_lines) if line.strip().startswith("event manager")
+        )
+    except StopIteration:
+        eem_idx = len(ca_config_lines)
+    ca_config_lines[eem_idx:eem_idx] = non_eem_block
+    ca_config_lines.extend(_pki_ca_authenticate_eem_lines())
+    ca_config_lines.append("end")
+    ca_rendered = "\n".join(ca_config_lines)
+
+    ca_x = -distance * 3
+    lines.append(f"  - id: {node_ids[ca_label]}")
+    lines.append(f"    label: {ca_label}")
+    lines.append("    node_definition: csr1000v")
+    if staging:
+        lines.append(f"    priority: {STAGING_PRIORITY_CA_ROOT}")
+    lines.append(f"    x: {ca_x}")
+    lines.append("    y: 0")
+    lines.append("    interfaces:")
+    csr_slot = mgmt_slot - 1
+    lines.append(f"      - id: i{csr_slot}")
+    lines.append(f"        slot: {csr_slot}")
+    lines.append(f"        label: GigabitEthernet{mgmt_slot}")
+    lines.append("        type: physical")
+    _emit_config(lines, ca_rendered, getattr(args, "blank", False))
+    return nid
 
 
 STAGING_PRIORITY_EXT_CONN_OOB = 1000
@@ -218,17 +545,21 @@ def _emit_config(lines: list[str], rendered: str, blank: bool) -> None:
             lines.append(f"      {ln}")
 
 
-def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -> tuple[Path, Path | None]:
+def resolve_offline_artifact_paths(
+    offline_yaml: str,
+    nac_enabled: bool = False,
+    cml2_enabled: bool = False,
+) -> tuple[Path, Path | None, Path | None]:
     """Resolve deterministic offline output paths.
 
-    Non-NaC behavior is unchanged (returns the original offline YAML path).
-    NaC MVP behavior normalizes output so CML YAML stays at the lab root and
-    all NaC/Ansible artifacts share the returned nac_root:
-      <parent>/<lab>/<lab>.yaml and <parent>/<lab>/nac/
+    Plain offline behavior is unchanged (returns the original offline YAML path).
+    Optional artifact flows normalize output so CML YAML stays at the lab root
+    and each scaffold has a separate directory:
+      <parent>/<lab>/<lab>.yaml, <parent>/<lab>/nac/, and/or <parent>/<lab>/cml2/
     """
     raw = Path(offline_yaml)
-    if not nac_enabled:
-        return raw, None
+    if not nac_enabled and not cml2_enabled:
+        return raw, None, None
 
     lab_name = raw.stem if raw.suffix else raw.name
     # Avoid duplicate nesting on reruns if caller already passed out/<lab>/<lab>.yaml
@@ -236,19 +567,45 @@ def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -
         lab_root = raw.parent
     else:
         lab_root = raw.parent / lab_name
-    return lab_root / f"{lab_name}.yaml", lab_root / "nac"
+    return (
+        lab_root / f"{lab_name}.yaml",
+        lab_root / "nac" if nac_enabled else None,
+        lab_root / "cml2" if cml2_enabled else None,
+    )
+
+
+def resolve_offline_output_paths(offline_yaml: str, nac_enabled: bool = False) -> tuple[Path, Path | None]:
+    """Resolve deterministic offline CML YAML and NaC output paths."""
+    outfile, nac_root, _ = resolve_offline_artifact_paths(
+        offline_yaml,
+        nac_enabled=nac_enabled,
+        cml2_enabled=False,
+    )
+    return outfile, nac_root
+
+
+def write_cml2_lifecycle_if_enabled(args: Namespace, outfile: Path, cml2_root: Path | None) -> None:
+    """Write CML2 Terraform lifecycle scaffold when requested."""
+    if cml2_root is None:
+        return
+    written = write_cml2_lifecycle_scaffold(
+        cml2_root,
+        topology_file=outfile.name,
+        overwrite=bool(getattr(args, "overwrite", False)),
+    )
+    _LOGGER.warning("CML2 Terraform lifecycle scaffold written to %s", written[0].parent)
 
 
 def _nac_unsupported_template_reason(device_template: str) -> str:
     reasons = {
         "asa": "ASA is not an IOS-XE device",
-        "iol": "IOL is not in the supported IOS-XE MVP template set",
+        "iol": "IOL is not in the supported IOS-XE template set",
         "lxc": "FRR/LXC/Linux containers are not IOS-XE devices",
         "ubuntu": "Ubuntu/Linux nodes are not IOS-XE devices",
     }
     return reasons.get(
         str(device_template).lower(),
-        "device template is not in the supported IOS-XE MVP template set",
+        "device template is not in the supported IOS-XE template set",
     )
 
 
@@ -280,6 +637,42 @@ def validate_nac_supported_iosxe_nodes(
             + "; ".join(unsupported)
             + ". Supported IOS-XE device templates: iosv, csr1000v."
         )
+
+
+def _validate_nac_router_nodes_if_enabled(
+    nac_root: Path | None,
+    nodes: list[TopogenNode],
+    device_template: str,
+) -> None:
+    """Validate NaC router nodes before writing any offline artifacts."""
+    if nac_root is None:
+        return
+    validate_nac_supported_iosxe_nodes(nodes, device_template)
+
+
+def _write_nac_tree_if_enabled(
+    *,
+    nac_root: Path | None,
+    nodes: list[TopogenNode],
+    device_template: str,
+    template: str,
+    mode: str,
+    args: Namespace,
+) -> Path | None:
+    """Write a sibling nac/ tree when the offline path requested NaC artifacts."""
+    if nac_root is None or not nodes:
+        return None
+    nac_file = write_nac_tree(
+        nac_root=nac_root,
+        nodes=nodes,
+        device_template=device_template,
+        template=template,
+        mode=mode,
+        args=args,
+        overwrite=getattr(args, "overwrite", False),
+    )
+    _LOGGER.warning("NaC canonical output written to %s", nac_file)
+    return nac_file
 
 
 def _nac_restconf_lines() -> list[str]:
@@ -921,46 +1314,6 @@ class Renderer:
         self.lab = self.client.create_lab(args.labname)
         _LOGGER.info("lab: %s", self.lab.id)
 
-        # Populate lab description online with version and key flags (best-effort, ignore errors)
-        try:
-            args_bits: list[str] = [f"nodes={args.nodes}", f"-m {args.mode}", f"-T {args.template}"]
-            dev_def = getattr(args, "dev_template", args.template)
-            if dev_def != args.template:
-                args_bits.append(f"--device-template {dev_def}")
-            if getattr(args, "enable_vrf", False):
-                args_bits.append("--vrf")
-                if getattr(args, "pair_vrf", None):
-                    args_bits.append(f"--pair-vrf {args.pair_vrf}")
-            if str(args.mode).startswith("flat"):
-                args_bits.append(f"--flat-group-size {args.flat_group_size}")
-                if getattr(args, "loopback_255", False):
-                    args_bits.append("--loopback-255")
-                if getattr(args, "gi0_zero", False):
-                    args_bits.append("--gi0-zero")
-            if getattr(args, "enable_mgmt", False):
-                args_bits.append("--mgmt")
-                if getattr(args, "mgmt_vrf", None):
-                    args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
-                if getattr(args, "mgmt_bridge", False):
-                    args_bits.append("--mgmt-bridge")
-            if getattr(args, "ntp_server", None):
-                args_bits.append(f"--ntp {args.ntp_server}")
-                if getattr(args, "ntp_vrf", None):
-                    args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
-            if getattr(args, "start_lab", False):
-                args_bits.append("--start")
-            desc = (
-                f"Generated by topogen v{TOPGEN_VERSION} (online) | args: " + " ".join(args_bits)
-            )
-            if getattr(args, "remark", None):
-                desc += f" | remark: {args.remark}"
-            if hasattr(self.lab, "description"):
-                setattr(self.lab, "description", desc)  # type: ignore[attr-defined]
-            elif hasattr(self.lab, "set_notes"):
-                getattr(self.lab, "set_notes")(desc)  # type: ignore[misc]
-        except Exception:  # pragma: no cover - best effort only
-            pass
-
         # these will be /32 addresses
         self.loopbacks = IPv4Network(cfg.loopbacks).subnets(
             prefixlen_diff=IPV4LENGTH - cfg.loopbacks.prefixlen
@@ -1144,6 +1497,39 @@ class Renderer:
         for key, value in pos.items():
             graph.nodes[key]["pos"] = Point(int(value[0]), int(value[1]))
         return graph
+
+    def _apply_online_lab_intent(self) -> None:
+        """Set description, hidden notes, scaled annotation; optional INTENT-SPOT node."""
+        try:
+            context = f"online, {self.args.mode}"
+            desc = _build_intent_description(self.args, context=context)
+            coords = _node_coords_from_cml_lab(self.lab)
+            x1, y1 = _scaled_intent_annotation_xy(coords)
+
+            self.lab.description = desc
+            self.lab.notes = _intent_notes_html(desc)
+            self.lab.create_annotation(
+                "text",
+                border_color="#FFFFFF",
+                border_style="",
+                color="#FFFFFF",
+                rotation=0,
+                text_bold=False,
+                text_content=desc,
+                text_font="monospace",
+                text_italic=False,
+                text_size=1,
+                text_unit="pt",
+                thickness=1,
+                x1=x1,
+                y1=y1,
+                z_index=0,
+            )
+
+            if getattr(self.args, "intent_spot", False):
+                self.create_node("INTENT-SPOT", INTENT_SPOT_NODE_DEF, Point(x1, y1))
+        except Exception as exc:  # pragma: no cover - best effort only
+            _LOGGER.warning("Online intent metadata failed (best-effort): %s", exc)
 
     def create_node(self, label: str, node_def: str, coords=Point(0, 0)):
         """create a CML2 node with the given attributes"""
@@ -1469,6 +1855,8 @@ class Renderer:
             nprog.close()  # type: ignore
             manager.stop()  # type: ignore
 
+        self._apply_online_lab_intent()
+
         # Print lab URL
         import os
         base_url = os.environ.get('VIRL2_URL', self.client.url if hasattr(self.client, 'url') else 'http://localhost').rstrip('/')
@@ -1687,6 +2075,8 @@ class Renderer:
             hubs_str,
         )
 
+        self._apply_online_lab_intent()
+
         outfile = getattr(self.args, "yaml_output", None)
         if outfile:
             try:
@@ -1889,6 +2279,8 @@ class Renderer:
             hubs_str,
         )
 
+        self._apply_online_lab_intent()
+
         outfile = getattr(self.args, "yaml_output", None)
         if outfile:
             try:
@@ -2081,6 +2473,7 @@ class Renderer:
             _LOGGER.info("pair-link: R%d Gi0/1 <-> R%d Gi0/0", odd, even)
 
         _LOGGER.warning("Flat-pair management network created")
+        self._apply_online_lab_intent()
         return 0
 
     @staticmethod
@@ -2140,6 +2533,13 @@ class Renderer:
                 f"DMVPN tunnel CIDR {tunnel_net} is too small for {total_routers} routers"
             )
 
+        nac_enabled = bool(getattr(args, "nac", False))
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
+        )
         dev_def = getattr(args, "dev_template", args.template)
 
         def iface_label_for_slot(slot: int) -> str:
@@ -2195,6 +2595,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
 
@@ -2432,6 +2833,7 @@ class Renderer:
         l_base = "10.255" if getattr(args, "loopback_255", False) else "10.20"
 
         # Routers
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total_routers):
             n = idx + 1
             label = f"R{n}"
@@ -2455,6 +2857,16 @@ class Renderer:
                     TopogenInterface(address=tunnel_ip, description="dmvpn tunnel", slot=1000),
                 ],
             )
+            nac_node = TopogenNode(
+                hostname=label,
+                loopback=loopback_ip,
+                interfaces=[
+                    TopogenInterface(address=nbma_ip, description="dmvpn nbma", slot=0),
+                    TopogenInterface(address=tunnel_ip, description="dmvpn tunnel", slot=1000),
+                ],
+            )
+            _append_nac_mgmt_interface(nac_node, args, n)
+            nac_router_nodes.append(nac_node)
 
             # Build mgmt context for template
             mgmt_ctx = None
@@ -2510,6 +2922,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             # Flat-like placement
             sw_index = idx // group
@@ -2853,18 +3267,29 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn) written to %s (%.1f KB)", outfile, size_kb)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -2960,6 +3385,13 @@ class Renderer:
                 leave=False,
             )
 
+        nac_enabled = bool(getattr(args, "nac", False))
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
+            getattr(args, "offline_yaml"),
+            nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
+        )
         dev_def = getattr(args, "dev_template", args.template)
 
         def iface_label_for_slot(slot: int) -> str:
@@ -3016,6 +3448,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -3206,6 +3639,7 @@ class Renderer:
                 IPv4Interface(f"{hosts[1]}/{p2pnet.netmask}"),
             )
 
+        nac_router_nodes: list[TopogenNode] = []
         for idx in range(total_routers):
             rnum = idx + 1
             label = f"R{rnum}"
@@ -3250,6 +3684,8 @@ class Renderer:
                         TopogenInterface(address=tun_ip, description="dmvpn tunnel", slot=1000),
                     ],
                 )
+                _append_nac_mgmt_interface(node, args, rnum)
+                nac_router_nodes.append(node)
                 rendered = dmvpn_tpl.render(
                     config=cfg,
                     node=node,
@@ -3277,6 +3713,8 @@ class Renderer:
                     loopback=loopback_ip,
                     interfaces=[TopogenInterface(address=pair_ip, description="pair link", slot=0)],
                 )
+                _append_nac_mgmt_interface(node, args, rnum)
+                nac_router_nodes.append(node)
                 rendered = eigrp_tpl.render(
                     config=cfg,
                     node=node,
@@ -3302,6 +3740,8 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
+            if nac_enabled:
+                rendered = _inject_nac_restconf_day0(rendered)
 
             sw_index = ((rnum - 1) // 2) // group
             x = min(max_coord, (sw_index + 1) * sw_step_x)
@@ -3676,18 +4116,29 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        outfile = Path(getattr(args, "offline_yaml"))
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
+        if nac_root is not None:
+            nac_root.mkdir(parents=True, exist_ok=True)
         if outfile.exists() and not getattr(args, "overwrite", False):
             raise TopogenError(
                 f"Refusing to overwrite existing file: {outfile}. Use --overwrite to replace it."
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (dmvpn, flat-pair) written to %s (%.1f KB)", outfile, size_kb)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
 
         if ticks:
             ticks.close()  # type: ignore
@@ -3719,9 +4170,11 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
@@ -3799,6 +4252,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -4406,8 +4860,7 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -4417,21 +4870,19 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat) written to %s (%.1f KB)", outfile, size_kb)
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
     @staticmethod
     def offline_flat_pair_yaml(args: Namespace, cfg: Config) -> int:
@@ -4456,9 +4907,11 @@ class Renderer:
         group = max(1, int(args.flat_group_size))
         num_sw = Renderer.validate_flat_topology(total, group)
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # CML input validation requires x/y coordinates to be within a bounded range.
@@ -4520,6 +4973,7 @@ class Renderer:
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {getattr(args, 'offline_yaml', '').replace(chr(92), '/')}")
         desc = (
@@ -5174,8 +5628,7 @@ class Renderer:
                 lines.append(f"    n2: {node_ids['SWoob0']}")
                 lines.append(f"    i2: i{swoob0_ks_port}")
 
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -5185,21 +5638,19 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning("Offline YAML (flat-pair) written to %s (%.1f KB)", outfile, size_kb)
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
     @staticmethod
@@ -5229,9 +5680,11 @@ class Renderer:
         total = int(args.nodes)
         distance = int(getattr(args, "distance", 200))
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # --- Generate NX graph (mirrors create_nx_network) ---
@@ -5292,11 +5745,26 @@ class Renderer:
             edge_info[edge] = (prefix, hosts[0], hosts[1])
 
         # --- Build per-node interface lists (sorted by neighbor for determinism) ---
+        enable_mgmt = getattr(args, "enable_mgmt", False)
+        mgmt_slot = getattr(args, "mgmt_slot", 5)
+        dev_def_early = getattr(args, "dev_template", args.template)
+        reserved_mgmt_slot: int | None = None
+        if enable_mgmt:
+            reserved_mgmt_slot = (
+                mgmt_slot - 1 if dev_def_early == "csr1000v" else mgmt_slot
+            )
+
+        def _next_topo_slot(slot: int) -> int:
+            if reserved_mgmt_slot is not None and slot == reserved_mgmt_slot:
+                return slot + 1
+            return slot
+
         node_ifaces: dict[int, list[dict[str, Any]]] = {}
         for node_index in graph.nodes:
             ifaces: list[dict[str, Any]] = []
             slot = 0
             for neighbor in sorted(graph.adj[node_index]):
+                slot = _next_topo_slot(slot)
                 canonical = (min(node_index, neighbor), max(node_index, neighbor))
                 prefix, host0, host1 = edge_info[canonical]
                 if node_index == canonical[0]:
@@ -5311,6 +5779,7 @@ class Renderer:
                 slot += 1
             # Core node gets an extra interface for the DNS host link
             if node_index == core:
+                slot = _next_topo_slot(slot)
                 ifaces.append({
                     "slot": slot,
                     "neighbor": -1,
@@ -5337,6 +5806,8 @@ class Renderer:
         mgmt_slot = getattr(args, "mgmt_slot", 5)
         version = getattr(args, "cml_version", "0.3.0")
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        pki_enabled = getattr(args, "pki_enabled", False)
+        ca_scep_url = _offline_ca_mgmt_scep_url(args, total) if pki_enabled else None
         nac_router_nodes: list[TopogenNode] = []
 
         # --- Build YAML header ---
@@ -5371,6 +5842,7 @@ class Renderer:
             args_bits.append("--archive")
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {str(outfile).replace(chr(92), '/')}")
         desc = (
@@ -5451,7 +5923,8 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            swoob0_extra = 1 if pki_enabled else 0
+            for p in range(num_oob_sw + swoob0_extra):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -5490,12 +5963,14 @@ class Renderer:
             topo_ifaces = []
             for iface in ifaces:
                 if iface.get("dns_link"):
-                    desc = f"to {DNS_HOST_NAME}"
+                    iface_desc = f"to {DNS_HOST_NAME}"
+                elif iface["neighbor"] < 0:
+                    iface_desc = "stub"
                 else:
-                    desc = f"to R{iface['neighbor'] + 1}"
+                    iface_desc = f"to R{iface['neighbor'] + 1}"
                 topo_ifaces.append(TopogenInterface(
                     address=iface["address"],
-                    description=desc,
+                    description=iface_desc,
                     slot=iface["slot"],
                 ))
             topo_ifaces.sort(key=lambda xi: xi.slot)
@@ -5540,6 +6015,10 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if pki_enabled and ca_scep_url:
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_scep_url
+                )
             if nac_enabled:
                 rendered = _inject_nac_restconf_day0(rendered)
 
@@ -5572,6 +6051,22 @@ class Renderer:
                 lines.append("        type: physical")
             _emit_config(lines, rendered, getattr(args, "blank", False))
             dns_zone.append(DNShost(label.lower(), loopback.ip))
+
+        if pki_enabled and enable_mgmt:
+            nid = _emit_offline_ca_root_mgmt_node(
+                env,
+                cfg,
+                args,
+                lines,
+                node_ids,
+                nid,
+                tpl,
+                enable_mgmt,
+                mgmt_slot,
+                staging,
+                total,
+                distance,
+            )
 
         # --- DNS / NAT host node (alpine, emitted after routers so dns_zone is complete) ---
         dns_zone.append(DNShost(f"{DNS_HOST_NAME}-eth1", dns_addr.ip))
@@ -5676,9 +6171,18 @@ class Renderer:
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
 
+            if pki_enabled:
+                ca_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['CA-ROOT']}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         # --- Write file ---
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -5688,24 +6192,22 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning(
             "Offline YAML (nx, %d nodes, %d edges) written to %s (%.1f KB)",
             graph.number_of_nodes(), graph.number_of_edges(), outfile, size_kb,
         )
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
     @staticmethod
@@ -5736,9 +6238,11 @@ class Renderer:
         total = int(args.nodes)
         distance = int(getattr(args, "distance", 200))
         nac_enabled = bool(getattr(args, "nac", False))
-        outfile, nac_root = resolve_offline_output_paths(
+        cml2_enabled = bool(getattr(args, "terraform_cml2", False))
+        outfile, nac_root, cml2_root = resolve_offline_artifact_paths(
             getattr(args, "offline_yaml"),
             nac_enabled=nac_enabled,
+            cml2_enabled=cml2_enabled,
         )
 
         # --- Generate square spiral coordinates (mirrors CoordsGenerator) ---
@@ -5802,6 +6306,8 @@ class Renderer:
         mgmt_slot = getattr(args, "mgmt_slot", 5)
         version = getattr(args, "cml_version", "0.3.0")
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
+        pki_enabled = getattr(args, "pki_enabled", False)
+        ca_scep_url = _offline_ca_mgmt_scep_url(args, total) if pki_enabled else None
 
         # --- Build YAML header ---
         lines: list[str] = []
@@ -5835,6 +6341,7 @@ class Renderer:
             args_bits.append("--archive")
         if staging:
             args_bits.append("--staging")
+        _append_common_offline_args_bits(args_bits, args)
         args_bits.append(f"-L {args.labname}")
         args_bits.append(f"--offline-yaml {str(outfile).replace(chr(92), '/')}")
         desc = (
@@ -5942,7 +6449,8 @@ class Renderer:
                 lines.append("        slot: 0")
                 lines.append("        label: port0")
                 lines.append("        type: physical")
-            for p in range(num_oob_sw):
+            swoob0_extra = 1 if pki_enabled else 0
+            for p in range(num_oob_sw + swoob0_extra):
                 port_num = p + port_offset
                 lines.append(f"      - id: i{port_num}")
                 lines.append(f"        slot: {port_num}")
@@ -5981,12 +6489,14 @@ class Renderer:
             topo_ifaces = []
             for iface in ifaces:
                 if iface.get("dns_link"):
-                    desc = f"to {DNS_HOST_NAME}"
+                    iface_desc = f"to {DNS_HOST_NAME}"
+                elif iface["neighbor"] < 0:
+                    iface_desc = "stub"
                 else:
-                    desc = f"to R{iface['neighbor'] + 1}"
+                    iface_desc = f"to R{iface['neighbor'] + 1}"
                 topo_ifaces.append(TopogenInterface(
                     address=iface["address"],
-                    description=desc,
+                    description=iface_desc,
                     slot=iface["slot"],
                 ))
             topo_ifaces.sort(key=lambda xi: xi.slot)
@@ -6028,6 +6538,10 @@ class Renderer:
                 ntp_oob=ntp_oob_ctx,
                 archive=getattr(args, "archive", False),
             )
+            if pki_enabled and ca_scep_url:
+                rendered = _inject_pki_client_trustpoint(
+                    rendered, label, cfg.domainname, ca_scep_url
+                )
             if nac_enabled:
                 rendered = _inject_nac_restconf_day0(rendered)
 
@@ -6066,6 +6580,22 @@ class Renderer:
                     lines.append(f"        label: GigabitEthernet0/{mgmt_slot}")
                 lines.append("        type: physical")
             _emit_config(lines, rendered, getattr(args, "blank", False))
+
+        if pki_enabled and enable_mgmt:
+            nid = _emit_offline_ca_root_mgmt_node(
+                env,
+                cfg,
+                args,
+                lines,
+                node_ids,
+                nid,
+                tpl,
+                enable_mgmt,
+                mgmt_slot,
+                staging,
+                total,
+                distance,
+            )
 
         # --- Links section ---
         lines.append("links:")
@@ -6134,10 +6664,19 @@ class Renderer:
                 lines.append(f"    n2: {node_ids[oob_acc]}")
                 lines.append(f"    i2: i{oob_acc_port}")
 
+            if pki_enabled:
+                ca_mgmt_iface_id = mgmt_slot - 1
+                swoob0_ca_port = port_offset + num_oob_sw
+                lines.append(f"  - id: l{lid}")
+                lid += 1
+                lines.append(f"    n1: {node_ids['CA-ROOT']}")
+                lines.append(f"    i1: i{ca_mgmt_iface_id}")
+                lines.append(f"    n2: {node_ids['SWoob0']}")
+                lines.append(f"    i2: i{swoob0_ca_port}")
+
         # --- Write file ---
         num_edges = total - 1
-        if nac_enabled and nac_root is not None:
-            validate_nac_supported_iosxe_nodes(nac_router_nodes, dev_def)
+        _validate_nac_router_nodes_if_enabled(nac_root, nac_router_nodes, dev_def)
         outfile.parent.mkdir(parents=True, exist_ok=True)
         if nac_root is not None:
             nac_root.mkdir(parents=True, exist_ok=True)
@@ -6147,24 +6686,22 @@ class Renderer:
             )
         if outfile.exists() and getattr(args, "overwrite", False):
             _LOGGER.warning("Overwriting existing offline YAML file %s", outfile)
-        lines = _intent_annotation_lines(desc, version) + lines
+        lines = _finalize_offline_yaml_with_intent(lines, desc, version, args)
         outfile.write_text("\n".join(lines), encoding="utf-8")
         size_kb = outfile.stat().st_size / 1024
         _LOGGER.warning(
             "Offline YAML (simple, %d nodes, %d edges) written to %s (%.1f KB)",
             total, num_edges, outfile, size_kb,
         )
-        if nac_enabled and nac_root is not None and nac_router_nodes:
-            nac_file = write_nac_tree(
-                nac_root=nac_root,
-                nodes=nac_router_nodes,
-                device_template=dev_def,
-                template=args.template,
-                mode=args.mode,
-                args=args,
-                overwrite=getattr(args, "overwrite", False),
-            )
-            _LOGGER.warning("NaC canonical output written to %s", nac_file)
+        _write_nac_tree_if_enabled(
+            nac_root=nac_root,
+            nodes=nac_router_nodes,
+            device_template=dev_def,
+            template=args.template,
+            mode=args.mode,
+            args=args,
+        )
+        write_cml2_lifecycle_if_enabled(args, outfile, cml2_root)
         return 0
 
     def render_flat_network(self) -> int:
@@ -6507,6 +7044,8 @@ class Renderer:
             _LOGGER.warning("GET VPN Key Server created: %s at %s", ks_label, ks_g_ip)
 
         _LOGGER.warning("Flat management network created")
+        self._apply_online_lab_intent()
+
         # Get lab definition size (and optionally export to file) so we can log size for online create
         outfile = getattr(self.args, "yaml_output", None)
         content = None
@@ -6703,6 +7242,8 @@ class Renderer:
         if self.args.progress:
             ticks.close()  # type: ignore
             manager.stop()  # type: ignore
+
+        self._apply_online_lab_intent()
 
         # Print lab URL
         import os

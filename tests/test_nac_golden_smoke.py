@@ -106,7 +106,7 @@ class TestNacGoldenSmoke(unittest.TestCase):
                 relative,
             )
 
-    def _assert_nac_smoke(self, nac_root: Path, *, expect_mgmt_vrf: bool):
+    def _assert_nac_smoke(self, nac_root: Path, *, mgmt_enabled: bool):
         nac_yaml = nac_root / "nac.yaml"
         text = nac_yaml.read_text(encoding="utf-8")
         payload = yaml.safe_load(text)
@@ -117,19 +117,23 @@ class TestNacGoldenSmoke(unittest.TestCase):
         for pattern in SECRET_PATTERNS:
             self.assertIsNone(re.search(pattern, text), pattern)
 
+        # TG-163: the OOB management interface is provisioned out-of-band (DHCP)
+        # by the CML day-0 template and must never be Terraform-managed. So with
+        # or without --mgmt the managed config carries no Mgmt-vrf and no OOB
+        # Management interface; --mgmt only changes the connection host.
+        self.assertNotIn("vrf_forwarding", text)
+        self.assertNotIn("OOB Management", text)
         for device in payload["iosxe"]["devices"]:
             config = device["configuration"]
-            if expect_mgmt_vrf:
-                self.assertEqual(config["vrfs"], [{"name": "Mgmt-vrf"}])
-                self.assertTrue(
-                    any(
-                        iface.get("vrf_forwarding") == "Mgmt-vrf"
-                        for iface in config["interfaces"]["ethernets"]
-                    )
-                )
-            else:
-                self.assertNotIn("vrfs", config)
-                self.assertNotIn("vrf_forwarding", text)
+            self.assertNotIn("vrfs", config)
+            for iface in config["interfaces"]["ethernets"]:
+                self.assertNotEqual(iface.get("description"), "OOB Management")
+
+        if mgmt_enabled:
+            self.assertEqual(
+                [device["host"] for device in payload["iosxe"]["devices"]],
+                ["10.254.0.1", "10.254.0.2"],
+            )
 
     def _assert_ansible_inventory_parses_when_available(self, nac_root: Path):
         ansible_inventory = shutil.which("ansible-inventory")
@@ -150,13 +154,13 @@ class TestNacGoldenSmoke(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             generated_nac = self._generate_flat_nac(tmp, "golden-flat-no-mgmt")
             self._assert_fixture_tree_bytes_match("golden-flat-no-mgmt", generated_nac)
-            self._assert_nac_smoke(generated_nac, expect_mgmt_vrf=False)
+            self._assert_nac_smoke(generated_nac, mgmt_enabled=False)
 
     def test_golden_flat_mgmt_matches_real_cli_and_smokes(self):
         with tempfile.TemporaryDirectory() as tmp:
             generated_nac = self._generate_flat_nac(tmp, "golden-flat-mgmt", mgmt=True)
             self._assert_fixture_tree_bytes_match("golden-flat-mgmt", generated_nac)
-            self._assert_nac_smoke(generated_nac, expect_mgmt_vrf=True)
+            self._assert_nac_smoke(generated_nac, mgmt_enabled=True)
 
     def test_ansible_inventory_parses_no_mgmt(self):
         with tempfile.TemporaryDirectory() as tmp:
