@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.9.0
-# Date Modified: 2026-06-06
+# Doc Version: v1.9.2
+# Date Modified: 2026-06-07
 #
 """
 TopoGen Main Entry Point - CLI Argument Parsing and Application Bootstrap
@@ -657,6 +657,14 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         action="store_true",
         default=False,
         help="Allow overwriting an existing output file when using --offline-yaml",
+    )
+    parser.add_argument(
+        "--intent-spot",
+        dest="intent_spot",
+        action="store_true",
+        default=False,
+        help="Add INTENT-SPOT debug unmanaged_switch at intent annotation coordinates for "
+        "visual QA in CML Workbench (no router license; online and offline; not for production)",
     )
     parser.add_argument(
         "--import-yaml",

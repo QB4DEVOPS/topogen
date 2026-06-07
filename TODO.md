@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.47
-Date Modified: 2026-06-04
+Doc Version: v1.6.48
+Date Modified: 2026-06-07
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -94,7 +94,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 - [ ] **Fix: `do clock set` must come before CA server starts and before first key generation.** Currently both online (`csr-pki-ca.jinja2`) and offline (`_pki_ca_self_enroll_block_lines` in render.py) place `do clock set` AFTER `crypto pki server CA-ROOT / no shutdown`. The CA root certificate is generated when the server starts with `no shutdown`, so its `notBefore` uses whatever clock the device had at boot (often wrong). Fix: move `do clock set` (backdated 1 day) to before `crypto key generate rsa modulus 2048 label CA-ROOT.server` in the template, and before `pki_config_lines` in the offline assembly. Affects both `csr-pki-ca.jinja2` and all four offline assembly sites in `render.py` that use `pki_config_lines` + `_pki_ca_self_enroll_block_lines`.
 
-- [ ] **Fix: Online lab creation missing notes and scaled intent annotation.** See Jira **TG-167** (offline YAML: `description`, hidden `notes`, down-only canvas annotation). Online mode only sets `description`. Add matching `notes` + scaled annotation to online lab creation in `render_flat_network()` (and other online renderers).
+- [x] ~~**Fix: Online lab creation missing notes and scaled intent annotation.**~~ Done (TG-167): `_apply_online_lab_intent()` in all online render paths; opt-in `--intent-spot` unmanaged_switch marker; live-validated on CML 2.10.
 
 - [x] ~~**Feature: CML 2.10 node staging (`--staging`) for PKI boot ordering.**~~ Implemented. See `CHANGES.md` Unreleased entry.
 

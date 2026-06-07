@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.5
+Doc Version: v1.3.7
 Date Modified: 2026-06-07
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,14 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(cml): INTENT-SPOT marker uses unmanaged_switch (no router license) (TG-167)
+    - `--intent-spot` QA node changed from iosv router to `unmanaged_switch` (offline YAML and online create).
+    - Files: src/topogen/render.py (rev v1.3.6 → v1.3.7), src/topogen/main.py (rev v1.9.1 → v1.9.2), tests/test_intent_annotation.py (rev v1.1.0 → v1.1.1), CHANGES.md (rev v1.3.6 → v1.3.7)
+  - docs(TG-167): README intent/metadata, DEVELOPER TG-167 closeout, TODO online parity done
+    - Files: README.md (rev v1.8.4 → v1.8.5), DEVELOPER.md (rev v1.8.6 → v1.8.7), TODO.md (rev v1.6.47 → v1.6.48), CHANGES.md (rev v1.3.6 → v1.3.7)
+  - feat(cml): online intent metadata parity with offline YAML (TG-167)
+    - After topology build, online create sets `lab.description`, hidden `lab.notes`, and a white 1pt text annotation at scaled down-only coordinates via `virl2_client`. Optional `--intent-spot` adds the INTENT-SPOT iosv marker node (same as offline). Applied in all online render paths before `--yaml` export or lab start. Live-validated on CML 2.10 (simple, flat, nx, dmvpn).
+    - Files: src/topogen/render.py (rev v1.3.5 → v1.3.6), src/topogen/main.py (rev v1.9.0 → v1.9.1), tests/test_intent_annotation.py (rev v1.0.0 → v1.1.0), scripts/validate-intent-spot-matrix.py (rev v1.0.0), scripts/validate-intent-spot-matrix.ps1 (rev v1.0.0), CHANGES.md (rev v1.3.5 → v1.3.6)
   - fix(nx): reserve `--mgmt-slot` when assigning offline nx mesh interfaces (TG-167)
     - Offline `offline_nx_yaml()` numbered mesh interfaces 0, 1, 2, … and also placed OOB mgmt on the default `--mgmt-slot 5` (`GigabitEthernet0/5`), double-booking slot 5 on high-degree routers and causing CML import failures at scale. Online nx avoids this because CML auto-assigns data links after mgmt is created on slot 5.
     - Mesh slot assignment now skips the reserved mgmt slot (CSR: `mgmt_slot - 1`), matching online behavior. `--mgmt-slot 5` unchanged; busy routers use e.g. `Gi0/6` for an extra mesh link while `Gi0/5` stays OOB. NaC and CML2 consume the corrected `TopogenNode` / YAML paths; no `nac.py` or `cml2.py` changes.
@@ -27,7 +35,7 @@ This file lists changes. Format for Unreleased entries (files changed + rev): se
     - Files: src/topogen/render.py (rev v1.3.3 → v1.3.4), CHANGES.md (rev v1.3.4 → v1.3.5)
   - fix(cml): place offline intent metadata below topology for Workbench zoom (TG-167)
     - Hidden intent annotation moved from off-canvas `x=-9999, y=-9999` to down-only scaled coordinates `(max(node x), max(node y) + 1500)` so CML Fit/zoom stays on the real lab. Keeps all three metadata copies: `lab.description`, hidden `lab.notes`, and white 1pt canvas annotation.
-    - Adds `_scaled_intent_annotation_xy()`, `_finalize_offline_yaml_with_intent()`, optional `INTENT-SPOT` QA marker (default on; disable before production merge), and `tests/test_intent_annotation.py`.
+    - Adds `_scaled_intent_annotation_xy()`, `_finalize_offline_yaml_with_intent()`, opt-in `--intent-spot` QA marker router, and `tests/test_intent_annotation.py`.
     - Files: src/topogen/render.py (rev v1.3.2 → v1.3.3), tests/test_intent_annotation.py (rev v1.0.0), TODO.md, CHANGES.md (rev v1.3.4 → v1.3.5)
   - feat(staging): auto-enable node staging when `--pki` is used (TG-165)
     - PKI labs need CA-ROOT online before enrolling routers. Staging and the CA-ROOT priority ladder already existed but required a separate `--staging` flag. With `--pki`, TopoGen now sets staging on by default (CA-ROOT priority 900) unless `--no-staging` is passed — the first behavior that auto-enables without a dedicated enable flag, though still effectively opt-in because it only applies when `--pki` is set and staging is emitted only with `--cml-version 0.3.1` (CML 2.10); default schema `0.3.0` logs a warning and omits `node_staging`.
