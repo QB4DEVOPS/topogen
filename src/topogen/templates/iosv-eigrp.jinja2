@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.1
-# Date Modified: 2026-02-16
+# Doc Version: v1.1.2
+# Date Modified: 2026-06-08
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, eigrp_stub)
@@ -87,7 +87,7 @@ router eigrp 100
 !
 {%- endif %}
 {%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
-interface GigabitEthernet0/{{ loop.index0 }}
+interface GigabitEthernet0/{{ iface.slot }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}
