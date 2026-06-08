@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.11
+Doc Version: v1.3.12
 Date Modified: 2026-06-08
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(ci): add terraform plan contract test for NaC output (TG-161)
+    - Opt-in pytest matrix (`tests/test_nac_terraform_plan.py`, `-m terraform` / `TOPOGEN_TERRAFORM_PLAN=1`) generates eight offline labs (flat, flat-pair, DMVPN flat/flat-pair × IOSv/CSR) and runs `terraform init` + `terraform plan -input=false` with dummy IOSXE env vars. CI job `NaC Terraform plan contract` runs on NaC-related path changes with warmed `TF_PLUGIN_CACHE_DIR`. Documents short-path Windows workaround in DEVELOPER.md.
+    - Files: tests/test_nac_terraform_plan.py (rev v1.0.0), tests/conftest.py (rev v1.0.0), .github/workflows/python-package.yml, pyproject.toml (rev v1.0.3 → v1.0.4), DEVELOPER.md (rev v1.8.8 → v1.8.9), TODO.md, CHANGES.md (rev v1.3.11 → v1.3.12)
   - fix(templates): CSR/IOSv day-0 Gi numbering uses topo `iface.slot` on nx high-degree nodes (TG-169)
     - CSR data-plane stanzas and EEM noshut loops emit `GigabitEthernet{{ iface.slot + 1 }}` instead of `loop.index0 + 1`, so reserved OOB Gi5 is not reused for mesh links after slot skip. IOSv templates use `GigabitEthernet0/{{ iface.slot }}`. Fixes CDP-up/OSPF-down and Terraform Gi7 overlap on busy routers; NaC model unchanged.
     - Files: src/topogen/templates/csr-ospf.jinja2 (rev v1.3.0 → v1.3.1), csr-eigrp.jinja2 (v1.3.0 → v1.3.1), csr1000v.jinja2 (v1.0.0 → v1.0.1), csr-getvpn-ks.jinja2 (v1.0.1 → v1.0.2), csr-pki-ca.jinja2 (v1.3.4 → v1.3.5), iosv.jinja2 (v1.1.3 → v1.1.4), iosv-eigrp.jinja2 (v1.1.1 → v1.1.2), iosv-eigrp-nonflat.jinja2 (v1.1.3 → v1.1.4), iosv-eigrp-stub.jinja2 (v1.1.3 → v1.1.4), tests/test_nac_writer.py (v1.15.0 → v1.16.0), CHANGES.md (v1.3.10 → v1.3.11)

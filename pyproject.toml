@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.3
+# Doc Version: v1.0.4
 # Date Modified: 2026-06-08
 #
 # - Called by: pip/uv installers, build tools (hatchling), package managers (PyPI)
@@ -84,7 +84,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["mypy>=1.16.0", "ruff>=0.8.3", "types-networkx>=3.5.0.20250531"]
+dev = [
+  "mypy>=1.16.0",
+  "pytest>=8.0.0",
+  "ruff>=0.8.3",
+  "types-networkx>=3.5.0.20250531",
+]
+
+[tool.pytest.ini_options]
+markers = [
+  "terraform: NaC terraform init/plan contract (needs terraform binary + network)",
+]
 
 [[tool.mypy.overrides]]
 module = ["enlighten.*", "virl2_client.*"]
