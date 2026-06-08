@@ -8,8 +8,8 @@
 #            Future TODO: Support IOSv if PKI server works on IOSv platform.
 #
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.4
-# Date Modified: 2026-03-24
+# Doc Version: v1.3.5
+# Date Modified: 2026-06-08
 #
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, pki_enabled)
@@ -121,7 +121,7 @@ router eigrp 100
 !
 {%- endif %}
 {%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
-interface GigabitEthernet{{ loop.index0 + 1 }}
+interface GigabitEthernet{{ iface.slot + 1 }}
     {%- if loop.first %}
     description === SCEP Enrollment URL ===
     {%- elif iface.description %}
@@ -233,7 +233,7 @@ event manager applet TOPOGEN-NOSHUT authorization bypass
  action 1.2 cli command "config t"
 {%- set ns_eem = namespace(n=2) %}
 {%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
- action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ loop.index0 + 1 }}"
+ action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ iface.slot + 1 }}"
  action {{ ns_eem.n }}.1 cli command "no shutdown"
 {%- set ns_eem.n = ns_eem.n + 1 %}
 {%- endfor %}

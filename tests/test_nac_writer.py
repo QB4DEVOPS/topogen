@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.15.0
-# Date Modified: 2026-06-04
+# Doc Version: v1.16.0
+# Date Modified: 2026-06-08
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/main.py, src/topogen/nac.py
@@ -10,15 +10,18 @@
 # Purpose: Verify canonical NaC writer output layout, keys, deterministic rerun behavior, and DMVPN artifact paths.
 # Blast Radius: Test-only; no runtime behavior changes.
 
+import re
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from ipaddress import IPv4Interface
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import yaml
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +29,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from topogen.config import Config  # pylint: disable=wrong-import-position
 from topogen.main import main  # pylint: disable=wrong-import-position
 from topogen.models import TopogenInterface, TopogenNode  # pylint: disable=wrong-import-position
 from topogen.nac import (  # pylint: disable=wrong-import-position
@@ -40,6 +44,23 @@ from topogen.nac import (  # pylint: disable=wrong-import-position
     write_terraform_scaffold,
     write_verify_reachability_yaml,
 )
+
+
+def _extract_day0_config(node: dict) -> str:
+    cfg = node.get("configuration", "")
+    if isinstance(cfg, list):
+        return cfg[0].get("content", "") if cfg else ""
+    return cfg
+
+
+def _interface_names(config: str) -> list[str]:
+    return re.findall(r"^interface (GigabitEthernet\S+)$", config, re.MULTILINE)
+
+
+def _interface_stanza(config: str, iface_name: str) -> str:
+    pattern = rf"^interface {re.escape(iface_name)}$(.*?)(?=^interface |\nend\n|\Z)"
+    match = re.search(pattern, config, re.MULTILINE | re.DOTALL)
+    return match.group(0) if match else ""
 
 
 class TestNacWriter(unittest.TestCase):
@@ -1017,6 +1038,128 @@ class TestNacWriter(unittest.TestCase):
             ],
         )
         self.assertFalse(any(iface.get("description") == "OOB Management" for iface in ethernets))
+
+    def _high_degree_csr_node(self) -> TopogenNode:
+        return TopogenNode(
+            hostname="R5",
+            loopback=IPv4Interface("10.0.0.5/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.14/30"), slot=0, description="to R1"),
+                TopogenInterface(
+                    address=None,
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=4,
+                ),
+                TopogenInterface(address=IPv4Interface("172.16.0.73/30"), slot=5, description="to R12"),
+                TopogenInterface(address=IPv4Interface("172.16.0.65/30"), slot=6, description="to R16"),
+            ],
+        )
+
+    def test_csr_day0_uses_topo_slot_not_loop_index(self):
+        """TG-169: CSR data-plane Gi numbers must follow iface.slot + 1 after mgmt skip."""
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        tpl = env.get_template("csr-ospf.jinja2")
+        node = self._high_degree_csr_node()
+        rendered = tpl.render(
+            config=Config(),
+            node=node,
+            date=datetime.now(timezone.utc),
+            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None},
+        )
+        names = _interface_names(rendered)
+        self.assertEqual(names.count("GigabitEthernet5"), 1)
+        gi5 = _interface_stanza(rendered, "GigabitEthernet5")
+        self.assertIn("ip address dhcp", gi5)
+        self.assertIn("OOB Management", gi5)
+        gi6 = _interface_stanza(rendered, "GigabitEthernet6")
+        self.assertIn("172.16.0.73", gi6)
+        self.assertIn("to R12", gi6)
+        gi7 = _interface_stanza(rendered, "GigabitEthernet7")
+        self.assertIn("172.16.0.65", gi7)
+        self.assertIn("network 172.16.0.73 0.0.0.0 area 0", rendered)
+        self.assertIn("network 172.16.0.65 0.0.0.0 area 0", rendered)
+        self.assertNotRegex(rendered, r"interface GigabitEthernet5\n.*ip address 172\.16")
+
+    def test_iosv_day0_uses_topo_slot_not_loop_index(self):
+        """TG-169: IOSv data-plane Gi numbers must follow iface.slot after mgmt skip."""
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        tpl = env.get_template("iosv.jinja2")
+        node = TopogenNode(
+            hostname="R5",
+            loopback=IPv4Interface("10.0.0.5/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.14/30"), slot=0, description="to R1"),
+                TopogenInterface(
+                    address=None,
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=5,
+                ),
+                TopogenInterface(address=IPv4Interface("172.16.0.73/30"), slot=6, description="to R12"),
+            ],
+        )
+        rendered = tpl.render(
+            config=Config(),
+            node=node,
+            date=datetime.now(timezone.utc),
+            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None},
+        )
+        names = _interface_names(rendered)
+        self.assertEqual(names.count("GigabitEthernet0/5"), 1)
+        gi5 = _interface_stanza(rendered, "GigabitEthernet0/5")
+        self.assertIn("ip address dhcp", gi5)
+        gi6 = _interface_stanza(rendered, "GigabitEthernet0/6")
+        self.assertIn("172.16.0.73", gi6)
+        self.assertNotRegex(rendered, r"interface GigabitEthernet0/5\n.*ip address 172\.16")
+
+    def test_nx_mgmt_bridge_offline_yaml_no_duplicate_csr_gi5(self):
+        """TG-169: nx + mgmt-bridge CSR day-0 must not double-book Gi5 on high-degree nodes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "nx-mgmt-bridge-csr.yaml"
+            rc = self._run_main(
+                [
+                    "10",
+                    "--mode",
+                    "nx",
+                    "-T",
+                    "csr-ospf",
+                    "--device-template",
+                    "csr1000v",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--mgmt",
+                    "--mgmt-bridge",
+                    "--mgmt-slot",
+                    "5",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            lab = yaml.safe_load(out_file.read_text(encoding="utf-8"))
+            routers = [
+                node
+                for node in lab["nodes"]
+                if node.get("node_definition") == "csr1000v"
+                and node.get("label", "").startswith("R")
+            ]
+            self.assertGreaterEqual(len(routers), 10)
+            for router in routers:
+                config = _extract_day0_config(router)
+                names = _interface_names(config)
+                self.assertEqual(len(names), len(set(names)), router["label"])
+                self.assertLessEqual(names.count("GigabitEthernet5"), 1, router["label"])
+                if "GigabitEthernet5" in names:
+                    gi5 = _interface_stanza(config, "GigabitEthernet5")
+                    self.assertIn("ip address dhcp", gi5, router["label"])
+                    self.assertNotRegex(
+                        config,
+                        r"interface GigabitEthernet5\n.*ip address 172\.16",
+                        router["label"],
+                    )
+                busy = [name for name in names if name not in {"GigabitEthernet5", "Loopback0"}]
+                if len(busy) >= 5:
+                    self.assertIn("GigabitEthernet6", names, router["label"])
 
     def test_flat_pair_cli_vrf_reaches_nac_output(self):
         with tempfile.TemporaryDirectory() as tmp:
