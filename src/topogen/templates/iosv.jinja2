@@ -62,7 +62,7 @@ router ospf 2 vrf {{ iface.vrf }}
 !
 {%- endif %}
 {%- endfor %}
-{%- for iface in node.interfaces %}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
 interface GigabitEthernet0/{{ loop.index0 }}
     {%- if iface.description %}
     description {{ iface.description }}

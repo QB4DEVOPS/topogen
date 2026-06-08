@@ -38,7 +38,7 @@ router eigrp 100
     network 172.16.0.0 0.15.255.255
     no auto-summary
 !
-{%- for iface in node.interfaces %}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
 interface GigabitEthernet0/{{ loop.index0 }}
     {%- if iface.description %}
     description {{ iface.description }}

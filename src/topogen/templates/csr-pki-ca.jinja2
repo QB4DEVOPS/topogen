@@ -102,7 +102,7 @@ router eigrp TOPGEN
   !
   topology base
   exit-af-topology
-  {%- for iface in node.interfaces if iface.address and not iface.vrf %}
+  {%- for iface in node.interfaces if iface.address and not iface.vrf and (iface.description | default('')) != 'OOB Management' %}
   network {{ iface.address.ip }} 0.0.0.0
   {%- endfor %}
   network {{ node.loopback.ip }} 0.0.0.0
@@ -114,13 +114,13 @@ router eigrp 100
  eigrp stub connected summary
  {%- endif %}
  network {{ node.loopback.ip }} 0.0.0.0
- {%- for iface in node.interfaces if iface.address %}
+ {%- for iface in node.interfaces if iface.address and (iface.description | default('')) != 'OOB Management' %}
  network {{ iface.address.ip }} 0.0.0.0
  {%- endfor %}
  passive-interface Loopback0
 !
 {%- endif %}
-{%- for iface in node.interfaces %}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
 interface GigabitEthernet{{ loop.index0 + 1 }}
     {%- if loop.first %}
     description === SCEP Enrollment URL ===
@@ -232,7 +232,7 @@ event manager applet TOPOGEN-NOSHUT authorization bypass
  action 1.1 cli command "terminal length 0"
  action 1.2 cli command "config t"
 {%- set ns_eem = namespace(n=2) %}
-{%- for iface in node.interfaces %}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
  action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ loop.index0 + 1 }}"
  action {{ ns_eem.n }}.1 cli command "no shutdown"
 {%- set ns_eem.n = ns_eem.n + 1 %}

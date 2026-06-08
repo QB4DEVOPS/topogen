@@ -983,6 +983,41 @@ class TestNacWriter(unittest.TestCase):
         self.assertNotIn("vrfs", config)
         self.assertNotIn("vrf_forwarding", config["interfaces"]["ethernets"][0])
 
+    def test_csr_mgmt_emits_post_oob_data_interfaces(self):
+        """CSR Gi6+ data links must be Terraform-managed; only OOB Gi5 is excluded."""
+        node = TopogenNode(
+            hostname="R5",
+            loopback=IPv4Interface("10.0.0.5/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.14/30"), slot=0, description="to R1"),
+                TopogenInterface(
+                    address=None,
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=4,
+                ),
+                TopogenInterface(address=IPv4Interface("172.16.0.73/30"), slot=5, description="to R12"),
+                TopogenInterface(address=IPv4Interface("172.16.0.65/30"), slot=6, description="to R16"),
+            ],
+        )
+        model = build_canonical_nac_model(
+            node,
+            device_template="csr1000v",
+            template="csr-eigrp",
+            mode="nx",
+            args=SimpleNamespace(enable_mgmt=True, mgmt_slot=5, mgmt_bridge=True),
+        )
+        ethernets = model["iosxe"]["devices"][0]["configuration"]["interfaces"]["ethernets"]
+        self.assertEqual(
+            [(iface["id"], iface.get("description")) for iface in ethernets],
+            [
+                ("1", "to R1"),
+                ("6", "to R12"),
+                ("7", "to R16"),
+            ],
+        )
+        self.assertFalse(any(iface.get("description") == "OOB Management" for iface in ethernets))
+
     def test_flat_pair_cli_vrf_reaches_nac_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "flat-pair-vrf.yaml"
