@@ -692,11 +692,15 @@ def _append_nac_mgmt_interface(node: TopogenNode, args: Namespace, router_index:
     mgmt_slot = int(getattr(args, "mgmt_slot", 5))
     dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
     model_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
+    mgmt_bridge = bool(getattr(args, "mgmt_bridge", False))
+    mgmt_address = None
+    if not mgmt_bridge:
+        mgmt_address = IPv4Interface(
+            f"{mgmt_net.network_address + router_index}/{mgmt_net.prefixlen}"
+        )
     node.interfaces.append(
         TopogenInterface(
-            address=IPv4Interface(
-                f"{mgmt_net.network_address + router_index}/{mgmt_net.prefixlen}"
-            ),
+            address=mgmt_address,
             vrf=getattr(args, "mgmt_vrf", None),
             description="OOB Management",
             slot=model_slot,
