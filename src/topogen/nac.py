@@ -173,7 +173,11 @@ def _select_host(node: TopogenNode, args) -> str:
         for iface in node_interfaces:
             description = str(_get_iface_value(iface, "description", ""))
             if description == "OOB Management":
-                return _normalize_ipv4_host(_get_iface_value(iface, "address", None))
+                address = _get_iface_value(iface, "address", None)
+                if address:
+                    return _normalize_ipv4_host(address)
+                if bool(getattr(args, "mgmt_bridge", False)):
+                    return ""
         return ""
 
     data_interfaces = sorted(

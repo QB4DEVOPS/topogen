@@ -4,8 +4,8 @@
 #          Used for both regular routers and PKI CA when --pki flag is enabled.
 #
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.0
-# Date Modified: 2026-02-25
+# Doc Version: v1.3.1
+# Date Modified: 2026-06-08
 #
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp)
@@ -68,12 +68,12 @@ int Loopback0
 router ospf 1
     passive-interface Loopback0
     network {{ node.loopback.ip }} 0.0.0.0 area 0
-{%- for iface in node.interfaces if iface.address %}
+{%- for iface in node.interfaces if iface.address and (iface.description | default('')) != 'OOB Management' %}
     network {{ iface.address.ip }} 0.0.0.0 area 0
 {%- endfor %}
 !
-{%- for iface in node.interfaces %}
-interface GigabitEthernet{{ loop.index0 + 1 }}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
+interface GigabitEthernet{{ iface.slot + 1 }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}
@@ -150,8 +150,8 @@ event manager applet TOPOGEN-NOSHUT authorization bypass
  action 1.1 cli command "terminal length 0"
  action 1.2 cli command "config t"
 {%- set ns_eem = namespace(n=2) %}
-{%- for iface in node.interfaces %}
- action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ loop.index0 + 1 }}"
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
+ action {{ ns_eem.n }}.0 cli command "interface GigabitEthernet{{ iface.slot + 1 }}"
  action {{ ns_eem.n }}.1 cli command "no shutdown"
 {%- set ns_eem.n = ns_eem.n + 1 %}
 {%- endfor %}

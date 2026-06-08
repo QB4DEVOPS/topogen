@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.1
-# Date Modified: 2026-02-16
+# Doc Version: v1.1.2
+# Date Modified: 2026-06-08
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, eigrp_stub)
@@ -68,7 +68,7 @@ router eigrp TOPGEN
   !
   topology base
   exit-af-topology
-  {%- for iface in node.interfaces if iface.address and not iface.vrf %}
+  {%- for iface in node.interfaces if iface.address and not iface.vrf and (iface.description | default('')) != 'OOB Management' %}
   network {{ iface.address.ip }} 0.0.0.0
   {%- endfor %}
   network {{ node.loopback.ip }} 0.0.0.0
@@ -80,14 +80,14 @@ router eigrp 100
  eigrp stub connected summary
  {%- endif %}
  network {{ node.loopback.ip }} 0.0.0.0
- {%- for iface in node.interfaces if iface.address %}
+ {%- for iface in node.interfaces if iface.address and (iface.description | default('')) != 'OOB Management' %}
  network {{ iface.address.ip }} 0.0.0.0
  {%- endfor %}
  passive-interface Loopback0
 !
 {%- endif %}
-{%- for iface in node.interfaces %}
-interface GigabitEthernet0/{{ loop.index0 }}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
+interface GigabitEthernet0/{{ iface.slot }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}

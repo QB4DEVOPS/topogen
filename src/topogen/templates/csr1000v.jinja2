@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
-# Date Modified: 2026-06-03
+# Doc Version: v1.0.1
+# Date Modified: 2026-06-08
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, plus feature flags: origin, mgmt, ntp, ntp_oob, archive)
@@ -64,8 +64,8 @@ router ospf 2 vrf {{ iface.vrf }}
 !
 {%- endif %}
 {%- endfor %}
-{%- for iface in node.interfaces %}
-interface GigabitEthernet{{ loop.index0 + 1 }}
+{%- for iface in node.interfaces if (iface.description | default('')) != 'OOB Management' %}
+interface GigabitEthernet{{ iface.slot + 1 }}
     {%- if iface.description %}
     description {{ iface.description }}
     {%- endif %}
