@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.9
+Doc Version: v1.3.10
 Date Modified: 2026-06-08
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - fix(nac): `--nac --mgmt` mgmt-bridge DHCP OOB deployable via Terraform (TG-146)
+    - Exclude OOB Gi5 from Terraform-managed `ethernets`; `host` is connection target only (no fake `10.254.0.x` static). CSR/IOSv templates skip mgmt slot in data-plane loops and use `slot + 1` for day-0 Gi numbering. Added `scripts/sync-nac-mgmt-dhcp.py`, `scripts/nac-minimal-from-live.py`, and regression tests. Live-validated on CML 2.10: N45 full apply/destroy (Gi5 DHCP preserved), N48 48-node DHCP sync + NETCONF via real mgmt IPs.
+    - Files: src/topogen/nac.py, src/topogen/render.py, src/topogen/templates/csr-*.jinja2, src/topogen/templates/iosv*.jinja2, scripts/sync-nac-mgmt-dhcp.py (rev v1.0.0), scripts/nac-minimal-from-live.py (rev v1.0.0), tests/test_nac_writer.py, CHANGES.md (rev v1.3.9 → v1.3.10)
   - docs(version): sync package v0.3.0 in README provenance example and DEVELOPER version guidance (TG-168)
     - README intent-metadata example updated from `v0.2.5` to `v0.3.0`; DEVELOPER clarifies package version vs `--cml-version`; TODO bump task note updated for TG-147 release.
     - Files: README.md (rev v1.8.5 → v1.8.6), DEVELOPER.md (rev v1.8.7 → v1.8.8), TODO.md (rev v1.6.48 → v1.6.49), CHANGES.md (rev v1.3.8 → v1.3.9)
