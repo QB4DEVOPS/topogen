@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.9
-Date Modified: 2026-06-08
+Doc Version: v1.3.13
+Date Modified: 2026-06-09
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,21 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(nac): add `--bootstrap` thin day-0 path for live NaC validation (TG-186)
+    - New `--bootstrap` flag (requires `--nac --mgmt`) emits thin CML router configs (hostname, OOB Gi DHCP, SSH, RESTCONF/NETCONF) while full routing/interfaces/CDP stay in `nac.yaml` for Terraform. Rejects `--blank`, `--pki`, `--getvpn`. Provenance includes `--bootstrap` via `_append_common_offline_args_bits()`. `scripts/sync-nac-mgmt-dhcp.py` falls back to CML interface snooping when local pyATS is unavailable. Live-validated on CML 2.10: `TG186-BOOTSTRAP-E2E` (2× CSR1000v), cml2 apply + NaC apply (11 resources), OSPF FULL neighbor.
+    - Files: src/topogen/main.py, src/topogen/render.py, src/topogen/nac.py, scripts/sync-nac-mgmt-dhcp.py, tests/test_nac_cli_guardrails.py, tests/test_nac_render_e2e.py, tests/test_nac_writer.py, tests/fixtures/nac/golden-flat-*/nac.yaml, DEVELOPER.md (rev v1.8.9 → v1.9.0), README.md (rev v1.8.6 → v1.8.7), CHANGES.md (rev v1.3.12 → v1.3.13)
+  - feat(nac): expand DMVPN NaC projection for nac-iosxe-supported tunnel/crypto attrs (TG-162)
+    - Project `tunnel_source`, `ipv4.redirects: false`, front-side/overlay VRF forwarding, IKEv2-PSK crypto stack, and `tunnel_protection_ipsec_profile` into `nac.yaml` when DMVPN labs use `--nac`. Document NHRP, mGRE mode, tunnel key, and EIGRP as out-of-scope for `netascode/nac-iosxe` 0.1.0 in DEVELOPER.md coverage matrix. Extend terraform plan harness with DMVPN resource assertions and a ninth IKEv2-PSK case. Add `docs/validation/TG-162-pipeline.md`, `scripts/validate-tg162-dmvpn-live.ps1`, and CSR/IOSv mgmt interface support in `scripts/sync-nac-mgmt-dhcp.py`. Live-validated on CML 2.10: `DMVPN-N4-H1-CSR` (4× CSR1000v) NaC apply 16/16; R1 `tunnel source GigabitEthernet1`, `no ip redirects`.
+    - Files: src/topogen/nac.py (rev v1.9.1 → v1.10.0), tests/test_nac_writer.py (rev v1.16.0 → v1.17.0), tests/test_nac_terraform_plan.py (rev v1.0.0 → v1.1.0), scripts/sync-nac-mgmt-dhcp.py, scripts/validate-tg162-dmvpn-live.ps1 (rev v1.0.0), docs/validation/TG-162-pipeline.md (rev v1.0.0), DEVELOPER.md, TODO.md, CHANGES.md (rev v1.3.12 → v1.3.13)
+  - feat(ci): add terraform plan contract test for NaC output (TG-161)
+    - Opt-in pytest matrix (`tests/test_nac_terraform_plan.py`, `-m terraform` / `TOPOGEN_TERRAFORM_PLAN=1`) generates eight offline labs (flat, flat-pair, DMVPN flat/flat-pair × IOSv/CSR) and runs `terraform init` + `terraform plan -input=false` with dummy IOSXE env vars. CI job `NaC Terraform plan contract` runs on NaC-related path changes with warmed `TF_PLUGIN_CACHE_DIR`. Documents short-path Windows workaround in DEVELOPER.md.
+    - Files: tests/test_nac_terraform_plan.py (rev v1.0.0), tests/conftest.py (rev v1.0.0), .github/workflows/python-package.yml, pyproject.toml (rev v1.0.3 → v1.0.4), DEVELOPER.md (rev v1.8.8 → v1.8.9), TODO.md, CHANGES.md (rev v1.3.11 → v1.3.12)
+  - fix(templates): CSR/IOSv day-0 Gi numbering uses topo `iface.slot` on nx high-degree nodes (TG-169)
+    - CSR data-plane stanzas and EEM noshut loops emit `GigabitEthernet{{ iface.slot + 1 }}` instead of `loop.index0 + 1`, so reserved OOB Gi5 is not reused for mesh links after slot skip. IOSv templates use `GigabitEthernet0/{{ iface.slot }}`. Fixes CDP-up/OSPF-down and Terraform Gi7 overlap on busy routers; NaC model unchanged.
+    - Files: src/topogen/templates/csr-ospf.jinja2 (rev v1.3.0 → v1.3.1), csr-eigrp.jinja2 (v1.3.0 → v1.3.1), csr1000v.jinja2 (v1.0.0 → v1.0.1), csr-getvpn-ks.jinja2 (v1.0.1 → v1.0.2), csr-pki-ca.jinja2 (v1.3.4 → v1.3.5), iosv.jinja2 (v1.1.3 → v1.1.4), iosv-eigrp.jinja2 (v1.1.1 → v1.1.2), iosv-eigrp-nonflat.jinja2 (v1.1.3 → v1.1.4), iosv-eigrp-stub.jinja2 (v1.1.3 → v1.1.4), tests/test_nac_writer.py (v1.15.0 → v1.16.0), CHANGES.md (v1.3.10 → v1.3.11)
+  - fix(nac): `--nac --mgmt` mgmt-bridge DHCP OOB deployable via Terraform (TG-146)
+    - Exclude OOB Gi5 from Terraform-managed `ethernets`; `host` is connection target only (no fake `10.254.0.x` static). CSR/IOSv templates skip mgmt slot in data-plane loops and use `slot + 1` for day-0 Gi numbering. Added `scripts/sync-nac-mgmt-dhcp.py`, `scripts/nac-minimal-from-live.py`, and regression tests. Live-validated on CML 2.10: N45 full apply/destroy (Gi5 DHCP preserved), N48 48-node DHCP sync + NETCONF via real mgmt IPs.
+    - Files: src/topogen/nac.py, src/topogen/render.py, src/topogen/templates/csr-*.jinja2, src/topogen/templates/iosv*.jinja2, scripts/sync-nac-mgmt-dhcp.py (rev v1.0.0), scripts/nac-minimal-from-live.py (rev v1.0.0), tests/test_nac_writer.py, CHANGES.md (rev v1.3.9 → v1.3.10)
   - docs(version): sync package v0.3.0 in README provenance example and DEVELOPER version guidance (TG-168)
     - README intent-metadata example updated from `v0.2.5` to `v0.3.0`; DEVELOPER clarifies package version vs `--cml-version`; TODO bump task note updated for TG-147 release.
     - Files: README.md (rev v1.8.5 → v1.8.6), DEVELOPER.md (rev v1.8.7 → v1.8.8), TODO.md (rev v1.6.48 → v1.6.49), CHANGES.md (rev v1.3.8 → v1.3.9)

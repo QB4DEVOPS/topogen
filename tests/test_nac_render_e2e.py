@@ -179,6 +179,49 @@ class TestNacRenderEndToEnd(unittest.TestCase):
             self.assertTrue((lab_root / "cml2" / "main.tf").exists())
             self._assert_provenance_flags(cml_yaml, "--nac", "--terraform-cml2")
 
+    def test_nx_nac_bootstrap_emits_thin_day0_and_full_nac_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "nx-bootstrap.yaml"
+            rc = self._run_main(
+                [
+                    "2",
+                    "--mode",
+                    "nx",
+                    "-T",
+                    "csr-ospf",
+                    "--device-template",
+                    "csr1000v",
+                    "-L",
+                    "test-nx-bootstrap",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--mgmt",
+                    "--mgmt-bridge",
+                    "--bootstrap",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            lab_root = Path(tmp) / "out" / "nx-bootstrap"
+            cml_yaml = lab_root / "nx-bootstrap.yaml"
+            self.assertTrue(cml_yaml.exists())
+            self._assert_full_nac_tree(
+                lab_root / "nac",
+                ("iosv-01.yaml", "iosv-02.yaml"),
+            )
+            self._assert_provenance_flags(cml_yaml, "--nac", "--bootstrap", "--mgmt-bridge")
+
+            cml_text = cml_yaml.read_text(encoding="utf-8")
+            self.assertIn("restconf", cml_text)
+            self.assertIn("ip address dhcp", cml_text)
+            self.assertIn("ip ssh server algorithm authentication password", cml_text)
+            self.assertNotIn("router ospf", cml_text)
+
+            nac_text = (lab_root / "nac" / "nac.yaml").read_text(encoding="utf-8")
+            self.assertIn("ospf_processes", nac_text)
+
     def test_flat_and_flat_pair_non_nac_runs_do_not_emit_nac_tree(self):
         for mode in ("flat", "flat-pair"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:

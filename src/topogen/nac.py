@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.9.1
-# Date Modified: 2026-06-04
+# Doc Version: v1.10.0
+# Date Modified: 2026-06-08
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
 # - Reads from: TopogenNode/TopogenInterface objects, render context (mode/template/device-template)
@@ -147,6 +147,84 @@ def _configuration_interface_collection(iface_type: str) -> str:
     return f"{iface_type.lower()}s"
 
 
+_OSPF_ROUTING_TEMPLATES = frozenset({"csr-ospf", "iosv", "csr1000v"})
+
+
+def _is_ospf_routing_template(template: str) -> bool:
+    return str(template) in _OSPF_ROUTING_TEMPLATES
+
+
+def _build_ospf_routing_config(node_obj: TopogenNode) -> dict:
+    """Mirror csr-ospf/iosv day-0: OSPF process 1, area 0, passive Loopback0."""
+    networks: list[dict] = []
+    loopback = getattr(node_obj, "loopback", None)
+    if loopback is not None:
+        networks.append(
+            {
+                "ip": str(loopback.ip),
+                "wildcard": "0.0.0.0",
+                "area": "0",
+            }
+        )
+    for iface in getattr(node_obj, "interfaces", None) or []:
+        if str(_get_iface_value(iface, "description", "")) == "OOB Management":
+            continue
+        address = _get_iface_value(iface, "address", None)
+        if not address:
+            continue
+        if _get_iface_value(iface, "vrf", None):
+            continue
+        networks.append(
+            {
+                "ip": str(ip_interface(address).ip),
+                "wildcard": "0.0.0.0",
+                "area": "0",
+            }
+        )
+    return {
+        "ospf_processes": [
+            {
+                "id": 1,
+                "passive_interfaces": [
+                    {
+                        "interface_type": "Loopback",
+                        "interface_id": "0",
+                    }
+                ],
+                "networks": networks,
+            }
+        ]
+    }
+
+
+def _order_managed_iface_entry(entry: dict) -> dict:
+    """Stable NaC YAML key order for terraform-managed interfaces."""
+    order = (
+        "type",
+        "id",
+        "name",
+        "shutdown",
+        "cdp",
+        "ipv4",
+        "description",
+        "vrf_forwarding",
+        "tunnel_source",
+        "tunnel_mode",
+        "tunnel_destination",
+        "tunnel_vrf",
+        "ip_mtu",
+        "tunnel_protection_ipsec_profile",
+    )
+    ordered: dict = {}
+    for key in order:
+        if key in entry:
+            ordered[key] = entry[key]
+    for key, value in entry.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
 def _platform_from_device_template(device_template: str) -> str:
     if device_template in {"iosv", "csr1000v"}:
         return "iosxe"
@@ -154,6 +232,151 @@ def _platform_from_device_template(device_template: str) -> str:
         "NaC canonical writer supports IOS-XE templates only "
         f"(iosv, csr1000v); received {device_template}"
     )
+
+
+DMVPN_TUNNEL_DESCRIPTION = "dmvpn tunnel"
+DMVPN_NBMA_DESCRIPTION = "dmvpn nbma"
+DMVPN_PAIR_DESCRIPTION = "pair link"
+DMVPN_IPSEC_PROFILE = "TOPGEN-IPSEC"
+DMVPN_IKEV2_PROPOSAL = "TOPGEN-PROP"
+DMVPN_IKEV2_POLICY = "TOPGEN-POL"
+DMVPN_IKEV2_KEYRING = "TOPGEN-KR"
+DMVPN_IKEV2_PROFILE = "TOPGEN-IKEV2"
+DMVPN_IPSEC_TRANSFORM_SET = "TOPGEN-TS"
+
+
+def _is_dmvpn_context(*, mode: str, template: str) -> bool:
+    return mode == "dmvpn" or str(template).endswith("-dmvpn")
+
+
+def _dmvpn_security_uses_ipsec(security: str | None) -> bool:
+    return str(security or "none") in {"ikev2-psk", "ikev2-pki", "ikev2-rsa"}
+
+
+def _dmvpn_nbma_source_interface(device_template: str) -> str:
+    if device_template == "csr1000v":
+        return "GigabitEthernet1"
+    return "GigabitEthernet0/0"
+
+
+def _dmvpn_overlay_vrf(args) -> str | None:
+    if args is None or not getattr(args, "enable_vrf", False):
+        return None
+    pair_vrf = getattr(args, "pair_vrf", None)
+    return str(pair_vrf) if pair_vrf else None
+
+
+def _dmvpn_frontside_vrf(args) -> str | None:
+    if args is None:
+        return None
+    fvrf = getattr(args, "dmvpn_fvrf", None)
+    return str(fvrf) if fvrf else None
+
+
+def _collect_dmvpn_vrf_names(args) -> set[str]:
+    names: set[str] = set()
+    fvrf = _dmvpn_frontside_vrf(args)
+    if fvrf:
+        names.add(fvrf)
+    overlay_vrf = _dmvpn_overlay_vrf(args)
+    if overlay_vrf:
+        names.add(overlay_vrf)
+    return names
+
+
+def _build_dmvpn_crypto_configuration(args) -> dict | None:
+    """Project IKEv2-PSK IPsec stack when day-0 DMVPN security requires it."""
+    if args is None:
+        return None
+    security = getattr(args, "dmvpn_security", "none")
+    if security != "ikev2-psk":
+        return None
+    psk = getattr(args, "dmvpn_psk", None)
+    if not psk:
+        return None
+    fvrf = _dmvpn_frontside_vrf(args)
+    ipsec_mode = getattr(args, "dmvpn_ipsec_mode", "transport")
+    policy = {
+        "name": DMVPN_IKEV2_POLICY,
+        "proposals": [DMVPN_IKEV2_PROPOSAL],
+    }
+    if fvrf:
+        policy["match_fvrf"] = fvrf
+    profile = {
+        "name": DMVPN_IKEV2_PROFILE,
+        "authentication_local_pre_share": True,
+        "authentication_remote_pre_share": True,
+        "keyring_local": DMVPN_IKEV2_KEYRING,
+        "match_identity_remote_ipv4_addresses": [
+            {"address": "0.0.0.0", "mask": "0.0.0.0"},
+        ],
+    }
+    if fvrf:
+        profile["match_fvrf"] = fvrf
+    return {
+        "ikev2": {
+            "proposals": [
+                {
+                    "name": DMVPN_IKEV2_PROPOSAL,
+                    "encryption": ["aes_cbc_256"],
+                    "integrity": ["sha256"],
+                    "group": ["14"],
+                }
+            ],
+            "policies": [policy],
+            "keyrings": [
+                {
+                    "name": DMVPN_IKEV2_KEYRING,
+                    "peers": [
+                        {
+                            "name": "ANY",
+                            "ipv4_address": "0.0.0.0",
+                            "ipv4_mask": "0.0.0.0",
+                            "pre_shared_key_local": str(psk),
+                            "pre_shared_key_remote": str(psk),
+                        }
+                    ],
+                }
+            ],
+            "profiles": [profile],
+        },
+        "ipsec_transform_sets": [
+            {
+                "name": DMVPN_IPSEC_TRANSFORM_SET,
+                "esp": "esp-256-aes",
+                "esp_hmac": "esp-sha256-hmac",
+                "mode_tunnel": ipsec_mode == "tunnel",
+            }
+        ],
+        "ipsec_profiles": [
+            {
+                "name": DMVPN_IPSEC_PROFILE,
+                "set_transform_set": [DMVPN_IPSEC_TRANSFORM_SET],
+                "set_ikev2_profile": DMVPN_IKEV2_PROFILE,
+            }
+        ],
+    }
+
+
+def _apply_dmvpn_tunnel_configuration(
+    config_iface_entry: dict,
+    *,
+    device_template: str,
+    args,
+    overlay_vrf: str | None,
+) -> None:
+    config_iface_entry["tunnel_source"] = _dmvpn_nbma_source_interface(device_template)
+    ipv4 = dict(config_iface_entry.get("ipv4") or {})
+    ipv4["redirects"] = False
+    config_iface_entry["ipv4"] = ipv4
+    fvrf = _dmvpn_frontside_vrf(args)
+    if fvrf:
+        config_iface_entry["tunnel_vrf"] = fvrf
+        config_iface_entry["ip_mtu"] = 1360
+    if overlay_vrf:
+        config_iface_entry["vrf_forwarding"] = overlay_vrf
+    if _dmvpn_security_uses_ipsec(getattr(args, "dmvpn_security", "none")):
+        config_iface_entry["tunnel_protection_ipsec_profile"] = DMVPN_IPSEC_PROFILE
 
 
 def _canonical_name_for_index(index: int) -> str:
@@ -173,7 +396,11 @@ def _select_host(node: TopogenNode, args) -> str:
         for iface in node_interfaces:
             description = str(_get_iface_value(iface, "description", ""))
             if description == "OOB Management":
-                return _normalize_ipv4_host(_get_iface_value(iface, "address", None))
+                address = _get_iface_value(iface, "address", None)
+                if address:
+                    return _normalize_ipv4_host(address)
+                if bool(getattr(args, "mgmt_bridge", False)):
+                    return ""
         return ""
 
     data_interfaces = sorted(
@@ -213,12 +440,17 @@ def build_canonical_nac_model(
     platform = _platform_from_device_template(device_template)
     devices = []
     nodes = _as_nodes(node)
+    dmvpn_context = _is_dmvpn_context(mode=mode, template=template)
+    dmvpn_overlay_vrf = _dmvpn_overlay_vrf(args) if dmvpn_context else None
+    dmvpn_frontside_vrf = _dmvpn_frontside_vrf(args) if dmvpn_context else None
     for index, node_obj in enumerate(nodes, start=1):
         canonical_name = _canonical_name_for_index(index)
         system_hostname = str(getattr(node_obj, "hostname", ""))
         interfaces = []
         config_interface_groups = {}
         vrf_names = set()
+        if dmvpn_context:
+            vrf_names.update(_collect_dmvpn_vrf_names(args))
         node_interfaces = getattr(node_obj, "interfaces", None) or []
         sorted_interfaces = sorted(
             node_interfaces,
@@ -248,6 +480,15 @@ def build_canonical_nac_model(
                 entry["ipv4"] = str(iface_address)
                 config_iface_entry["ipv4"] = _ipv4_mapping(iface_address)
             iface_description = _get_iface_value(iface, "description", "")
+            is_dmvpn_tunnel = (
+                dmvpn_context and str(iface_description) == DMVPN_TUNNEL_DESCRIPTION
+            )
+            is_dmvpn_nbma = (
+                dmvpn_context and str(iface_description) == DMVPN_NBMA_DESCRIPTION
+            )
+            is_dmvpn_pair = (
+                dmvpn_context and str(iface_description) == DMVPN_PAIR_DESCRIPTION
+            )
             # The OOB management interface is provisioned out-of-band by the CML
             # day-0 template ("ip address dhcp") and is the transport the NaC
             # provider connects through. It must never be emitted as a
@@ -265,10 +506,27 @@ def build_canonical_nac_model(
                 config_iface_entry["vrf_forwarding"] = str(iface_vrf)
                 if not is_oob_mgmt:
                     vrf_names.add(str(iface_vrf))
+            elif is_dmvpn_nbma and dmvpn_frontside_vrf:
+                config_iface_entry["vrf_forwarding"] = dmvpn_frontside_vrf
+            elif (is_dmvpn_tunnel or is_dmvpn_pair) and dmvpn_overlay_vrf:
+                config_iface_entry["vrf_forwarding"] = dmvpn_overlay_vrf
             interfaces.append(entry)
             if iface_address and not is_oob_mgmt:
+                # NaC/terraform-iosxe sets L3 addresses but leaves interfaces
+                # administratively down unless shutdown is explicitly false.
+                config_iface_entry["shutdown"] = False
+                config_iface_entry["cdp"] = True
+                if is_dmvpn_tunnel:
+                    _apply_dmvpn_tunnel_configuration(
+                        config_iface_entry,
+                        device_template=device_template,
+                        args=args,
+                        overlay_vrf=dmvpn_overlay_vrf,
+                    )
                 collection = _configuration_interface_collection(iface_type)
-                config_interface_groups.setdefault(collection, []).append(config_iface_entry)
+                config_interface_groups.setdefault(collection, []).append(
+                    _order_managed_iface_entry(config_iface_entry)
+                )
         loopback = getattr(node_obj, "loopback", None)
         host = _select_host(node_obj, args)
         loopbacks = []
@@ -286,11 +544,22 @@ def build_canonical_nac_model(
                     "ipv4": _ipv4_mapping(loopback),
                 }
             )
+            if dmvpn_overlay_vrf:
+                config_loopbacks[-1]["vrf_forwarding"] = dmvpn_overlay_vrf
         configuration = {
             "system": {
                 "hostname": system_hostname,
-            }
+            },
+            "cdp": {
+                "run": True,
+            },
         }
+        if _is_ospf_routing_template(template):
+            configuration["routing"] = _build_ospf_routing_config(node_obj)
+        if dmvpn_context:
+            crypto_config = _build_dmvpn_crypto_configuration(args)
+            if crypto_config:
+                configuration["crypto"] = crypto_config
         if vrf_names:
             configuration["vrfs"] = [{"name": name} for name in sorted(vrf_names)]
         config_interfaces = {}

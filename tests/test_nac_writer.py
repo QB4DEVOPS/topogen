@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.15.0
-# Date Modified: 2026-06-04
+# Doc Version: v1.17.0
+# Date Modified: 2026-06-08
 #
 # - Called by: Developers/CI via unittest discovery
 # - Reads from: src/topogen/main.py, src/topogen/nac.py
@@ -10,15 +10,18 @@
 # Purpose: Verify canonical NaC writer output layout, keys, deterministic rerun behavior, and DMVPN artifact paths.
 # Blast Radius: Test-only; no runtime behavior changes.
 
+import re
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from ipaddress import IPv4Interface
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import yaml
+from jinja2 import Environment, PackageLoader, select_autoescape
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +29,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from topogen.config import Config  # pylint: disable=wrong-import-position
 from topogen.main import main  # pylint: disable=wrong-import-position
 from topogen.models import TopogenInterface, TopogenNode  # pylint: disable=wrong-import-position
 from topogen.nac import (  # pylint: disable=wrong-import-position
+    DMVPN_IPSEC_PROFILE,
     _select_host,
     build_canonical_nac_model,
     project_nac_yaml,
@@ -40,6 +45,23 @@ from topogen.nac import (  # pylint: disable=wrong-import-position
     write_terraform_scaffold,
     write_verify_reachability_yaml,
 )
+
+
+def _extract_day0_config(node: dict) -> str:
+    cfg = node.get("configuration", "")
+    if isinstance(cfg, list):
+        return cfg[0].get("content", "") if cfg else ""
+    return cfg
+
+
+def _interface_names(config: str) -> list[str]:
+    return re.findall(r"^interface (GigabitEthernet\S+)$", config, re.MULTILINE)
+
+
+def _interface_stanza(config: str, iface_name: str) -> str:
+    pattern = rf"^interface {re.escape(iface_name)}$(.*?)(?=^interface |\nend\n|\Z)"
+    match = re.search(pattern, config, re.MULTILINE | re.DOTALL)
+    return match.group(0) if match else ""
 
 
 class TestNacWriter(unittest.TestCase):
@@ -123,7 +145,18 @@ class TestNacWriter(unittest.TestCase):
             config = device["configuration"]
             self.assertNotIn("vrfs", config)
             ethernet = config["interfaces"]["ethernets"][0]
-            self.assertEqual(list(ethernet.keys()), ["type", "id", "ipv4", "description"])
+            self.assertEqual(
+                list(ethernet.keys()),
+                ["type", "id", "shutdown", "cdp", "ipv4", "description"],
+            )
+            self.assertFalse(ethernet["shutdown"])
+            self.assertTrue(ethernet["cdp"])
+            routing = config["routing"]["ospf_processes"][0]
+            self.assertEqual(routing["id"], 1)
+            self.assertEqual(
+                routing["passive_interfaces"][0],
+                {"interface_type": "Loopback", "interface_id": "0"},
+            )
             self.assertEqual(ethernet["type"], "GigabitEthernet")
             self.assertEqual(ethernet["id"], "0/0")
             self.assertEqual(list(ethernet["ipv4"].keys()), ["address", "address_mask"])
@@ -276,6 +309,8 @@ class TestNacWriter(unittest.TestCase):
                 self.assertEqual(tunnels[0]["id"], "0")
                 self.assertEqual(tunnels[0]["name"], "0")
                 self.assertEqual(tunnels[0]["description"], "dmvpn tunnel")
+                self.assertEqual(tunnels[0]["tunnel_source"], "GigabitEthernet0/0")
+                self.assertIs(tunnels[0]["ipv4"]["redirects"], False)
             for host_name in ("iosv-01", "iosv-02", "iosv-03"):
                 host_vars = nac_root / "host_vars" / f"{host_name}.yaml"
                 self.assertTrue(host_vars.exists())
@@ -366,6 +401,9 @@ class TestNacWriter(unittest.TestCase):
                 [(iface["name"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["tunnels"]],
                 [("0", "dmvpn tunnel")],
             )
+            hub_tunnel = devices[0]["configuration"]["interfaces"]["tunnels"][0]
+            self.assertEqual(hub_tunnel["tunnel_source"], "GigabitEthernet0/0")
+            self.assertIs(hub_tunnel["ipv4"]["redirects"], False)
             self.assertEqual(
                 [iface["description"] for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
                 ["pair link"],
@@ -983,6 +1021,163 @@ class TestNacWriter(unittest.TestCase):
         self.assertNotIn("vrfs", config)
         self.assertNotIn("vrf_forwarding", config["interfaces"]["ethernets"][0])
 
+    def test_csr_mgmt_emits_post_oob_data_interfaces(self):
+        """CSR Gi6+ data links must be Terraform-managed; only OOB Gi5 is excluded."""
+        node = TopogenNode(
+            hostname="R5",
+            loopback=IPv4Interface("10.0.0.5/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.14/30"), slot=0, description="to R1"),
+                TopogenInterface(
+                    address=None,
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=4,
+                ),
+                TopogenInterface(address=IPv4Interface("172.16.0.73/30"), slot=5, description="to R12"),
+                TopogenInterface(address=IPv4Interface("172.16.0.65/30"), slot=6, description="to R16"),
+            ],
+        )
+        model = build_canonical_nac_model(
+            node,
+            device_template="csr1000v",
+            template="csr-eigrp",
+            mode="nx",
+            args=SimpleNamespace(enable_mgmt=True, mgmt_slot=5, mgmt_bridge=True),
+        )
+        ethernets = model["iosxe"]["devices"][0]["configuration"]["interfaces"]["ethernets"]
+        self.assertEqual(
+            [(iface["id"], iface.get("description")) for iface in ethernets],
+            [
+                ("1", "to R1"),
+                ("6", "to R12"),
+                ("7", "to R16"),
+            ],
+        )
+        self.assertFalse(any(iface.get("description") == "OOB Management" for iface in ethernets))
+
+    def _high_degree_csr_node(self) -> TopogenNode:
+        return TopogenNode(
+            hostname="R5",
+            loopback=IPv4Interface("10.0.0.5/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.14/30"), slot=0, description="to R1"),
+                TopogenInterface(
+                    address=None,
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=4,
+                ),
+                TopogenInterface(address=IPv4Interface("172.16.0.73/30"), slot=5, description="to R12"),
+                TopogenInterface(address=IPv4Interface("172.16.0.65/30"), slot=6, description="to R16"),
+            ],
+        )
+
+    def test_csr_day0_uses_topo_slot_not_loop_index(self):
+        """TG-169: CSR data-plane Gi numbers must follow iface.slot + 1 after mgmt skip."""
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        tpl = env.get_template("csr-ospf.jinja2")
+        node = self._high_degree_csr_node()
+        rendered = tpl.render(
+            config=Config(),
+            node=node,
+            date=datetime.now(timezone.utc),
+            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None},
+        )
+        names = _interface_names(rendered)
+        self.assertEqual(names.count("GigabitEthernet5"), 1)
+        gi5 = _interface_stanza(rendered, "GigabitEthernet5")
+        self.assertIn("ip address dhcp", gi5)
+        self.assertIn("OOB Management", gi5)
+        gi6 = _interface_stanza(rendered, "GigabitEthernet6")
+        self.assertIn("172.16.0.73", gi6)
+        self.assertIn("to R12", gi6)
+        gi7 = _interface_stanza(rendered, "GigabitEthernet7")
+        self.assertIn("172.16.0.65", gi7)
+        self.assertIn("network 172.16.0.73 0.0.0.0 area 0", rendered)
+        self.assertIn("network 172.16.0.65 0.0.0.0 area 0", rendered)
+        self.assertNotRegex(rendered, r"interface GigabitEthernet5\n.*ip address 172\.16")
+
+    def test_iosv_day0_uses_topo_slot_not_loop_index(self):
+        """TG-169: IOSv data-plane Gi numbers must follow iface.slot after mgmt skip."""
+        env = Environment(loader=PackageLoader("topogen"), autoescape=select_autoescape())
+        tpl = env.get_template("iosv.jinja2")
+        node = TopogenNode(
+            hostname="R5",
+            loopback=IPv4Interface("10.0.0.5/32"),
+            interfaces=[
+                TopogenInterface(address=IPv4Interface("172.16.0.14/30"), slot=0, description="to R1"),
+                TopogenInterface(
+                    address=None,
+                    vrf="Mgmt-vrf",
+                    description="OOB Management",
+                    slot=5,
+                ),
+                TopogenInterface(address=IPv4Interface("172.16.0.73/30"), slot=6, description="to R12"),
+            ],
+        )
+        rendered = tpl.render(
+            config=Config(),
+            node=node,
+            date=datetime.now(timezone.utc),
+            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None},
+        )
+        names = _interface_names(rendered)
+        self.assertEqual(names.count("GigabitEthernet0/5"), 1)
+        gi5 = _interface_stanza(rendered, "GigabitEthernet0/5")
+        self.assertIn("ip address dhcp", gi5)
+        gi6 = _interface_stanza(rendered, "GigabitEthernet0/6")
+        self.assertIn("172.16.0.73", gi6)
+        self.assertNotRegex(rendered, r"interface GigabitEthernet0/5\n.*ip address 172\.16")
+
+    def test_nx_mgmt_bridge_offline_yaml_no_duplicate_csr_gi5(self):
+        """TG-169: nx + mgmt-bridge CSR day-0 must not double-book Gi5 on high-degree nodes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "nx-mgmt-bridge-csr.yaml"
+            rc = self._run_main(
+                [
+                    "10",
+                    "--mode",
+                    "nx",
+                    "-T",
+                    "csr-ospf",
+                    "--device-template",
+                    "csr1000v",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--mgmt",
+                    "--mgmt-bridge",
+                    "--mgmt-slot",
+                    "5",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            lab = yaml.safe_load(out_file.read_text(encoding="utf-8"))
+            routers = [
+                node
+                for node in lab["nodes"]
+                if node.get("node_definition") == "csr1000v"
+                and node.get("label", "").startswith("R")
+            ]
+            self.assertGreaterEqual(len(routers), 10)
+            for router in routers:
+                config = _extract_day0_config(router)
+                names = _interface_names(config)
+                self.assertEqual(len(names), len(set(names)), router["label"])
+                self.assertLessEqual(names.count("GigabitEthernet5"), 1, router["label"])
+                if "GigabitEthernet5" in names:
+                    gi5 = _interface_stanza(config, "GigabitEthernet5")
+                    self.assertIn("ip address dhcp", gi5, router["label"])
+                    self.assertNotRegex(
+                        config,
+                        r"interface GigabitEthernet5\n.*ip address 172\.16",
+                        router["label"],
+                    )
+                busy = [name for name in names if name not in {"GigabitEthernet5", "Loopback0"}]
+                if len(busy) >= 5:
+                    self.assertIn("GigabitEthernet6", names, router["label"])
+
     def test_flat_pair_cli_vrf_reaches_nac_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_file = Path(tmp) / "out" / "flat-pair-vrf.yaml"
@@ -1461,6 +1656,108 @@ class TestNacWriter(unittest.TestCase):
             self.assertFalse(nested_bad.exists())
             data_b = nac_yaml.read_text(encoding="utf-8")
             self.assertEqual(data_a, data_b)
+
+    def test_dmvpn_csr_nac_tunnel_uses_gigabitethernet1_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-csr.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "-T",
+                    "csr-dmvpn",
+                    "--device-template",
+                    "csr1000v",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_yaml = Path(tmp) / "out" / "dmvpn-flat-csr" / "nac" / "nac.yaml"
+            hub_tunnel = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))["iosxe"]["devices"][0]
+            tunnel = hub_tunnel["configuration"]["interfaces"]["tunnels"][0]
+            self.assertEqual(tunnel["tunnel_source"], "GigabitEthernet1")
+            self.assertEqual(
+                hub_tunnel["configuration"]["interfaces"]["ethernets"][0]["id"],
+                "1",
+            )
+
+    def test_dmvpn_ikev2_psk_nac_projects_crypto_and_tunnel_protection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-psk.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--dmvpn-security",
+                    "ikev2-psk",
+                    "--dmvpn-psk",
+                    "lab-psk-test",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            device = yaml.safe_load(
+                (Path(tmp) / "out" / "dmvpn-psk" / "nac" / "nac.yaml").read_text(encoding="utf-8")
+            )["iosxe"]["devices"][0]
+            crypto = device["configuration"]["crypto"]
+            self.assertIn("ikev2", crypto)
+            self.assertEqual(crypto["ipsec_profiles"][0]["name"], DMVPN_IPSEC_PROFILE)
+            self.assertEqual(
+                device["configuration"]["interfaces"]["tunnels"][0]["tunnel_protection_ipsec_profile"],
+                DMVPN_IPSEC_PROFILE,
+            )
+
+    def test_dmvpn_pair_vrf_reaches_tunnel_and_loopback_configuration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair-vrf.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--vrf",
+                    "--pair-vrf",
+                    "tenant",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            device = yaml.safe_load(
+                (Path(tmp) / "out" / "dmvpn-flat-pair-vrf" / "nac" / "nac.yaml").read_text(encoding="utf-8")
+            )["iosxe"]["devices"][0]
+            config = device["configuration"]
+            self.assertEqual(config["vrfs"], [{"name": "tenant"}])
+            self.assertEqual(
+                config["interfaces"]["tunnels"][0]["vrf_forwarding"],
+                "tenant",
+            )
+            self.assertEqual(
+                config["interfaces"]["loopbacks"][0]["vrf_forwarding"],
+                "tenant",
+            )
+            self.assertEqual(
+                config["interfaces"]["ethernets"][1]["vrf_forwarding"],
+                "tenant",
+            )
 
 
 if __name__ == "__main__":

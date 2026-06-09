@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.6
-Date Modified: 2026-06-08
+Doc Version: v1.8.7
+Date Modified: 2026-06-09
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -166,6 +166,43 @@ Offline vs. deployment (what TopoGen guarantees vs. what you supply):
 - You supply the deployment: running `terraform init/plan/apply`, running Ansible,
   device reachability, and credentials. `topogen` does not run any deployment or
   reachability tooling — those runners are intentionally out of scope.
+
+### Thin day-0 bootstrap (`--bootstrap`)
+
+Use `--nac --bootstrap` (not `--blank`) when you want CML to boot a **minimal
+reachability skin** and let Terraform apply routing and interfaces from `nac.yaml`.
+This is the recommended path for live NaC validation on CSR1000v.
+
+- Requires `--nac`, `--mgmt`, and `--offline-yaml`
+- Cannot be combined with `--blank`, `--pki`, or `--getvpn`
+- CML router configs: hostname, creds, OOB Gi DHCP (`--mgmt-bridge`), SSH,
+  RESTCONF/NETCONF only — no OSPF/EIGRP or tenant interfaces in CML YAML
+- Full protocol/interface intent remains in `nac.yaml`
+
+Example (2-node nx CSR, CML lifecycle + NaC):
+
+```powershell
+python -m topogen 2 --mode nx -T csr-ospf --device-template csr1000v `
+  -L "my-bootstrap-lab" --mgmt --mgmt-bridge `
+  --offline-yaml out/my-bootstrap-lab.yaml `
+  --nac --bootstrap --terraform-cml2 --overwrite
+
+terraform -chdir=out/my-bootstrap-lab/cml2 init
+terraform -chdir=out/my-bootstrap-lab/cml2 apply -auto-approve `
+  -var="address=$env:VIRL2_URL" -var="username=$env:VIRL2_USER" `
+  -var="password=$env:VIRL2_PASS" -var="skip_verify=true" -var="wait=true"
+
+$labId = terraform -chdir=out/my-bootstrap-lab/cml2 output -raw lab_id
+python scripts/sync-nac-mgmt-dhcp.py --lab-id $labId `
+  --nac-root out/my-bootstrap-lab/nac --device-template csr1000v
+
+$env:IOSXE_USERNAME = "cisco"; $env:IOSXE_PASSWORD = "cisco"
+terraform -chdir=out/my-bootstrap-lab/nac init
+terraform -chdir=out/my-bootstrap-lab/nac apply -auto-approve
+```
+
+Generated YAML provenance (`description`, `notes`, annotation) includes
+`--bootstrap` in the `args:` string when the flag is set.
 
 ## CML2 Terraform lifecycle scaffold (`--terraform-cml2`)
 
@@ -367,7 +404,7 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--getvpn-rekey-interval GETVPN_REKEY_INTERVAL]
                [--getvpn-protocol {gdoi,gikev2}] [--staging] [--no-staging]
                [--no-abort-on-failure] [--pki-enroll {scep,cli}] [--start]
-               [--yaml FILE] [--offline-yaml FILE] [--nac]
+               [--yaml FILE] [--offline-yaml FILE] [--nac] [--bootstrap]
                [--terraform-cml2] [--overwrite] [--intent-spot]
                [--import-yaml FILE]
                [--import] [--up FILE] [--print-up-cmd]
@@ -503,6 +540,9 @@ options:
                         required)
   --nac                 Enable NaC artifacts for offline YAML generation
                         (requires IOS-XE router templates)
+  --bootstrap           Thin day-0 router config for --nac (mgmt reachability
+                        and RESTCONF only; requires --mgmt; incompatible with
+                        --blank)
   --terraform-cml2, --cml2
                         Enable Terraform lifecycle scaffold generation for
                         offline CML2 labs
@@ -1093,6 +1133,7 @@ python -m topogen -T iosv -m nx --device-template iosv --blank -i -L "blank-nx-1
 
 **Notes:**
 - `--blank` works with simple, nx, flat, and flat-pair modes. It is not supported with DMVPN mode.
+- `--blank` cannot be combined with `--nac` (use `--nac --bootstrap` for thin day-0 + Terraform-managed config).
 - `--blank` cannot be combined with `--pki` or `--getvpn` (Bootstrap Lab cannot generate PKI or GET VPN configs).
 - Config-only flags are also rejected: `--ntp`, `--ntp-vrf`, `--ntp-inband`, `--ntp-oob`, `--archive`, `--eigrp-stub`, `--vrf`, `--pair-vrf` (no configs are rendered, so these have no effect).
 - Topology flags (`--mgmt`, `--mgmt-bridge`, `--flat-group-size`, `--staging`, `--no-staging`, `--distance`, etc.) remain allowed.
