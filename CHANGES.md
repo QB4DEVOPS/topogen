@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.12
-Date Modified: 2026-06-08
+Doc Version: v1.3.13
+Date Modified: 2026-06-09
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(nac): add `--bootstrap` thin day-0 path for live NaC validation (TG-186)
+    - New `--bootstrap` flag (requires `--nac --mgmt`) emits thin CML router configs (hostname, OOB Gi DHCP, SSH, RESTCONF/NETCONF) while full routing/interfaces/CDP stay in `nac.yaml` for Terraform. Rejects `--blank`, `--pki`, `--getvpn`. Provenance includes `--bootstrap` via `_append_common_offline_args_bits()`. `scripts/sync-nac-mgmt-dhcp.py` falls back to CML interface snooping when local pyATS is unavailable. Live-validated on CML 2.10: `TG186-BOOTSTRAP-E2E` (2× CSR1000v), cml2 apply + NaC apply (11 resources), OSPF FULL neighbor.
+    - Files: src/topogen/main.py, src/topogen/render.py, src/topogen/nac.py, scripts/sync-nac-mgmt-dhcp.py, tests/test_nac_cli_guardrails.py, tests/test_nac_render_e2e.py, tests/test_nac_writer.py, tests/fixtures/nac/golden-flat-*/nac.yaml, DEVELOPER.md (rev v1.8.9 → v1.9.0), README.md (rev v1.8.6 → v1.8.7), CHANGES.md (rev v1.3.12 → v1.3.13)
   - feat(nac): expand DMVPN NaC projection for nac-iosxe-supported tunnel/crypto attrs (TG-162)
     - Project `tunnel_source`, `ipv4.redirects: false`, front-side/overlay VRF forwarding, IKEv2-PSK crypto stack, and `tunnel_protection_ipsec_profile` into `nac.yaml` when DMVPN labs use `--nac`. Document NHRP, mGRE mode, tunnel key, and EIGRP as out-of-scope for `netascode/nac-iosxe` 0.1.0 in DEVELOPER.md coverage matrix. Extend terraform plan harness with DMVPN resource assertions and a ninth IKEv2-PSK case. Add `docs/validation/TG-162-pipeline.md`, `scripts/validate-tg162-dmvpn-live.ps1`, and CSR/IOSv mgmt interface support in `scripts/sync-nac-mgmt-dhcp.py`. Live-validated on CML 2.10: `DMVPN-N4-H1-CSR` (4× CSR1000v) NaC apply 16/16; R1 `tunnel source GigabitEthernet1`, `no ip redirects`.
     - Files: src/topogen/nac.py (rev v1.9.1 → v1.10.0), tests/test_nac_writer.py (rev v1.16.0 → v1.17.0), tests/test_nac_terraform_plan.py (rev v1.0.0 → v1.1.0), scripts/sync-nac-mgmt-dhcp.py, scripts/validate-tg162-dmvpn-live.ps1 (rev v1.0.0), docs/validation/TG-162-pipeline.md (rev v1.0.0), DEVELOPER.md, TODO.md, CHANGES.md (rev v1.3.12 → v1.3.13)

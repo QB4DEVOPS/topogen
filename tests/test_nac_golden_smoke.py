@@ -128,6 +128,7 @@ class TestNacGoldenSmoke(unittest.TestCase):
             self.assertNotIn("vrfs", config)
             for iface in config["interfaces"]["ethernets"]:
                 self.assertNotEqual(iface.get("description"), "OOB Management")
+                self.assertFalse(iface.get("shutdown"))
 
         if mgmt_enabled:
             self.assertEqual(

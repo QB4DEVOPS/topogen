@@ -361,6 +361,8 @@ def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None
     """Append offline artifact flags shared by provenance metadata builders."""
     if getattr(args, "nac", False):
         args_bits.append("--nac")
+    if getattr(args, "bootstrap", False):
+        args_bits.append("--bootstrap")
     if getattr(args, "terraform_cml2", False):
         args_bits.append("--terraform-cml2")
     cafile = getattr(args, "cafile", None)
@@ -706,6 +708,117 @@ def _append_nac_mgmt_interface(node: TopogenNode, args: Namespace, router_index:
             slot=model_slot,
         )
     )
+
+
+def _bootstrap_mgmt_interface_label(args: Namespace) -> str:
+    """Return the IOS-XE CLI label for the OOB management interface."""
+    dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
+    mgmt_slot = int(getattr(args, "mgmt_slot", 5))
+    if dev_def == "csr1000v":
+        return f"GigabitEthernet{mgmt_slot}"
+    return f"GigabitEthernet0/{mgmt_slot}"
+
+
+def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) -> str:
+    """Thin day-0 startup config for the NaC path: auth, OOB mgmt, RESTCONF."""
+    dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
+    csr_style = dev_def == "csr1000v"
+    mgmt_vrf = getattr(args, "mgmt_vrf", None)
+    mgmt_slot = int(getattr(args, "mgmt_slot", 5))
+    mgmt_bridge = bool(getattr(args, "mgmt_bridge", False))
+    mgmt_gw = getattr(args, "mgmt_gw", None)
+    if_label = _bootstrap_mgmt_interface_label(args)
+
+    lines = [
+        f"hostname {node.hostname}",
+        "!",
+        "no service password-encryption",
+        f"enable password {cfg.password}",
+        f"username {cfg.username} privilege 15 secret {cfg.password}",
+        "crypto key generate rsa modulus 2048",
+        f"ip domain name {cfg.domainname}",
+        "!",
+    ]
+
+    if mgmt_vrf:
+        if csr_style:
+            lines.extend(
+                [
+                    f"vrf definition {mgmt_vrf}",
+                    " address-family ipv4",
+                    " exit-address-family",
+                    "!",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    f"ip vrf {mgmt_vrf}",
+                    f" rd 1:{mgmt_slot}",
+                    "!",
+                ]
+            )
+
+    lines.append(f"interface {if_label}")
+    lines.append(" description OOB Management")
+    if mgmt_vrf:
+        fwd = "vrf forwarding" if csr_style else "ip vrf forwarding"
+        lines.append(f" {fwd} {mgmt_vrf}")
+    if mgmt_bridge:
+        lines.append(" ip address dhcp")
+    else:
+        mgmt_iface = next(
+            (iface for iface in node.interfaces if iface.description == "OOB Management"),
+            None,
+        )
+        if mgmt_iface is None or mgmt_iface.address is None:
+            raise TopogenError(
+                "bootstrap config requires a static OOB management address; "
+                "use --mgmt without --mgmt-bridge or verify node metadata"
+            )
+        lines.append(
+            f" ip address {mgmt_iface.address.ip} {mgmt_iface.address.netmask}"
+        )
+    lines.append(" no shutdown")
+    lines.append("!")
+
+    if mgmt_gw:
+        if mgmt_vrf:
+            lines.append(f"ip route vrf {mgmt_vrf} 0.0.0.0 0.0.0.0 {mgmt_gw}")
+        else:
+            lines.append(f"ip route 0.0.0.0 0.0.0.0 {mgmt_gw}")
+        lines.append("!")
+
+    lines.extend(
+        [
+            "ip ssh version 2",
+            "ip ssh server algorithm authentication password",
+            *_nac_restconf_lines(),
+            "!",
+            "line vty 0 4",
+            " login local",
+            " transport input ssh",
+            "line con 0",
+            f" password {cfg.password}",
+            "!",
+            "end",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _finalize_router_day0_config(
+    rendered: str,
+    cfg: Config,
+    node: TopogenNode,
+    args: Namespace,
+) -> str:
+    """Return router day-0 config: bootstrap skin, NaC RESTCONF splice, or unchanged."""
+    if getattr(args, "bootstrap", False):
+        return _render_bootstrap_config(cfg, node, args)
+    if getattr(args, "nac", False):
+        return _inject_nac_restconf_day0(rendered)
+    return rendered
 
 
 def _inject_nac_restconf_day0(rendered: str) -> str:
@@ -2926,8 +3039,7 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
-            if nac_enabled:
-                rendered = _inject_nac_restconf_day0(rendered)
+            rendered = _finalize_router_day0_config(rendered, cfg, nac_node, args)
 
             # Flat-like placement
             sw_index = idx // group
@@ -3744,8 +3856,7 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
-            if nac_enabled:
-                rendered = _inject_nac_restconf_day0(rendered)
+            rendered = _finalize_router_day0_config(rendered, cfg, node, args)
 
             sw_index = ((rnum - 1) // 2) // group
             x = min(max_coord, (sw_index + 1) * sw_step_x)
@@ -4489,8 +4600,7 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
-            if nac_enabled:
-                rendered = _inject_nac_restconf_day0(rendered)
+            rendered = _finalize_router_day0_config(rendered, cfg, node, args)
 
             rx = min(max_coord, (idx // group + 1) * sw_step_x)
             ry = min(max_coord, (idx % group + 1) * router_step_y)
@@ -5247,8 +5357,7 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_url
                 )
-            if nac_enabled:
-                rendered = _inject_nac_restconf_day0(rendered)
+            rendered = _finalize_router_day0_config(rendered, cfg, node, args)
 
             rx = min(max_coord, (idx // group + 1) * sw_step_x)
             ry = min(max_coord, (idx % group + 1) * router_step_y)
@@ -6023,8 +6132,7 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_scep_url
                 )
-            if nac_enabled:
-                rendered = _inject_nac_restconf_day0(rendered)
+            rendered = _finalize_router_day0_config(rendered, cfg, node_obj, args)
 
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")
@@ -6546,8 +6654,7 @@ class Renderer:
                 rendered = _inject_pki_client_trustpoint(
                     rendered, label, cfg.domainname, ca_scep_url
                 )
-            if nac_enabled:
-                rendered = _inject_nac_restconf_day0(rendered)
+            rendered = _finalize_router_day0_config(rendered, cfg, node_obj, args)
 
             lines.append(f"  - id: {node_ids[label]}")
             lines.append(f"    label: {label}")

@@ -83,6 +83,11 @@ def validate_nac_mvp_guardrails(args, parser):
     """Fail-fast guardrails for NaC CLI combinations."""
     if not getattr(args, "nac", False):
         return
+    if getattr(args, "blank", False):
+        parser.error(
+            "--nac cannot be combined with --blank "
+            "(Bootstrap Lab uses empty device configs; use --offline-yaml with --nac --bootstrap)"
+        )
     if not getattr(args, "offline_yaml", None):
         parser.error("--nac requires --offline-yaml FILE (offline generation path)")
     dev_template = getattr(args, "dev_template", "iosv")
@@ -108,6 +113,22 @@ def validate_nac_mvp_guardrails(args, parser):
             "--nac requires local offline generation; "
             "use --offline-yaml instead of --yaml online export"
         )
+
+
+def validate_bootstrap_guardrails(args, parser):
+    """Fail-fast guardrails for thin day-0 bootstrap generation."""
+    if not getattr(args, "bootstrap", False):
+        return
+    if not getattr(args, "nac", False):
+        parser.error("--bootstrap requires --nac (thin day-0 for Terraform-managed device config)")
+    if getattr(args, "blank", False):
+        parser.error("--bootstrap cannot be combined with --blank")
+    if not getattr(args, "enable_mgmt", False):
+        parser.error("--bootstrap requires --mgmt (OOB reachability for NaC/Terraform)")
+    if getattr(args, "pki_enabled", False):
+        parser.error("--bootstrap cannot be combined with --pki")
+    if getattr(args, "getvpn_enabled", False):
+        parser.error("--bootstrap cannot be combined with --getvpn")
 
 
 def validate_cml2_lifecycle_guardrails(args, parser):
@@ -644,6 +665,13 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="Enable NaC artifacts for offline YAML generation (requires IOS-XE router templates)",
     )
     parser.add_argument(
+        "--bootstrap",
+        dest="bootstrap",
+        action="store_true",
+        default=False,
+        help="Thin day-0 router config for --nac (mgmt reachability and RESTCONF only; requires --mgmt)",
+    )
+    parser.add_argument(
         "--terraform-cml2",
         "--cml2",
         dest="terraform_cml2",
@@ -840,6 +868,7 @@ def main():
         validate_nodes_for_mode(args, parser)
         args.dmvpn_hubs_list = parse_dmvpn_hubs(getattr(args, "dmvpn_hubs", None))
         validate_nac_mvp_guardrails(args, parser)
+        validate_bootstrap_guardrails(args, parser)
         validate_cml2_lifecycle_guardrails(args, parser)
 
         if args.mode == "dmvpn" and getattr(args, "dmvpn_security", "none") == "ikev2-psk":
@@ -991,6 +1020,8 @@ def main():
 
         # Validate --blank: reject flags that create special nodes or only affect config content
         if getattr(args, "blank", False):
+            if getattr(args, "bootstrap", False):
+                parser.error("--blank cannot be combined with --bootstrap")
             if args.mode == "dmvpn":
                 parser.error("--blank is not supported with DMVPN mode (use flat, flat-pair, simple, or nx)")
             if getattr(args, "pki_enabled", False):

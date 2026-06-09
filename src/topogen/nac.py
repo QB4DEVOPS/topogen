@@ -147,6 +147,84 @@ def _configuration_interface_collection(iface_type: str) -> str:
     return f"{iface_type.lower()}s"
 
 
+_OSPF_ROUTING_TEMPLATES = frozenset({"csr-ospf", "iosv", "csr1000v"})
+
+
+def _is_ospf_routing_template(template: str) -> bool:
+    return str(template) in _OSPF_ROUTING_TEMPLATES
+
+
+def _build_ospf_routing_config(node_obj: TopogenNode) -> dict:
+    """Mirror csr-ospf/iosv day-0: OSPF process 1, area 0, passive Loopback0."""
+    networks: list[dict] = []
+    loopback = getattr(node_obj, "loopback", None)
+    if loopback is not None:
+        networks.append(
+            {
+                "ip": str(loopback.ip),
+                "wildcard": "0.0.0.0",
+                "area": "0",
+            }
+        )
+    for iface in getattr(node_obj, "interfaces", None) or []:
+        if str(_get_iface_value(iface, "description", "")) == "OOB Management":
+            continue
+        address = _get_iface_value(iface, "address", None)
+        if not address:
+            continue
+        if _get_iface_value(iface, "vrf", None):
+            continue
+        networks.append(
+            {
+                "ip": str(ip_interface(address).ip),
+                "wildcard": "0.0.0.0",
+                "area": "0",
+            }
+        )
+    return {
+        "ospf_processes": [
+            {
+                "id": 1,
+                "passive_interfaces": [
+                    {
+                        "interface_type": "Loopback",
+                        "interface_id": "0",
+                    }
+                ],
+                "networks": networks,
+            }
+        ]
+    }
+
+
+def _order_managed_iface_entry(entry: dict) -> dict:
+    """Stable NaC YAML key order for terraform-managed interfaces."""
+    order = (
+        "type",
+        "id",
+        "name",
+        "shutdown",
+        "cdp",
+        "ipv4",
+        "description",
+        "vrf_forwarding",
+        "tunnel_source",
+        "tunnel_mode",
+        "tunnel_destination",
+        "tunnel_vrf",
+        "ip_mtu",
+        "tunnel_protection_ipsec_profile",
+    )
+    ordered: dict = {}
+    for key in order:
+        if key in entry:
+            ordered[key] = entry[key]
+    for key, value in entry.items():
+        if key not in ordered:
+            ordered[key] = value
+    return ordered
+
+
 def _platform_from_device_template(device_template: str) -> str:
     if device_template in {"iosv", "csr1000v"}:
         return "iosxe"
@@ -434,6 +512,10 @@ def build_canonical_nac_model(
                 config_iface_entry["vrf_forwarding"] = dmvpn_overlay_vrf
             interfaces.append(entry)
             if iface_address and not is_oob_mgmt:
+                # NaC/terraform-iosxe sets L3 addresses but leaves interfaces
+                # administratively down unless shutdown is explicitly false.
+                config_iface_entry["shutdown"] = False
+                config_iface_entry["cdp"] = True
                 if is_dmvpn_tunnel:
                     _apply_dmvpn_tunnel_configuration(
                         config_iface_entry,
@@ -442,7 +524,9 @@ def build_canonical_nac_model(
                         overlay_vrf=dmvpn_overlay_vrf,
                     )
                 collection = _configuration_interface_collection(iface_type)
-                config_interface_groups.setdefault(collection, []).append(config_iface_entry)
+                config_interface_groups.setdefault(collection, []).append(
+                    _order_managed_iface_entry(config_iface_entry)
+                )
         loopback = getattr(node_obj, "loopback", None)
         host = _select_host(node_obj, args)
         loopbacks = []
@@ -465,8 +549,13 @@ def build_canonical_nac_model(
         configuration = {
             "system": {
                 "hostname": system_hostname,
-            }
+            },
+            "cdp": {
+                "run": True,
+            },
         }
+        if _is_ospf_routing_template(template):
+            configuration["routing"] = _build_ospf_routing_config(node_obj)
         if dmvpn_context:
             crypto_config = _build_dmvpn_crypto_configuration(args)
             if crypto_config:

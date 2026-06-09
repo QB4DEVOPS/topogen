@@ -28,6 +28,7 @@ from topogen.main import (  # pylint: disable=wrong-import-position
     create_argparser,
     main,
     normalize_template_inputs,
+    validate_bootstrap_guardrails,
     validate_cml2_lifecycle_guardrails,
     validate_nac_mvp_guardrails,
     validate_nodes_for_mode,
@@ -43,6 +44,7 @@ class TestNacCliGuardrails(unittest.TestCase):
         normalize_template_inputs(args)
         validate_nodes_for_mode(args, self.parser)
         validate_nac_mvp_guardrails(args, self.parser)
+        validate_bootstrap_guardrails(args, self.parser)
         validate_cml2_lifecycle_guardrails(args, self.parser)
         return args
 
@@ -149,6 +151,98 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertEqual(args.dmvpn_underlay, "flat-pair")
         self.assertEqual(args.template, "iosv-dmvpn")
         self.assertEqual(args.offline_yaml, "out/dmvpn-flat-pair.yaml")
+
+    def test_bootstrap_requires_nac(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "nx",
+                        "--offline-yaml",
+                        "out/two-router-nx.yaml",
+                        "--mgmt",
+                        "--bootstrap",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--bootstrap requires --nac", stderr.getvalue())
+
+    def test_bootstrap_requires_mgmt(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "nx",
+                        "--offline-yaml",
+                        "out/two-router-nx.yaml",
+                        "--nac",
+                        "--bootstrap",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--bootstrap requires --mgmt", stderr.getvalue())
+
+    def test_bootstrap_rejects_blank(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "nx",
+                        "--offline-yaml",
+                        "out/two-router-nx.yaml",
+                        "--nac",
+                        "--mgmt",
+                        "--bootstrap",
+                        "--blank",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        stderr_text = stderr.getvalue()
+        self.assertTrue(
+            "--bootstrap cannot be combined with --blank" in stderr_text
+            or "--nac cannot be combined with --blank" in stderr_text
+        )
+
+    def test_valid_nac_bootstrap_command_shape(self):
+        args = self._parse_and_validate(
+            [
+                "2",
+                "--mode",
+                "nx",
+                "--offline-yaml",
+                "out/two-router-nx.yaml",
+                "--nac",
+                "--mgmt",
+                "--mgmt-bridge",
+                "--bootstrap",
+            ]
+        )
+        self.assertTrue(args.nac)
+        self.assertTrue(args.bootstrap)
+        self.assertTrue(args.enable_mgmt)
+
+    def test_nac_rejects_blank(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "nx",
+                        "--offline-yaml",
+                        "out/two-router-nx.yaml",
+                        "--nac",
+                        "--blank",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--nac cannot be combined with --blank", stderr.getvalue())
 
     def test_nac_requires_offline_yaml(self):
         with self.assertRaises(SystemExit) as cm:

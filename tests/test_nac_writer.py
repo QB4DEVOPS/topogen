@@ -145,7 +145,18 @@ class TestNacWriter(unittest.TestCase):
             config = device["configuration"]
             self.assertNotIn("vrfs", config)
             ethernet = config["interfaces"]["ethernets"][0]
-            self.assertEqual(list(ethernet.keys()), ["type", "id", "ipv4", "description"])
+            self.assertEqual(
+                list(ethernet.keys()),
+                ["type", "id", "shutdown", "cdp", "ipv4", "description"],
+            )
+            self.assertFalse(ethernet["shutdown"])
+            self.assertTrue(ethernet["cdp"])
+            routing = config["routing"]["ospf_processes"][0]
+            self.assertEqual(routing["id"], 1)
+            self.assertEqual(
+                routing["passive_interfaces"][0],
+                {"interface_type": "Loopback", "interface_id": "0"},
+            )
             self.assertEqual(ethernet["type"], "GigabitEthernet")
             self.assertEqual(ethernet["id"], "0/0")
             self.assertEqual(list(ethernet["ipv4"].keys()), ["address", "address_mask"])

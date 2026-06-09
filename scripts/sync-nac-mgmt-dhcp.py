@@ -39,6 +39,37 @@ def _dhcp_fix_commands(iface_name: str) -> str:
     )
 
 
+def _bridge_ip_from_addresses(addresses: object) -> str | None:
+    """Return the first 192.168.1.x address from a CML/pyATS address list."""
+    if not addresses:
+        return None
+    if isinstance(addresses, str):
+        candidates = [addresses]
+    else:
+        candidates = list(addresses)
+    for candidate in candidates:
+        try:
+            ip = ip_address(str(candidate))
+        except ValueError:
+            continue
+        if str(ip).startswith(BRIDGE_PREFIX):
+            return str(ip)
+    return None
+
+
+def _mgmt_ip_from_cml_interface(node, iface_name: str) -> str | None:
+    """Read mgmt DHCP from CML interface snooping (no local pyATS required)."""
+    for iface in node.interfaces():
+        if iface.label != iface_name:
+            continue
+        mgmt_ip = _bridge_ip_from_addresses(getattr(iface, "discovered_ipv4", None))
+        if mgmt_ip:
+            return mgmt_ip
+        snooped = getattr(iface, "ip_snooped_info", None) or {}
+        return _bridge_ip_from_addresses(snooped.get("ipv4"))
+    return None
+
+
 def _parse_mgmt_ip(output: str, iface_filter: str) -> str | None:
     for line in output.splitlines():
         if iface_filter not in line:
@@ -179,24 +210,39 @@ def main() -> int:
             continue
         index = int(label[1:])
         canonical = _canonical_name(index)
-        entry: dict[str, str | None] = {"state": str(node.state), "mgmt_ip": None, "error": None}
+        entry: dict[str, str | None] = {
+            "state": str(node.state),
+            "mgmt_ip": None,
+            "source": None,
+            "error": None,
+        }
 
         if str(node.state) != "BOOTED":
             report["routers"][label] = entry
             continue
 
+        iface_name = _mgmt_interface_name(node.node_definition, args.mgmt_slot)
+        mgmt_ip: str | None = None
         try:
-            iface_name = _mgmt_interface_name(node.node_definition, args.mgmt_slot)
             if args.fix_dhcp:
                 node.run_pyats_config_command(_dhcp_fix_commands(iface_name))
             show_cmd = f"show ip interface brief | include {iface_name}"
             output = node.run_pyats_command(show_cmd, config=False)
             mgmt_ip = _parse_mgmt_ip(str(output), iface_name)
-            entry["mgmt_ip"] = mgmt_ip
             if mgmt_ip:
-                mapping[canonical] = mgmt_ip
+                entry["source"] = "pyats"
         except Exception as exc:  # noqa: BLE001 - surface per-node CML/pyATS failures
-            entry["error"] = str(exc)
+            entry["error"] = str(exc) or type(exc).__name__
+
+        if not mgmt_ip:
+            mgmt_ip = _mgmt_ip_from_cml_interface(node, iface_name)
+            if mgmt_ip:
+                entry["source"] = "cml_snooped"
+                entry["error"] = None
+
+        entry["mgmt_ip"] = mgmt_ip
+        if mgmt_ip:
+            mapping[canonical] = mgmt_ip
 
         report["routers"][label] = entry
 

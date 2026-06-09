@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.9
-Date Modified: 2026-06-08
+Doc Version: v1.9.0
+Date Modified: 2026-06-09
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -319,7 +319,10 @@ CLI guardrails (`src/topogen/main.py`):
 
 - `validate_nac_mvp_guardrails()` — historical name; enforces offline-only path,
   IOS-XE `--device-template` (`iosv`, `csr1000v`), and rejects import/online
-  YAML workflows
+  YAML workflows; rejects `--nac` combined with `--blank` (use `--bootstrap`
+  instead)
+- `validate_bootstrap_guardrails()` — `--bootstrap` requires `--nac` and
+  `--mgmt`; rejects `--blank`, `--pki`, and `--getvpn`
 - `validate_nodes_for_mode()` — allows `nodes=1` when `--nac` is set; non-NaC
   paths still require `nodes>=2`
 
@@ -363,11 +366,11 @@ Tests (run when touching NaC):
 
 | File | Purpose |
 |------|---------|
-| `tests/test_nac_cli_guardrails.py` | CLI parsing, offline/import rejection, IOS-XE template checks, `nodes=1` with `--nac`, composed flags (mgmt/VRF/CSR) |
+| `tests/test_nac_cli_guardrails.py` | CLI parsing, offline/import rejection, IOS-XE template checks, `nodes=1` with `--nac`, `--bootstrap` guardrails, composed flags (mgmt/VRF/CSR) |
 | `tests/test_nac_output_paths.py` | `out/<lab>/` layout, no nested `nac/` on rerun |
 | `tests/test_nac_writer.py` | `nac.py` scaffold content, `yaml_files = ["nac.yaml"]`, DMVPN naming |
 | `tests/test_nac_day0_restconf.py` | RESTCONF/NETCONF lines in day0 when `--nac` |
-| `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair; non-NaC paths skip `nac/` |
+| `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair, nx `--bootstrap` thin day-0; non-NaC paths skip `nac/` |
 | `tests/test_nac_golden_smoke.py` | Regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*` |
 | `tests/test_nac_terraform_plan.py` | TG-161/TG-162: opt-in `terraform init` + `terraform plan` contract against pinned `netascode/nac-iosxe` (9-case matrix; DMVPN cases assert tunnel/crypto resources) |
 
@@ -407,6 +410,36 @@ uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
 
 **Story closeout pipeline (TG-162):** Offline gates 1–2 — `.\scripts\validate-tg162-dmvpn-live.ps1`. Live CML 2.10 gate 3 (CSR1000v NaC apply + CLI checks) required before Jira Done. See `docs/validation/TG-162-pipeline.md`.
 
+### NaC thin day-0 bootstrap (`--bootstrap`)
+
+Use `--nac --bootstrap` when Terraform must own routing/protocol config and CML
+should boot only a **thin reachability skin** (not full Jinja day-0, not empty
+`--blank`).
+
+| Path | CLI | CML router `configuration` | Full intent |
+|------|-----|---------------------------|-------------|
+| Normal NaC | `--nac` | Full Jinja render + RESTCONF splice | `nac.yaml` |
+| NaC proof / live apply | `--nac --bootstrap` | Thin day-0 only | `nac.yaml` (OSPF, interfaces, CDP, etc.) |
+| Empty topology | `--blank` | `configuration: ""` | N/A (incompatible with `--nac`) |
+
+Thin day-0 includes: hostname, credentials, RSA, `Mgmt-vrf` + OOB Gi DHCP (with
+`--mgmt-bridge`), `ip ssh version 2`, `ip ssh server algorithm authentication
+password`, RESTCONF/NETCONF, SSH vty. It does **not** include OSPF/EIGRP, tenant
+interfaces, CDP, or PKI — those stay in `nac.yaml` for `terraform apply`.
+
+Implementation: `src/topogen/render.py` — `_render_bootstrap_config()`,
+`_finalize_router_day0_config()` (replaces per-path `_inject_nac_restconf_day0`
+calls). Provenance: `--bootstrap` is appended via `_append_common_offline_args_bits()`
+into lab `description`, hidden `notes`, and annotation `text_content`.
+
+**Live E2E (CSR1000v, mgmt-bridge):** generate with `--nac --bootstrap
+--terraform-cml2 --mgmt --mgmt-bridge`; `terraform apply` in `cml2/`; sync mgmt
+DHCP hosts (`scripts/sync-nac-mgmt-dhcp.py`, CML snooping fallback when local
+pyATS is unavailable); `terraform apply` in `nac/`. Live-validated 2026-06-09:
+`TG186-BOOTSTRAP-E2E` (2× CSR1000v nx), 11 NaC resources, OSPF neighbor FULL on
+Gi1. See `docs/validation/TG-162-pipeline.md` phases 1–3 (same flow; bootstrap
+replaces full Jinja in CML YAML).
+
 **Success criteria per case:** TopoGen exit 0; `terraform init` exit 0; `terraform plan -input=false`
 exit 0; stdout contains `Plan: N to add, 0 to change, 0 to destroy.`; no `Unsupported attribute`
 or `Error:` lines; DMVPN cases satisfy their `plan_must_match` snippets. No `terraform apply`, no live devices.
@@ -433,6 +466,8 @@ Pinned module: `netascode/nac-iosxe/iosxe` 0.1.0. Day-0 reference: `csr-dmvpn.ji
 | Phase 3 NHRP redirect/shortcut | hub/spoke NHRP extras | — | **Out of scope** (NHRP) |
 
 Terraform still owns a **subset** of DMVPN: interface/crypto scaffolding that nac-iosxe exposes. NHRP, mGRE mode, tunnel key, and EIGRP remain day-0-only until a future nac-iosxe release adds those resources.
+
+**Gap audit (2026-06-08):** Full 8-profile matrix, hub/spoke notes, terraform plan record, and Jira epic breakdown — `docs/nac/DMVPN-day0-nac-gap-audit.md`. Automation: `scripts/audit-dmvpn-day0-nac-gap.py`. Key **Emit** finding: IKEv2-PKI emits `tunnel_protection_ipsec_profile` without `configuration.crypto` (PSK path complete).
 
 **CI:** GitHub Actions job `NaC Terraform plan contract` in `.github/workflows/python-package.yml`
 runs when NaC-related paths change. Uses a warmed `TF_PLUGIN_CACHE_DIR`.
@@ -488,6 +523,7 @@ User workflow (documented in README, not executed by TopoGen):
 3. Set `TF_VAR_address`, `TF_VAR_username`, `TF_VAR_password` (or `TF_VAR_token`) — never commit these
 4. `terraform -chdir=out/<lab>/cml2 plan` then `apply`
 5. Optional: `--nac` in step 1 adds `out/<lab>/nac/` for device config after the lab is up
+6. With `--nac --bootstrap`, CML YAML carries thin day-0 only; run DHCP sync then `terraform apply` in `nac/` (step 5 workflow)
 
 Relationship to NaC:
 
