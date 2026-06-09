@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.8.8
+Doc Version: v1.8.9
 Date Modified: 2026-06-08
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -369,6 +369,46 @@ Tests (run when touching NaC):
 | `tests/test_nac_day0_restconf.py` | RESTCONF/NETCONF lines in day0 when `--nac` |
 | `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair; non-NaC paths skip `nac/` |
 | `tests/test_nac_golden_smoke.py` | Regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*` |
+| `tests/test_nac_terraform_plan.py` | TG-161: opt-in `terraform init` + `terraform plan` contract against pinned `netascode/nac-iosxe` (8-case matrix) |
+
+### NaC Terraform plan contract gate (TG-161)
+
+Golden fixtures and `terraform validate` do not evaluate module locals from `nac.yaml`.
+Only `terraform plan` catches schema mismatches (e.g. TG-159 DMVPN tunnel `id` vs `name`).
+
+**When to run:** after changing `nac.py`, NaC projection in `render.py`, or pinned module/provider pins.
+
+**Requirements:** Terraform `>= 1.8.0` on `PATH`, network for `terraform init` (registry downloads).
+
+**Opt-in locally** (default `pytest` skips these tests):
+
+```powershell
+# Windows — use a short temp root to avoid MAX_PATH issues during terraform init
+New-Item -ItemType Directory -Force C:\t | Out-Null
+$env:TOPOGEN_TERRAFORM_PLAN = "1"
+$env:TF_PLUGIN_CACHE_DIR = "C:\t\topogen-tf-plugin-cache"
+$env:IOSXE_USERNAME = "lab"
+$env:IOSXE_PASSWORD = "lab"
+$env:IOSXE_URL = "https://127.0.0.1"
+uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
+```
+
+```bash
+# Linux/macOS
+export TOPOGEN_TERRAFORM_PLAN=1
+export TF_PLUGIN_CACHE_DIR="${TMPDIR:-/tmp}/topogen-tf-plugin-cache"
+export IOSXE_USERNAME=lab IOSXE_PASSWORD=lab IOSXE_URL=https://127.0.0.1
+uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
+```
+
+**Matrix (8 cases):** flat, flat-pair, DMVPN flat, DMVPN flat-pair × IOSv and CSR1000v.
+
+**Success criteria per case:** TopoGen exit 0; `terraform init` exit 0; `terraform plan -input=false`
+exit 0; stdout contains `Plan: N to add, 0 to change, 0 to destroy.`; no `Unsupported attribute`
+or `Error:` lines. No `terraform apply`, no live devices.
+
+**CI:** GitHub Actions job `NaC Terraform plan contract` in `.github/workflows/python-package.yml`
+runs when NaC-related paths change. Uses a warmed `TF_PLUGIN_CACHE_DIR`.
 
 If you extend NaC scope:
 
