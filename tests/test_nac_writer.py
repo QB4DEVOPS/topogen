@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.16.0
+# Doc Version: v1.17.0
 # Date Modified: 2026-06-08
 #
 # - Called by: Developers/CI via unittest discovery
@@ -33,6 +33,7 @@ from topogen.config import Config  # pylint: disable=wrong-import-position
 from topogen.main import main  # pylint: disable=wrong-import-position
 from topogen.models import TopogenInterface, TopogenNode  # pylint: disable=wrong-import-position
 from topogen.nac import (  # pylint: disable=wrong-import-position
+    DMVPN_IPSEC_PROFILE,
     _select_host,
     build_canonical_nac_model,
     project_nac_yaml,
@@ -297,6 +298,8 @@ class TestNacWriter(unittest.TestCase):
                 self.assertEqual(tunnels[0]["id"], "0")
                 self.assertEqual(tunnels[0]["name"], "0")
                 self.assertEqual(tunnels[0]["description"], "dmvpn tunnel")
+                self.assertEqual(tunnels[0]["tunnel_source"], "GigabitEthernet0/0")
+                self.assertIs(tunnels[0]["ipv4"]["redirects"], False)
             for host_name in ("iosv-01", "iosv-02", "iosv-03"):
                 host_vars = nac_root / "host_vars" / f"{host_name}.yaml"
                 self.assertTrue(host_vars.exists())
@@ -387,6 +390,9 @@ class TestNacWriter(unittest.TestCase):
                 [(iface["name"], iface["description"]) for iface in devices[0]["configuration"]["interfaces"]["tunnels"]],
                 [("0", "dmvpn tunnel")],
             )
+            hub_tunnel = devices[0]["configuration"]["interfaces"]["tunnels"][0]
+            self.assertEqual(hub_tunnel["tunnel_source"], "GigabitEthernet0/0")
+            self.assertIs(hub_tunnel["ipv4"]["redirects"], False)
             self.assertEqual(
                 [iface["description"] for iface in devices[1]["configuration"]["interfaces"]["ethernets"]],
                 ["pair link"],
@@ -1639,6 +1645,108 @@ class TestNacWriter(unittest.TestCase):
             self.assertFalse(nested_bad.exists())
             data_b = nac_yaml.read_text(encoding="utf-8")
             self.assertEqual(data_a, data_b)
+
+    def test_dmvpn_csr_nac_tunnel_uses_gigabitethernet1_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-csr.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "-T",
+                    "csr-dmvpn",
+                    "--device-template",
+                    "csr1000v",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            nac_yaml = Path(tmp) / "out" / "dmvpn-flat-csr" / "nac" / "nac.yaml"
+            hub_tunnel = yaml.safe_load(nac_yaml.read_text(encoding="utf-8"))["iosxe"]["devices"][0]
+            tunnel = hub_tunnel["configuration"]["interfaces"]["tunnels"][0]
+            self.assertEqual(tunnel["tunnel_source"], "GigabitEthernet1")
+            self.assertEqual(
+                hub_tunnel["configuration"]["interfaces"]["ethernets"][0]["id"],
+                "1",
+            )
+
+    def test_dmvpn_ikev2_psk_nac_projects_crypto_and_tunnel_protection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-psk.yaml"
+            rc = self._run_main(
+                [
+                    "3",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-hubs",
+                    "1",
+                    "--dmvpn-security",
+                    "ikev2-psk",
+                    "--dmvpn-psk",
+                    "lab-psk-test",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            device = yaml.safe_load(
+                (Path(tmp) / "out" / "dmvpn-psk" / "nac" / "nac.yaml").read_text(encoding="utf-8")
+            )["iosxe"]["devices"][0]
+            crypto = device["configuration"]["crypto"]
+            self.assertIn("ikev2", crypto)
+            self.assertEqual(crypto["ipsec_profiles"][0]["name"], DMVPN_IPSEC_PROFILE)
+            self.assertEqual(
+                device["configuration"]["interfaces"]["tunnels"][0]["tunnel_protection_ipsec_profile"],
+                DMVPN_IPSEC_PROFILE,
+            )
+
+    def test_dmvpn_pair_vrf_reaches_tunnel_and_loopback_configuration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "dmvpn-flat-pair-vrf.yaml"
+            rc = self._run_main(
+                [
+                    "4",
+                    "--mode",
+                    "dmvpn",
+                    "--dmvpn-underlay",
+                    "flat-pair",
+                    "--template",
+                    "iosv-dmvpn",
+                    "--offline-yaml",
+                    str(out_file),
+                    "--nac",
+                    "--vrf",
+                    "--pair-vrf",
+                    "tenant",
+                    "--overwrite",
+                ]
+            )
+            self.assertEqual(rc, 0)
+            device = yaml.safe_load(
+                (Path(tmp) / "out" / "dmvpn-flat-pair-vrf" / "nac" / "nac.yaml").read_text(encoding="utf-8")
+            )["iosxe"]["devices"][0]
+            config = device["configuration"]
+            self.assertEqual(config["vrfs"], [{"name": "tenant"}])
+            self.assertEqual(
+                config["interfaces"]["tunnels"][0]["vrf_forwarding"],
+                "tenant",
+            )
+            self.assertEqual(
+                config["interfaces"]["loopbacks"][0]["vrf_forwarding"],
+                "tenant",
+            )
+            self.assertEqual(
+                config["interfaces"]["ethernets"][1]["vrf_forwarding"],
+                "tenant",
+            )
 
 
 if __name__ == "__main__":

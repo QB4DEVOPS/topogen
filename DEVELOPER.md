@@ -369,7 +369,7 @@ Tests (run when touching NaC):
 | `tests/test_nac_day0_restconf.py` | RESTCONF/NETCONF lines in day0 when `--nac` |
 | `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair; non-NaC paths skip `nac/` |
 | `tests/test_nac_golden_smoke.py` | Regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*` |
-| `tests/test_nac_terraform_plan.py` | TG-161: opt-in `terraform init` + `terraform plan` contract against pinned `netascode/nac-iosxe` (8-case matrix) |
+| `tests/test_nac_terraform_plan.py` | TG-161/TG-162: opt-in `terraform init` + `terraform plan` contract against pinned `netascode/nac-iosxe` (9-case matrix; DMVPN cases assert tunnel/crypto resources) |
 
 ### NaC Terraform plan contract gate (TG-161)
 
@@ -401,11 +401,38 @@ export IOSXE_USERNAME=lab IOSXE_PASSWORD=lab IOSXE_URL=https://127.0.0.1
 uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
 ```
 
-**Matrix (8 cases):** flat, flat-pair, DMVPN flat, DMVPN flat-pair × IOSv and CSR1000v.
+**Matrix (9 cases):** flat, flat-pair, DMVPN flat, DMVPN flat-pair, DMVPN flat IKEv2-PSK (IOSv), flat/flat-pair CSR1000v, DMVPN flat/flat-pair CSR1000v.
+
+**DMVPN plan assertions (TG-162):** DMVPN matrix entries require `iosxe_interface_tunnel.tunnel` and `tunnel_source` in plan output; IKEv2-PSK case additionally requires crypto IPsec/IKEv2 proposal/profile resources and `tunnel_protection_ipsec_profile`.
+
+**Story closeout pipeline (TG-162):** Offline gates 1–2 — `.\scripts\validate-tg162-dmvpn-live.ps1`. Live CML 2.10 gate 3 (CSR1000v NaC apply + CLI checks) required before Jira Done. See `docs/validation/TG-162-pipeline.md`.
 
 **Success criteria per case:** TopoGen exit 0; `terraform init` exit 0; `terraform plan -input=false`
 exit 0; stdout contains `Plan: N to add, 0 to change, 0 to destroy.`; no `Unsupported attribute`
-or `Error:` lines. No `terraform apply`, no live devices.
+or `Error:` lines; DMVPN cases satisfy their `plan_must_match` snippets. No `terraform apply`, no live devices.
+
+### NaC DMVPN coverage matrix (TG-162)
+
+Pinned module: `netascode/nac-iosxe/iosxe` 0.1.0. Day-0 reference: `csr-dmvpn.jinja2` / `iosv-dmvpn.jinja2`.
+
+| Feature | Day-0 CML config | NaC / Terraform (`nac.yaml`) | Notes |
+|---------|------------------|------------------------------|-------|
+| NBMA underlay IPv4 | `interface GigabitEthernet*` | `interfaces.ethernets[]` | Modeled |
+| Tunnel IPv4 | `interface Tunnel0` | `interfaces.tunnels[]` (`id`, `name`) | Modeled (TG-159) |
+| `tunnel source` | `tunnel source GigabitEthernet*` | `tunnel_source` | Modeled (TG-162) |
+| `no ip redirects` | `no ip redirects` | `ipv4.redirects: false` | Modeled (TG-162) |
+| Front-side VRF (NBMA) | `vrf forwarding` / `tunnel vrf` | `vrf_forwarding`, `tunnel_vrf`, `vrfs[]` | Modeled when `--dmvpn-fvrf` |
+| Overlay VRF (pair) | tunnel/loopback/pair `vrf forwarding` | `vrf_forwarding` on tunnel, loopback, pair ethernets | Modeled when `--vrf --pair-vrf` |
+| IKEv2-PSK IPsec stack | `crypto ikev2` + `crypto ipsec` | `configuration.crypto.*` | Modeled when `--dmvpn-security ikev2-psk` |
+| Tunnel IPsec protection | `tunnel protection ipsec profile` | `tunnel_protection_ipsec_profile` | Modeled with IKEv2-PSK/PKI/RSA flag (crypto body only for PSK today) |
+| GRE mGRE mode | `tunnel mode gre multipoint` | — | **Out of scope** — not in nac-iosxe 0.1.0 tunnel schema |
+| Tunnel key | `tunnel key` | — | **Out of scope** |
+| NHRP (network-id, auth, map, NHS, redirect, shortcut) | `ip nhrp *` | — | **Out of scope** — no NHRP resources in nac-iosxe 0.1.0 |
+| EIGRP over tunnel | `router eigrp` | — | **Out of scope** — module has OSPF processes only, not EIGRP |
+| IKEv2-PKI / IKEv2-RSA + PKI trustpoints | day-0 PKI + IKEv2 rsa-sig | partial | Tunnel protection flag emitted; full PKI trustpoint modeling deferred (day-0 + `--pki` owns CA enrollment) |
+| Phase 3 NHRP redirect/shortcut | hub/spoke NHRP extras | — | **Out of scope** (NHRP) |
+
+Terraform still owns a **subset** of DMVPN: interface/crypto scaffolding that nac-iosxe exposes. NHRP, mGRE mode, tunnel key, and EIGRP remain day-0-only until a future nac-iosxe release adds those resources.
 
 **CI:** GitHub Actions job `NaC Terraform plan contract` in `.github/workflows/python-package.yml`
 runs when NaC-related paths change. Uses a warmed `TF_PLUGIN_CACHE_DIR`.

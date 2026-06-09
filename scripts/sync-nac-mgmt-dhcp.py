@@ -20,22 +20,28 @@ if str(SRC) not in sys.path:
 
 MGMT_IFACE_FILTER = "GigabitEthernet5"
 BRIDGE_PREFIX = "192.168.1."
-DHCP_FIX_COMMANDS = (
-    "interface GigabitEthernet5\n"
-    "no ip address\n"
-    "ip address dhcp\n"
-    "no shutdown"
-)
+ROUTER_NODE_DEFINITIONS = frozenset({"csr1000v", "iosv"})
 IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
 
 
-def _canonical_name(index: int) -> str:
-    return f"iosv-{index:02d}"
+def _mgmt_interface_name(node_definition: str, mgmt_slot: int) -> str:
+    if node_definition == "iosv":
+        return f"GigabitEthernet0/{mgmt_slot}"
+    return f"GigabitEthernet{mgmt_slot}"
 
 
-def _parse_mgmt_ip(output: str) -> str | None:
+def _dhcp_fix_commands(iface_name: str) -> str:
+    return (
+        f"interface {iface_name}\n"
+        "no ip address\n"
+        "ip address dhcp\n"
+        "no shutdown"
+    )
+
+
+def _parse_mgmt_ip(output: str, iface_filter: str) -> str | None:
     for line in output.splitlines():
-        if MGMT_IFACE_FILTER not in line:
+        if iface_filter not in line:
             continue
         parts = line.split()
         if len(parts) < 2:
@@ -50,6 +56,10 @@ def _parse_mgmt_ip(output: str) -> str | None:
         if str(ip).startswith(BRIDGE_PREFIX):
             return str(ip)
     return None
+
+
+def _canonical_name(index: int) -> str:
+    return f"iosv-{index:02d}"
 
 
 def _load_yaml(path: Path) -> dict:
@@ -112,12 +122,19 @@ def main() -> int:
         "--mgmt-slot",
         type=int,
         default=5,
-        help="CSR mgmt interface slot (default 5 -> GigabitEthernet5)",
+        help="Mgmt interface slot (default 5 -> Gi5 or Gi0/5 on IOSv)",
+    )
+    parser.add_argument(
+        "--device-template",
+        choices=("iosv", "csr1000v"),
+        default="csr1000v",
+        help="Router image family for mgmt interface naming (default csr1000v)",
     )
     args = parser.parse_args()
 
+    default_iface = _mgmt_interface_name(args.device_template, args.mgmt_slot)
     global MGMT_IFACE_FILTER
-    MGMT_IFACE_FILTER = f"GigabitEthernet{args.mgmt_slot}"
+    MGMT_IFACE_FILTER = default_iface
 
     if args.mapping_file:
         mapping = json.loads(args.mapping_file.read_text(encoding="utf-8"))
@@ -155,7 +172,7 @@ def main() -> int:
     }
 
     for node in lab.nodes():
-        if node.node_definition != "csr1000v":
+        if node.node_definition not in ROUTER_NODE_DEFINITIONS:
             continue
         label = node.label
         if not label.startswith("R") or not label[1:].isdigit():
@@ -169,13 +186,12 @@ def main() -> int:
             continue
 
         try:
+            iface_name = _mgmt_interface_name(node.node_definition, args.mgmt_slot)
             if args.fix_dhcp:
-                node.run_pyats_config_command(
-                    DHCP_FIX_COMMANDS.replace("GigabitEthernet5", MGMT_IFACE_FILTER)
-                )
-            show_cmd = f"show ip interface brief | include {MGMT_IFACE_FILTER}"
+                node.run_pyats_config_command(_dhcp_fix_commands(iface_name))
+            show_cmd = f"show ip interface brief | include {iface_name}"
             output = node.run_pyats_command(show_cmd, config=False)
-            mgmt_ip = _parse_mgmt_ip(str(output))
+            mgmt_ip = _parse_mgmt_ip(str(output), iface_name)
             entry["mgmt_ip"] = mgmt_ip
             if mgmt_ip:
                 mapping[canonical] = mgmt_ip

@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
+# Doc Version: v1.1.0
 # Date Modified: 2026-06-08
 #
 # - Called by: Developers/CI via pytest -m terraform (TG-161)
@@ -49,6 +49,7 @@ DUMMY_IOSXE_ENV = {
 class NacTerraformCase:
     case_id: str
     argv: tuple[str, ...]
+    plan_must_match: tuple[str, ...] = ()
 
 
 NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
@@ -57,6 +58,11 @@ NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
     NacTerraformCase(
         "dmvpn-flat-iosv",
         ("3", "--mode", "dmvpn", "--dmvpn-hubs", "1"),
+        (
+            "iosxe_interface_tunnel.tunnel",
+            "tunnel_source",
+            "ip_redirects",
+        ),
     ),
     NacTerraformCase(
         "dmvpn-flat-pair-iosv",
@@ -68,6 +74,10 @@ NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
             "flat-pair",
             "--template",
             "iosv-dmvpn",
+        ),
+        (
+            "iosxe_interface_tunnel.tunnel",
+            "tunnel_source",
         ),
     ),
     NacTerraformCase(
@@ -91,6 +101,10 @@ NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
             "--device-template",
             "csr1000v",
         ),
+        (
+            "iosxe_interface_tunnel.tunnel",
+            'tunnel_source     = "GigabitEthernet1"',
+        ),
     ),
     NacTerraformCase(
         "dmvpn-flat-pair-csr",
@@ -104,6 +118,30 @@ NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
             "csr-dmvpn",
             "--device-template",
             "csr1000v",
+        ),
+        (
+            "iosxe_interface_tunnel.tunnel",
+            'tunnel_source     = "GigabitEthernet1"',
+        ),
+    ),
+    NacTerraformCase(
+        "dmvpn-flat-psk-iosv",
+        (
+            "3",
+            "--mode",
+            "dmvpn",
+            "--dmvpn-hubs",
+            "1",
+            "--dmvpn-security",
+            "ikev2-psk",
+            "--dmvpn-psk",
+            "lab-psk-test",
+        ),
+        (
+            "iosxe_interface_tunnel.tunnel",
+            "tunnel_protection_ipsec_profile",
+            "iosxe_crypto_ikev2_proposal.crypto_ikev2_proposal",
+            "iosxe_crypto_ipsec_profile.crypto_ipsec_profile",
         ),
     ),
 )
@@ -125,11 +163,15 @@ def _run_topogen(argv: list[str]) -> int:
         return main()
 
 
-def _assert_plan_output(combined: str) -> None:
+def _assert_plan_output(combined: str, *, required_patterns: tuple[str, ...] = ()) -> None:
     for pattern in FAIL_PATTERNS:
         match = pattern.search(combined)
         assert match is None, f"terraform plan failure pattern {pattern.pattern!r}: {match.group(0)}"
     assert PLAN_ADD_RE.search(combined), f"expected 'Plan: N to add' in output:\n{combined[-4000:]}"
+    for snippet in required_patterns:
+        assert snippet in combined, (
+            f"expected terraform plan output to include {snippet!r}:\n{combined[-4000:]}"
+        )
 
 
 def _terraform_run(
@@ -210,6 +252,6 @@ def test_nac_workspace_terraform_plan(
         )
         plan_out = plan.stdout + plan.stderr
         assert plan.returncode == 0, f"terraform plan failed for {case.case_id}:\n{plan_out}"
-        _assert_plan_output(plan_out)
+        _assert_plan_output(plan_out, required_patterns=case.plan_must_match)
     finally:
         shutil.rmtree(work_root, ignore_errors=True)
