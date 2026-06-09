@@ -259,8 +259,8 @@ The table in `DEVELOPER.md` § “NaC DMVPN coverage matrix (TG-162)” remains 
 7. **CI: DMVPN gap audit script**  
    - *AC:* `scripts/audit-dmvpn-day0-nac-gap.py --scan-existing` runs in CI or release checklist; fails if P4 regresses to protection-without-crypto undetected.
 
-8. **3-hub + PKI live validation playbook**  
-   - *AC:* Extend `docs/validation/TG-162-pipeline.md` with CSR 6-node PKI profile, apply order (CA → DHCP sync → NaC), CLI checks for tunnel protection + enrolled cert.
+8. **3-hub + PKI live validation**  
+   - *AC:* CSR 6-node PKI profile: apply order (CA → DHCP sync → NaC), CLI checks for tunnel protection + enrolled cert (document in DEVELOPER.md when complete).
 
 ---
 
@@ -288,6 +288,6 @@ python -m topogen 6 --mode dmvpn --dmvpn-hubs 1,3,5 `
 
 - `DEVELOPER.md` — NaC DMVPN coverage matrix (TG-162)
 - `docs/nac/mapping-matrix.md` — TopoGen → NaC field mapping
-- `docs/validation/TG-162-pipeline.md` — plan/apply gates
+- `scripts/validate-tg162-dmvpn-live.ps1` — offline / live DMVPN validation
 - `src/topogen/nac.py` — `_build_dmvpn_crypto_configuration`, `_apply_dmvpn_tunnel_configuration`, TG-163 OOB exclusion
 - `src/topogen/templates/csr-dmvpn.jinja2` — day-0 hub/spoke branching
