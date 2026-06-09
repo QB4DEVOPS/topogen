@@ -101,8 +101,7 @@ if (Test-Path $oldSchemaYaml) {
 
 Write-Host "`n=== Summary ===" -ForegroundColor Cyan
 if ($failed -eq 0) {
-    Write-Host "All offline gates PASSED. Stage 3 (live CML 2.10) still required before Jira Done." -ForegroundColor Green
-    Write-Host "See docs/validation/TG-165-pipeline.md"
+    Write-Host "All offline gates PASSED." -ForegroundColor Green
     exit 0
 } else {
     Write-Host "$failed gate(s) FAILED." -ForegroundColor Red

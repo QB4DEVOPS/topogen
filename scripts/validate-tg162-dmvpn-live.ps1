@@ -157,7 +157,6 @@ if ($LiveApply) {
     Write-Host "Evidence directory: $liveEvidence" -ForegroundColor Yellow
 } else {
     Write-Host "`n=== Stage 3: skipped (pass -LiveApply to run CML + NaC terraform) ===" -ForegroundColor Yellow
-    Write-Host "See docs/validation/TG-162-pipeline.md"
 }
 
 Write-Host "`n=== Summary ===" -ForegroundColor Cyan

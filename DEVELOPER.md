@@ -408,7 +408,7 @@ uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
 
 **DMVPN plan assertions (TG-162):** DMVPN matrix entries require `iosxe_interface_tunnel.tunnel` and `tunnel_source` in plan output; IKEv2-PSK case additionally requires crypto IPsec/IKEv2 proposal/profile resources and `tunnel_protection_ipsec_profile`.
 
-**Story closeout pipeline (TG-162):** Offline gates 1–2 — `.\scripts\validate-tg162-dmvpn-live.ps1`. Live CML 2.10 gate 3 (CSR1000v NaC apply + CLI checks) required before Jira Done. See `docs/validation/TG-162-pipeline.md`.
+**Offline validation (TG-162):** `.\scripts\validate-tg162-dmvpn-live.ps1` (offline gates; pass `-LiveApply` for CML + NaC apply + CLI checks).
 
 ### NaC thin day-0 bootstrap (`--bootstrap`)
 
@@ -437,8 +437,7 @@ into lab `description`, hidden `notes`, and annotation `text_content`.
 DHCP hosts (`scripts/sync-nac-mgmt-dhcp.py`, CML snooping fallback when local
 pyATS is unavailable); `terraform apply` in `nac/`. Live-validated 2026-06-09:
 `TG186-BOOTSTRAP-E2E` (2× CSR1000v nx), 11 NaC resources, OSPF neighbor FULL on
-Gi1. See `docs/validation/TG-162-pipeline.md` phases 1–3 (same flow; bootstrap
-replaces full Jinja in CML YAML).
+Gi1 (bootstrap replaces full Jinja in CML YAML).
 
 **Success criteria per case:** TopoGen exit 0; `terraform init` exit 0; `terraform plan -input=false`
 exit 0; stdout contains `Plan: N to add, 0 to change, 0 to destroy.`; no `Unsupported attribute`
@@ -486,7 +485,7 @@ Tests (run when touching staging / PKI boot order):
 |------|---------|
 | `tests/test_staging_pki.py` | TG-165: `--pki` auto-enables staging, `--no-staging` opt-out, CML version guardrail, offline YAML emits `node_staging` + CA-ROOT priority |
 
-**Story closeout pipeline (TG-165):** Offline gates 1–2 — `.\scripts\validate-tg165.ps1`. Live CML 2.10 gate 3 required before Jira Done. See `docs/validation/TG-165-pipeline.md`.
+**Offline validation (TG-165):** `.\scripts\validate-tg165.ps1` (pytest + artifact checks).
 
 ## CML2 Terraform lifecycle scaffold reference (TG-150)
 
