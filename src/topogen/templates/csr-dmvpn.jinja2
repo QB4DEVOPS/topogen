@@ -268,6 +268,7 @@ interface GigabitEthernet{{ mgmt.slot }}
  vrf forwarding {{ mgmt.vrf }}
 {%- endif %}
  ip address dhcp
+ no cdp enable
  no shutdown
 !
 {%- if mgmt.gw %}
