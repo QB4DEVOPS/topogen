@@ -1088,6 +1088,7 @@ class TestNacWriter(unittest.TestCase):
         self.assertEqual(names.count("GigabitEthernet5"), 1)
         gi5 = _interface_stanza(rendered, "GigabitEthernet5")
         self.assertIn("ip address dhcp", gi5)
+        self.assertIn("no cdp enable", gi5)
         self.assertIn("OOB Management", gi5)
         gi6 = _interface_stanza(rendered, "GigabitEthernet6")
         self.assertIn("172.16.0.73", gi6)

@@ -779,6 +779,7 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
         lines.append(
             f" ip address {mgmt_iface.address.ip} {mgmt_iface.address.netmask}"
         )
+    lines.append(" no cdp enable")
     lines.append(" no shutdown")
     lines.append("!")
 

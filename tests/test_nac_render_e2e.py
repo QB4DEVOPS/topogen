@@ -216,6 +216,7 @@ class TestNacRenderEndToEnd(unittest.TestCase):
             cml_text = cml_yaml.read_text(encoding="utf-8")
             self.assertIn("restconf", cml_text)
             self.assertIn("ip address dhcp", cml_text)
+            self.assertIn("no cdp enable", cml_text)
             self.assertIn("ip ssh server algorithm authentication password", cml_text)
             self.assertNotIn("router ospf", cml_text)
 
