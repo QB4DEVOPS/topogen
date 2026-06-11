@@ -6,7 +6,7 @@
 # - Reads from: TOPOGEN_TERRAFORM_PLAN env, pytest -m selection
 # - Writes to: None
 #
-# Purpose: Opt-in collection rules for NaC terraform plan contract tests (TG-161).
+# Purpose: Opt-in collection rules for NaC/CML2 terraform plan contract tests.
 # Blast Radius: Test-only.
 
 from __future__ import annotations
@@ -21,20 +21,36 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "terraform: NaC terraform init/plan contract (needs terraform binary + network)",
     )
+    config.addinivalue_line(
+        "markers",
+        "cml2_terraform: CML2 terraform init/plan contract (needs terraform binary + network)",
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    run_terraform = os.environ.get("TOPOGEN_TERRAFORM_PLAN") == "1"
     markexpr = config.getoption("-m", default="")
-    if run_terraform or (markexpr and "terraform" in markexpr):
-        return
+    run_nac = os.environ.get("TOPOGEN_TERRAFORM_PLAN") == "1"
+    run_cml2 = os.environ.get("TOPOGEN_CML2_TERRAFORM_PLAN") == "1"
 
-    skip = pytest.mark.skip(
+    skip_nac = pytest.mark.skip(
         reason=(
-            "terraform plan gate is opt-in: set TOPOGEN_TERRAFORM_PLAN=1 "
+            "NaC terraform plan gate is opt-in: set TOPOGEN_TERRAFORM_PLAN=1 "
             "or run pytest -m terraform"
         )
     )
+    skip_cml2 = pytest.mark.skip(
+        reason=(
+            "CML2 terraform plan gate is opt-in: set TOPOGEN_CML2_TERRAFORM_PLAN=1 "
+            "or run pytest -m cml2_terraform"
+        )
+    )
+
     for item in items:
-        if "terraform" in item.keywords:
-            item.add_marker(skip)
+        if "cml2_terraform" in item.keywords:
+            if run_cml2 or (markexpr and "cml2_terraform" in markexpr):
+                continue
+            item.add_marker(skip_cml2)
+        elif "terraform" in item.keywords:
+            if run_nac or (markexpr and markexpr == "terraform"):
+                continue
+            item.add_marker(skip_nac)
