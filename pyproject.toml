@@ -94,6 +94,7 @@ dev = [
 [tool.pytest.ini_options]
 markers = [
   "terraform: NaC terraform init/plan contract (needs terraform binary + network)",
+  "cml2_terraform: CML2 terraform init/plan contract (needs terraform binary + network)",
 ]
 
 [[tool.mypy.overrides]]
