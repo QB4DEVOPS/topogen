@@ -8,7 +8,7 @@ import json
 import os
 import re
 import sys
-from ipaddress import IPv6Address, ip_address
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from pathlib import Path
 from typing import Literal
 
@@ -63,6 +63,22 @@ def dump_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+def format_nac_device_host(addr: str) -> str:
+    """Bracket IPv6 for nac.yaml device host (Terraform/NETCONF); leave IPv4 unchanged."""
+    raw = str(addr).strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    try:
+        parsed = ip_address(raw)
+    except ValueError:
+        return addr
+    if isinstance(parsed, IPv6Address):
+        return f"[{parsed}]"
+    if isinstance(parsed, IPv4Address):
+        return str(parsed)
+    return addr
+
+
 def patch_nac_files(nac_root: Path, mapping: dict[str, str]) -> None:
     nac_yaml = nac_root / "nac.yaml"
     inventory_yaml = nac_root / "inventory.yaml"
@@ -72,7 +88,7 @@ def patch_nac_files(nac_root: Path, mapping: dict[str, str]) -> None:
     for device in nac_data.get("iosxe", {}).get("devices", []):
         name = device.get("name", "")
         if name in mapping:
-            device["host"] = mapping[name]
+            device["host"] = format_nac_device_host(mapping[name])
     dump_yaml(nac_yaml, nac_data)
 
     inv_data = load_yaml(inventory_yaml)

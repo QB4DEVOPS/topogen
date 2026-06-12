@@ -151,7 +151,7 @@ Recent completions:
 
 - [x] **TG-191: Emit NaC mgmt sync helper with `--nac` scaffold** — ([TG-191](https://roberthosford.atlassian.net/browse/TG-191), under TG-189/TG-190) `nac/sync-nac-mgmt.py` + `NAC-WORKFLOW.md` emitted with every `--nac` tree; unified `src/topogen/nac_mgmt_sync.py`; `topogen sync-nac-mgmt` subcommand; `nac_metadata.yaml` mgmt fields; `mgmt_sync.json` report.
 
-- [ ] **TG-192: CML CI/CD pipeline + per-ticket scoped CML users** — ([TG-192](https://roberthosford.atlassian.net/browse/TG-192), epic TG-189; blocked by TG-191) End-to-end Jira → generate → `cml2` deploy → `sync-nac-mgmt` → NaC apply → verify → MCP `create_cml_user` (lab_view+lab_exec, admin: false) → READY comment; teardown on Done. Phases: DEVELOPER.md runbook, GitHub Actions skeleton, Jira webhook, `provision-cml-user` subcommand. Reference lab: TG-190-flat-300-nac-v6 (`2be6f617-cf45-4bff-8970-2c9f28ac01d3`).
+- [x] **TG-192: CML CI/CD pipeline + per-ticket scoped CML users** — ([TG-192](https://roberthosford.atlassian.net/browse/TG-192), epic TG-189) End-to-end Jira → generate → `cml2` deploy → emitted `sync-nac-mgmt` → NaC apply → verify → `topogen provision-cml-user` (lab_view+lab_exec, admin: false) → READY comment; teardown on Done. DEVELOPER.md runbook, `.github/workflows/cml-nac-pipeline.yml`, `scripts/jira-cml-webhook.py`, `scripts/validate-tg192-pipeline.ps1`. Reference lab: TG-190-flat-300-nac-v6 (`2be6f617-cf45-4bff-8970-2c9f28ac01d3`).
 
 - [ ] **TG-109: New feature: FlexVPN** — add FlexVPN (IKEv2-native) hub-and-spoke overlay support
   - FlexVPN is the IKEv2-native replacement for DMVPN (no GRE/NHRP, pure IKEv2 + IPsec with virtual-template and route injection via IKEv2 routing or BGP)

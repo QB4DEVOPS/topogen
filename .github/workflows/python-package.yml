@@ -29,8 +29,11 @@ jobs:
           filters: |
             nac:
               - 'src/topogen/nac.py'
+              - 'src/topogen/nac_mgmt_sync.py'
+              - 'src/topogen/cml_user.py'
               - 'src/topogen/render.py'
               - 'src/topogen/main.py'
+              - 'tests/test_cml_user_provision.py'
               - 'src/topogen/templates/**'
               - 'tests/test_nac_*.py'
               - 'tests/conftest.py'

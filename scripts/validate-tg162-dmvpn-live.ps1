@@ -119,16 +119,35 @@ if ($LiveApply) {
         if ($labId -and (Test-Path $nacDir)) {
             $prevEap = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
-            $syncOut = python (Join-Path $RepoRoot "scripts/sync-nac-mgmt-dhcp.py") `
-                --lab-id $labId `
-                --nac-root $nacDir `
-                --device-template $DeviceTemplate `
-                --fix-dhcp 2>&1 | Out-String
+            $emittedSync = Join-Path $nacDir "sync-nac-mgmt.py"
+            if (Test-Path $emittedSync) {
+                $syncScript = $emittedSync
+                $syncArgs = @(
+                    $syncScript,
+                    "--lab-id", $labId,
+                    "--nac-root", $nacDir,
+                    "--mode", "dhcp",
+                    "--device-template", $DeviceTemplate,
+                    "--fix-dhcp"
+                )
+                $syncGateName = "nac/sync-nac-mgmt.py (dhcp)"
+            } else {
+                $syncScript = Join-Path $RepoRoot "scripts/sync-nac-mgmt-dhcp.py"
+                $syncArgs = @(
+                    $syncScript,
+                    "--lab-id", $labId,
+                    "--nac-root", $nacDir,
+                    "--device-template", $DeviceTemplate,
+                    "--fix-dhcp"
+                )
+                $syncGateName = "sync-nac-mgmt-dhcp.py (legacy fallback)"
+            }
+            $syncOut = python @syncArgs 2>&1 | Out-String
             $syncExit = $LASTEXITCODE
             $ErrorActionPreference = $prevEap
             $syncPass = ($syncExit -eq 0) -and ($syncOut -match '"synced"\s*:\s*[1-9]')
             $syncOut | Out-File -FilePath (Join-Path $liveEvidence "mgmt-dhcp-sync.log") -Encoding utf8
-            Write-Gate "sync-nac-mgmt-dhcp.py" $syncPass $syncOut.Trim()
+            Write-Gate $syncGateName $syncPass $syncOut.Trim()
 
             if (-not $env:IOSXE_USERNAME -or -not $env:IOSXE_PASSWORD) {
                 Write-Gate "IOSXE_USERNAME / IOSXE_PASSWORD" $false "Required for NaC apply"

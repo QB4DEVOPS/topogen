@@ -15,7 +15,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from topogen.nac_mgmt_sync import parse_mgmt_ipv6, patch_nac_files  # noqa: E402
+from topogen.nac_mgmt_sync import (  # noqa: E402
+    format_nac_device_host,
+    parse_mgmt_ipv6,
+    patch_nac_files,
+)
 
 IFACE = "GigabitEthernet0/5"
 
@@ -136,7 +140,14 @@ class TestPatchNacFilesIpv6(unittest.TestCase):
 
             nac = yaml.safe_load((nac_root / "nac.yaml").read_text(encoding="utf-8"))
             by_name = {d["name"]: d for d in nac["iosxe"]["devices"]}
-            self.assertEqual(by_name["iosv-01"]["host"], mapping["iosv-01"])
+            self.assertEqual(
+                by_name["iosv-01"]["host"],
+                "[2600:1700:21f8:7ec0:5054:ff:fe58:4aa4]",
+            )
+            self.assertEqual(
+                format_nac_device_host("10.254.0.5"),
+                "10.254.0.5",
+            )
 
             inv = yaml.safe_load((nac_root / "inventory.yaml").read_text(encoding="utf-8"))
             self.assertEqual(
