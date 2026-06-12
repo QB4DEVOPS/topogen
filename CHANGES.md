@@ -20,6 +20,12 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(nac): emit mgmt sync scaffold with `--nac` (TG-191)
+    - Every `--nac` tree includes `nac/sync-nac-mgmt.py` (unified DHCP/SLAAC/auto modes), `NAC-WORKFLOW.md`, and `mgmt_sync.json` report schema. IPv6 SLAAC labs also get `ssh-fanout.py` and `router-hosts.csv`. Consolidated sync logic in `src/topogen/nac_mgmt_sync.py`; `scripts/` wrappers re-export for backward compatibility. Optional `topogen sync-nac-mgmt` subcommand. `nac_metadata.yaml` gains `mgmt_mode`, `mgmt_vrf`, `mgmt_interface`, `mgmt_ipv6_mode`.
+    - Files: src/topogen/nac_mgmt_sync.py, src/topogen/nac.py, src/topogen/main.py, scripts/sync-nac-mgmt-dhcp.py, scripts/sync-nac-mgmt-ipv6-slaac.py, scripts/nac_mgmt_sync_lib.py, tests/test_sync_nac_mgmt_ipv6_slaac.py, tests/test_nac_writer.py, DEVELOPER.md, TODO.md, CHANGES.md
+  - feat(nac): OOB IPv6 mgmt in VRF with SLAAC sync (TG-190)
+    - `--mgmt-ipv6-mode slaac` renders OOB Gi with IPv6 autoconfig in mgmt VRF; `scripts/sync-nac-mgmt-ipv6-slaac.py` polls pyATS/CML snooping for global SLAAC addresses. Unit tests in `tests/test_sync_nac_mgmt_ipv6_slaac.py` and `tests/test_mgmt_ipv6_vrf.py`. Merged via PR #46.
+    - Files: src/topogen/main.py, src/topogen/render.py, scripts/sync-nac-mgmt-ipv6-slaac.py, scripts/nac_mgmt_sync_lib.py, scripts/ssh-fanout.py, tests/test_sync_nac_mgmt_ipv6_slaac.py, tests/test_mgmt_ipv6_vrf.py, docs/TG-190-checkpoint-1.md
   - docs(developer): document `cml2/` vs `topogen --up` for NaC bootstrap at scale
     - DEVELOPER.md adds a comparison table: prefer `cml2/` Terraform (`init` + `apply`, optional `plan`) for large labs and CI; use `topogen --up <yaml> [-i]` for quick one-off imports with no Terraform state. Notes mutual exclusion with `--terraform-cml2` at generation time.
     - Files: DEVELOPER.md (rev v1.9.1 → v1.9.2), CHANGES.md (rev v1.3.13 → v1.3.14)

@@ -436,10 +436,16 @@ into lab `description`, hidden `notes`, and annotation `text_content`.
 
 **Live E2E (CSR1000v, mgmt-bridge):** generate with `--nac --bootstrap
 --terraform-cml2 --mgmt --mgmt-bridge`; `terraform apply` in `cml2/`; sync mgmt
-DHCP hosts (`scripts/sync-nac-mgmt-dhcp.py`, CML snooping fallback when local
-pyATS is unavailable); `terraform apply` in `nac/`. Live-validated 2026-06-09:
-`TG186-BOOTSTRAP-E2E` (2× CSR1000v nx), 11 NaC resources, OSPF neighbor FULL on
-Gi1 (bootstrap replaces full Jinja in CML YAML).
+addresses from the emitted `nac/sync-nac-mgmt.py` (or `topogen sync-nac-mgmt`;
+same implementation in `src/topogen/nac_mgmt_sync.py`). CML L3 snooping is used
+when local pyATS is unavailable. See `nac/NAC-WORKFLOW.md` in every `--nac` tree.
+Live-validated 2026-06-09: `TG186-BOOTSTRAP-E2E` (2× CSR1000v nx), 11 NaC
+resources, OSPF neighbor FULL on Gi1 (bootstrap replaces full Jinja in CML YAML).
+
+**Mgmt sync modes:** `--mgmt-ipv6-mode slaac` sets default sync to IPv6 SLAAC;
+otherwise DHCP (IPv4 mgmt-bridge). `nac_metadata.yaml` records `mgmt_mode`,
+`mgmt_vrf`, `mgmt_interface`, and `mgmt_ipv6_mode`. Report: `nac/mgmt_sync.json`.
+Legacy `scripts/sync-nac-mgmt-*.py` wrappers remain for repo-local use.
 
 **Success criteria per case:** TopoGen exit 0; `terraform init` exit 0; `terraform plan -input=false`
 exit 0; stdout contains `Plan: N to add, 0 to change, 0 to destroy.`; no `Unsupported attribute`

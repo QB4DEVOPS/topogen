@@ -2,7 +2,6 @@
 # Purpose: TG-190 — unit tests for IPv6 SLAAC NaC mgmt sync parse/patch logic.
 # Blast Radius: Test-only.
 
-import importlib.util
 import json
 import sys
 import tempfile
@@ -12,20 +11,11 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-from nac_mgmt_sync_lib import patch_nac_files  # noqa: E402
-
-_spec = importlib.util.spec_from_file_location(
-    "sync_nac_mgmt_ipv6_slaac",
-    SCRIPTS / "sync-nac-mgmt-ipv6-slaac.py",
-)
-_ipv6_mod = importlib.util.module_from_spec(_spec)
-assert _spec.loader is not None
-_spec.loader.exec_module(_ipv6_mod)
-parse_mgmt_ipv6 = _ipv6_mod.parse_mgmt_ipv6
+from topogen.nac_mgmt_sync import parse_mgmt_ipv6, patch_nac_files  # noqa: E402
 
 IFACE = "GigabitEthernet0/5"
 
@@ -159,13 +149,15 @@ class TestPatchNacFilesIpv6(unittest.TestCase):
             self.assertEqual(by_dev["iosv-01"]["mgmt_ip"], mapping["iosv-01"])
 
             report = {
+                "mode": "slaac",
                 "synced": len(mapping),
                 "mapping": mapping,
             }
-            report_path = nac_root / "mgmt_ipv6_sync.json"
+            report_path = nac_root / "mgmt_sync.json"
             report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
             loaded = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(loaded["synced"], 2)
+            self.assertEqual(loaded["mode"], "slaac")
 
 
 if __name__ == "__main__":
