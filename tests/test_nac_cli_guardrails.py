@@ -25,11 +25,13 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from topogen.main import (  # pylint: disable=wrong-import-position
+    MGMT_IPV4_OOB_NODE_LIMIT,
     create_argparser,
     main,
     normalize_template_inputs,
     validate_bootstrap_guardrails,
     validate_cml2_lifecycle_guardrails,
+    validate_mgmt_ipv6_guardrails,
     validate_nac_mvp_guardrails,
     validate_nodes_for_mode,
 )
@@ -46,6 +48,7 @@ class TestNacCliGuardrails(unittest.TestCase):
         validate_nac_mvp_guardrails(args, self.parser)
         validate_bootstrap_guardrails(args, self.parser)
         validate_cml2_lifecycle_guardrails(args, self.parser)
+        validate_mgmt_ipv6_guardrails(args, self.parser)
         return args
 
     def _run_main_exit(self, argv):
@@ -391,6 +394,150 @@ class TestNacCliGuardrails(unittest.TestCase):
         )
         self.assertEqual(args.template, "csr1000v")
         self.assertEqual(args.dev_template, "csr1000v")
+
+    def test_mgmt_ipv6_mode_requires_mgmt(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "simple",
+                        "--offline-yaml",
+                        "out/iosv-test.yaml",
+                        "--mgmt-ipv6-mode",
+                        "slaac",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--mgmt-ipv6-mode requires --mgmt", stderr.getvalue())
+
+    def test_mgmt_ipv6_mode_rejects_global_vrf(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                args = self.parser.parse_args(
+                    [
+                        "2",
+                        "--mode",
+                        "simple",
+                        "--offline-yaml",
+                        "out/iosv-test.yaml",
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "global",
+                        "--mgmt-ipv6-mode",
+                        "slaac",
+                    ]
+                )
+                normalize_template_inputs(args)
+                if args.mgmt_vrf and args.mgmt_vrf.lower() == "global":
+                    args.mgmt_vrf = None
+                validate_mgmt_ipv6_guardrails(args, self.parser)
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("named --mgmt-vrf", stderr.getvalue())
+
+    def test_valid_mgmt_ipv6_slaac_with_mgmt_bridge(self):
+        args = self._parse_and_validate(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "--offline-yaml",
+                "out/iosv-ipv6-bridge.yaml",
+                "--mgmt",
+                "--mgmt-bridge",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-mode",
+                "slaac",
+                "--mgmt-ipv6-cidr",
+                "fd00:10:254::/64",
+            ]
+        )
+        self.assertTrue(args.enable_mgmt)
+        self.assertTrue(args.mgmt_bridge)
+        self.assertEqual(args.mgmt_ipv6_mode, "slaac")
+
+    def test_valid_mgmt_ipv6_slaac_command_shape(self):
+        args = self._parse_and_validate(
+            [
+                "2",
+                "--mode",
+                "simple",
+                "--offline-yaml",
+                "out/iosv-ipv6.yaml",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-mode",
+                "slaac",
+                "--mgmt-ipv6-cidr",
+                "fd00:10:254::/64",
+            ]
+        )
+        self.assertTrue(args.enable_mgmt)
+        self.assertEqual(args.mgmt_ipv6_mode, "slaac")
+        self.assertEqual(args.mgmt_ipv6_cidr, "fd00:10:254::/64")
+
+    def test_mgmt_ipv4_oob_rejected_at_scale_without_ipv6_mode(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "300",
+                        "--mode",
+                        "flat",
+                        "--offline-yaml",
+                        "out/large-flat.yaml",
+                        "--nac",
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-bridge",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        err = stderr.getvalue()
+        self.assertIn("300 nodes", err)
+        self.assertIn("--mgmt-ipv6-mode", err)
+        self.assertIn("IPv4 OOB", err)
+
+    def test_mgmt_ipv4_oob_allowed_below_scale_threshold(self):
+        below = str(MGMT_IPV4_OOB_NODE_LIMIT - 1)
+        args = self._parse_and_validate(
+            [
+                below,
+                "--mode",
+                "flat",
+                "--offline-yaml",
+                "out/medium-flat.yaml",
+                "--nac",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+            ]
+        )
+        self.assertTrue(args.enable_mgmt)
+        self.assertIsNone(args.mgmt_ipv6_mode)
+
+    def test_mgmt_ipv4_oob_at_threshold_requires_ipv6_mode(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        str(MGMT_IPV4_OOB_NODE_LIMIT),
+                        "--mode",
+                        "flat",
+                        "--offline-yaml",
+                        "out/at-threshold-flat.yaml",
+                        "--nac",
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--mgmt-ipv6-mode", stderr.getvalue())
 
 
 if __name__ == "__main__":

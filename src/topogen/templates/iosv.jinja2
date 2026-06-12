@@ -27,7 +27,7 @@ cdp run
 !
 {%- set ns = namespace(seen={}) %}
 {%- for iface in node.interfaces %}
-{%- if iface.vrf and not ns.seen.get(iface.vrf) %}
+{%- if iface.vrf and (iface.description | default('')) != 'OOB Management' and not ns.seen.get(iface.vrf) and not (mgmt and mgmt.enabled and mgmt.ipv6_mode and mgmt.vrf and iface.vrf == mgmt.vrf) %}
 ip vrf {{ iface.vrf }}
  rd 1:1
 !
@@ -52,7 +52,7 @@ router ospf 1
     {%- endif %}
 !
 {%- set ns_ospf = namespace(seen={}) %}
-{%- for iface in node.interfaces if iface.address and iface.vrf %}
+{%- for iface in node.interfaces if iface.address and iface.vrf and (iface.description | default('')) != 'OOB Management' %}
 {%- if not ns_ospf.seen.get(iface.vrf) %}
 router ospf 2 vrf {{ iface.vrf }}
     {%- set _ = ns_ospf.seen.update({iface.vrf: true}) %}
@@ -79,17 +79,44 @@ interface GigabitEthernet0/{{ iface.slot }}
 {%- endfor %}
 !
 {%- if mgmt and mgmt.enabled %}
+{%- if mgmt.ipv6_mode %}
+ipv6 unicast-routing
+!
+{%- endif %}
 {%- if mgmt.vrf %}
+{%- if mgmt.ipv6_mode %}
+vrf definition {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+ address-family ipv4
+ exit-address-family
+ address-family ipv6
+ exit-address-family
+!
+{%- else %}
 ip vrf {{ mgmt.vrf }}
  rd 1:{{ mgmt.slot }}
 !
 {%- endif %}
+{%- endif %}
 interface GigabitEthernet0/{{ mgmt.slot }}
     description OOB Management
     {%- if mgmt.vrf %}
+    {%- if mgmt.ipv6_mode %}
+    vrf forwarding {{ mgmt.vrf }}
+    {%- else %}
     ip vrf forwarding {{ mgmt.vrf }}
     {%- endif %}
+    {%- endif %}
+    {%- if mgmt.ipv6_mode %}
+    ipv6 enable
+    {%- if mgmt.ipv6_mode == 'slaac' %}
+    ipv6 address autoconfig
+    {%- elif mgmt.ipv6_mode == 'dhcpv6' %}
+    ipv6 address dhcp
+    {%- endif %}
+    {%- else %}
     ip address dhcp
+    {%- endif %}
     no cdp enable
     no shutdown
 !

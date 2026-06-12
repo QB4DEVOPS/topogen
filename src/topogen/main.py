@@ -131,6 +131,53 @@ def validate_bootstrap_guardrails(args, parser):
         parser.error("--bootstrap cannot be combined with --getvpn")
 
 
+# IPv4 OOB (DHCP or static from --mgmt-cidr) exhausts shared mgmt bridge pools above this.
+MGMT_IPV4_OOB_NODE_LIMIT = 16
+
+
+def validate_mgmt_ipv6_guardrails(args, parser):
+    """Fail-fast guardrails for OOB IPv6 management (TG-190 checkpoint 1)."""
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    node_count = int(getattr(args, "nodes", 0) or 0)
+    if (
+        not ipv6_mode
+        and getattr(args, "enable_mgmt", False)
+        and node_count >= MGMT_IPV4_OOB_NODE_LIMIT
+    ):
+        parser.error(
+            f"With --mgmt and {node_count} nodes, IPv4 OOB (ip address dhcp or static "
+            f"addresses from --mgmt-cidr) exhausts the shared management bridge and can "
+            f"destabilize the lab. Use --mgmt-ipv6-mode slaac or dhcpv6 with a named "
+            f"--mgmt-vrf (and --mgmt-bridge for external RA/DHCPv6) for IPv6-only OOB "
+            f"at scale."
+        )
+    if not ipv6_mode:
+        if getattr(args, "mgmt_ipv6_cidr", None):
+            from ipaddress import IPv6Network
+
+            try:
+                IPv6Network(args.mgmt_ipv6_cidr, strict=False)
+            except ValueError as exc:
+                parser.error(f"Invalid --mgmt-ipv6-cidr: {exc}")
+        return
+    if not getattr(args, "enable_mgmt", False):
+        parser.error("--mgmt-ipv6-mode requires --mgmt")
+    mgmt_vrf = getattr(args, "mgmt_vrf", None)
+    if mgmt_vrf and str(mgmt_vrf).lower() == "global":
+        mgmt_vrf = None
+    if not mgmt_vrf:
+        parser.error(
+            "--mgmt-ipv6-mode requires a named --mgmt-vrf (not global routing table)"
+        )
+    if getattr(args, "mgmt_ipv6_cidr", None):
+        from ipaddress import IPv6Network
+
+        try:
+            IPv6Network(args.mgmt_ipv6_cidr, strict=False)
+        except ValueError as exc:
+            parser.error(f"Invalid --mgmt-ipv6-cidr: {exc}")
+
+
 def validate_cml2_lifecycle_guardrails(args, parser):
     """Fail-fast guardrails for CML2 Terraform lifecycle scaffold generation."""
     if not getattr(args, "terraform_cml2", False):
@@ -506,6 +553,21 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         action="store_true",
         default=False,
         help="Add external-connector to bridge OOB management network to external network (requires --mgmt)",
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-mode",
+        dest="mgmt_ipv6_mode",
+        type=str,
+        choices=("slaac", "dhcpv6"),
+        default=None,
+        help="OOB management IPv6 mode in mgmt VRF: slaac (autoconfig) or dhcpv6 (requires --mgmt and named --mgmt-vrf)",
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-cidr",
+        dest="mgmt_ipv6_cidr",
+        type=str,
+        default=None,
+        help="Optional IPv6 prefix hint for SLAAC/DHCPv6 pool (e.g. fd00:10:254::/64)",
     )
     parser.add_argument(
         "--ntp",
@@ -974,6 +1036,7 @@ def main():
         # Validate mgmt-bridge requires mgmt
         if getattr(args, "mgmt_bridge", False) and not getattr(args, "enable_mgmt", False):
             parser.error("--mgmt-bridge requires --mgmt to be enabled")
+        validate_mgmt_ipv6_guardrails(args, parser)
         # Validate NTP flags
         if getattr(args, "ntp_server", None):
             from ipaddress import IPv4Address

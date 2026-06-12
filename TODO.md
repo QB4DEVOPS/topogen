@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.50
-Date Modified: 2026-06-08
+Doc Version: v1.6.54
+Date Modified: 2026-06-11
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -16,6 +16,8 @@ Blast Radius: Medium (guides development priorities but doesn't affect code exec
 -->
 
 # TODO
+
+**Maintainers:** Internal backlog and sprint planning live in Jira ([TG project](https://roberthosford.atlassian.net/jira/software/projects/TG)). This file is optional context for contributors and LLMs — not the source of truth for what ships next.
 
 This file tracks in-progress work and future ideas for TopoGen.
 
@@ -141,9 +143,15 @@ Recent completions:
 
 ## Future ideas
 
+### NaC / OOB
+
 - [ ] **NaC: `--nac` help text omits `nx`** — the `nodes` positional `--help` string lists `nodes=2 simple/flat/flat-pair` but omits `nx`, even though the standalone `--nac` help and `validate_nac_mvp_guardrails()` allow `nodes=2 --mode nx`. One-line fix in `src/topogen/main.py` argparse help; then refresh the README `--help` block. (Follow-up from TG-S13.)
 - [x] **NaC: Terraform plan deployability gate (TG-161)** — opt-in pytest (`tests/test_nac_terraform_plan.py`, `TOPOGEN_TERRAFORM_PLAN=1` / `-m terraform`) runs `terraform init` + `terraform plan` on a 9-case NaC matrix (includes DMVPN IKEv2-PSK); CI job `NaC Terraform plan contract` when NaC paths change. Supersedes the earlier `validate`-only idea (plan evaluates `nac.yaml` module locals).
 - [x] ~~**NaC: extend `--nac` to DMVPN**~~ Done for DMVPN flat and flat-pair offline paths in TG-151; deterministic `nac_router_nodes` feed the shared NaC writer.
+
+- [ ] **TG-191: Emit NaC mgmt sync helper with `--nac` scaffold** — ([TG-191](https://roberthosford.atlassian.net/browse/TG-191), under TG-189/TG-190) Emit `nac/sync-nac-mgmt.*` + `NAC-WORKFLOW.md` with `--nac` so bootstrap labs get a documented lab-up → sync → NaC apply path without hunting `scripts/`. Move IPv4 DHCP + IPv6 SLAAC sync into `src/topogen/nac_mgmt_sync.py`; optional `topogen sync-nac-mgmt` subcommand. Reference impl on branch `TG-190-oob-slaac-dhcpv6` (`scripts/nac_mgmt_sync_lib.py`, `scripts/sync-nac-mgmt-ipv6-slaac.py`, `scripts/sync-nac-mgmt-dhcp.py`).
+
+- [ ] **TG-192: CML CI/CD pipeline + per-ticket scoped CML users** — ([TG-192](https://roberthosford.atlassian.net/browse/TG-192), epic TG-189; blocked by TG-191) End-to-end Jira → generate → `cml2` deploy → `sync-nac-mgmt` → NaC apply → verify → MCP `create_cml_user` (lab_view+lab_exec, admin: false) → READY comment; teardown on Done. Phases: DEVELOPER.md runbook, GitHub Actions skeleton, Jira webhook, `provision-cml-user` subcommand. Reference lab: TG-190-flat-300-nac-v6 (`2be6f617-cf45-4bff-8970-2c9f28ac01d3`).
 
 - [ ] **TG-109: New feature: FlexVPN** — add FlexVPN (IKEv2-native) hub-and-spoke overlay support
   - FlexVPN is the IKEv2-native replacement for DMVPN (no GRE/NHRP, pure IKEv2 + IPsec with virtual-template and route injection via IKEv2 routing or BGP)
@@ -279,7 +287,6 @@ Recent completions:
 - [ ] Explore shareable, self-describing lab intents (example lab collection / "marketplace" concept)
 - [ ] Formalize serialized intent model (versioned `topogen:` schema embedded in lab YAML)
 - [ ] Support regenerating a lab from its embedded intent (`topogen regenerate lab.yaml`)
-- [ ] Make management plane a first-class intent (mgmt VRF, reserved interface, IPv4/IPv6 mode)
 - [ ] Emit machine-readable inventory alongside offline lab output
 - [ ] Add intent-level validation and least-astonishment checks before rendering
 - [ ] Support named intent profiles / presets for common lab patterns
@@ -298,10 +305,6 @@ Recent completions:
   - Complements: "Embed serialized intent in YAML" (above) — YAML embedding covers offline files; this covers live CML labs.
   - Blast radius: render.py (inject annotation on online lab creation), main.py (--regenerate reads annotation from CML API).
 
-- [ ] Management Plane as First-Class Citizen:
-  - Automate a dedicated `management-vrf` configuration for `GigabitEthernet0/0` across all routers.
-  - Implement a deterministic IP calculator to assign static IPv4 and IPv6 management addresses based on Node ID.
-
 - [ ] Automation Inventory Emission:
   - Generate an `inventory.json` (or `.yaml`/`.csv`) artifact during the offline generation phase.
   - Include node names, management IPs, VRF names, and platform types to enable instant tool ingestion (Ansible, Nornir, Netmiko).
@@ -313,14 +316,8 @@ Recent completions:
 - [ ] Gooey Round-Trip Integration:
   - Add logic to prepopulate Gooey GUI fields by parsing the serialized intent from an existing lab YAML.
 
-- [ ] Add dedicated management VRF on Gi0/0 with deterministic IPv4/IPv6 addressing (medium effort).
-  - Why: Enables isolated mgmt plane for hundreds of routers; deterministic IPs (e.g., 172.16.0.{n+10}/24) make it predictable and unlock programmatic config via tools like Ansible; tie to --enable-mgmt-vrf flag and wire to a mgmt_switch.
-
 - [ ] Embed serialized intent in YAML (`topogen:` block) for regeneration workflows (medium effort).
   - Why: Makes YAML the single source of truth with embedded params (mode, nodes, template, mgmt config); add `topogen regenerate lab.yaml` subcommand to unlock round-trip editing, GitOps, and easy tweaks without re-running full CLI.
-
-- [ ] Full DHCP + IPv6 on management plane (medium effort).
-  - Why: Layer DHCPv4/v6 via dnsmasq on DNS host with conditional templates for static vs. dynamic; pairs with mgmt VRF for "instant" auto-setup and dual-stack support in large labs.
 
 - [ ] Post-build automation hooks (low effort).
   - Why: Add --post-hook flag for running scripts after generation (e.g., start lab, poll readiness, or run Ansible from inventory); unlocks "one command to fully configured lab" workflows.

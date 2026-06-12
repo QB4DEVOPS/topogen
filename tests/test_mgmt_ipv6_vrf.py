@@ -1,0 +1,320 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-11
+#
+# Purpose: TG-190 CP1 — offline render asserts for OOB IPv6 mgmt in VRF.
+# Blast Radius: Test-only.
+
+import re
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from argparse import Namespace
+
+from topogen.main import main  # pylint: disable=wrong-import-position
+from topogen.config import Config  # pylint: disable=wrong-import-position
+from topogen.models import TopogenInterface, TopogenNode  # pylint: disable=wrong-import-position
+from topogen.render import _render_bootstrap_config  # pylint: disable=wrong-import-position
+
+
+def _extract_router_config(cml_yaml: Path, label: str = "R1") -> str:
+    data = yaml.safe_load(cml_yaml.read_text(encoding="utf-8"))
+    for node in data.get("nodes", []):
+        if node.get("label") == label:
+            cfg = node.get("configuration", "")
+            if isinstance(cfg, list):
+                return cfg[0].get("content", "") if cfg else ""
+            return str(cfg)
+    raise AssertionError(f"node {label} not found in {cml_yaml}")
+
+
+def _oob_block(config: str, iface_pattern: str) -> str:
+    match = re.search(
+        rf"(interface {iface_pattern}\b.*?)(?=\ninterface |\n!|\nend\b)",
+        config,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        raise AssertionError(f"OOB interface {iface_pattern} not found")
+    return match.group(1)
+
+
+class TestMgmtIpv6VrfOfflineRender(unittest.TestCase):
+    def _run_offline_config(self, argv: list[str], label: str = "R1") -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab.yaml"
+            with patch.object(sys, "argv", ["topogen", *argv, "--offline-yaml", str(out_file)]):
+                rc = main()
+            self.assertEqual(rc, 0, f"topogen failed for argv={argv}")
+            return _extract_router_config(out_file, label)
+
+    def test_csr_slaac_renders_ipv6_oob_and_vrf_af(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "simple",
+                "-T",
+                "csr1000v",
+                "--device-template",
+                "csr1000v",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-mode",
+                "slaac",
+            ]
+        )
+        self.assertIn("address-family ipv6", config)
+        self.assertIn("vrf definition Mgmt-vrf", config)
+        self.assertRegex(config, r"interface GigabitEthernet5\b")
+        oob = _oob_block(config, r"GigabitEthernet5")
+        self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("ipv6 address autoconfig", oob)
+        self.assertNotIn("ip address dhcp", oob)
+
+    def test_iosv_dhcpv6_renders_ipv6_oob(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "simple",
+                "-T",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-mode",
+                "dhcpv6",
+            ]
+        )
+        self.assertIn("vrf definition Mgmt-vrf", config)
+        self.assertIn("address-family ipv6", config)
+        self.assertRegex(config, r"interface GigabitEthernet0/5\b")
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("ipv6 address dhcp", oob)
+        self.assertNotIn("ip address dhcp", oob)
+
+    def test_flat_slaac_with_mgmt_bridge_renders_ext_conn_and_ipv6_oob(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab.yaml"
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "topogen",
+                    "2",
+                    "--mode",
+                    "flat",
+                    "-T",
+                    "iosv",
+                    "--device-template",
+                    "iosv",
+                    "--mgmt",
+                    "--mgmt-vrf",
+                    "Mgmt-vrf",
+                    "--mgmt-bridge",
+                    "--mgmt-ipv6-mode",
+                    "slaac",
+                    "--mgmt-ipv6-cidr",
+                    "fd00:10:254::/64",
+                    "--offline-yaml",
+                    str(out_file),
+                ],
+            ):
+                rc = main()
+            self.assertEqual(rc, 0)
+            data = yaml.safe_load(out_file.read_text(encoding="utf-8"))
+            labels = {node.get("label") for node in data.get("nodes", [])}
+            self.assertIn("ext-conn-mgmt", labels)
+            self.assertIn("SWoob0", labels)
+            links = data.get("links", [])
+            ext_id = next(
+                n["id"] for n in data["nodes"] if n.get("label") == "ext-conn-mgmt"
+            )
+            swoob0_id = next(n["id"] for n in data["nodes"] if n.get("label") == "SWoob0")
+            bridge_link = next(
+                (
+                    link
+                    for link in links
+                    if {link.get("n1"), link.get("n2")} == {ext_id, swoob0_id}
+                ),
+                None,
+            )
+            self.assertIsNotNone(bridge_link, "ext-conn-mgmt must link to SWoob0")
+            config = _extract_router_config(out_file, "R1")
+            self.assertIn("vrf definition Mgmt-vrf", config)
+            oob = _oob_block(config, r"GigabitEthernet0/5")
+            self.assertIn("vrf forwarding Mgmt-vrf", oob)
+            self.assertIn("ipv6 address autoconfig", oob)
+            self.assertNotIn("ip address dhcp", oob)
+
+    def test_default_ipv4_mgmt_unchanged(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "simple",
+                "-T",
+                "csr1000v",
+                "--device-template",
+                "csr1000v",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+            ]
+        )
+        oob = _oob_block(config, r"GigabitEthernet5")
+        self.assertIn("ip address dhcp", oob)
+        self.assertNotIn("ipv6 address autoconfig", oob)
+        self.assertNotIn("ipv6 address dhcp", oob)
+        self.assertNotIn("address-family ipv6", config)
+
+    def test_flat_ipv4_mgmt_no_duplicate_vrf_blocks(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-bridge",
+            ]
+        )
+        self.assertEqual(config.count("ip vrf Mgmt-vrf"), 1)
+        self.assertNotIn("vrf definition Mgmt-vrf", config)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ip vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("ip address dhcp", oob)
+
+    def test_flat_ipv6_slaac_no_ip_vrf_conflict(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-bridge",
+                "--mgmt-ipv6-mode",
+                "slaac",
+            ]
+        )
+        self.assertNotIn("ip vrf Mgmt-vrf", config)
+        self.assertEqual(config.count("vrf definition Mgmt-vrf"), 1)
+        self.assertIn("address-family ipv6", config)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("ipv6 address autoconfig", oob)
+        self.assertNotIn("ip address dhcp", oob)
+
+    def test_flat_ipv6_slaac_oob_no_shutdown_single_block(self):
+        """OOB Gi must be no shutdown once; NaC iface must not duplicate Gi0/5."""
+        config = self._run_offline_config(
+            [
+                "4",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-bridge",
+                "--mgmt-ipv6-mode",
+                "slaac",
+            ]
+        )
+        self.assertEqual(len(re.findall(r"interface GigabitEthernet0/5\b", config)), 1)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("no shutdown", oob)
+        self.assertNotRegex(oob, r"(?m)^\s+shutdown\s*$")
+        after_oob = config.split(oob, 1)[-1]
+        self.assertNotRegex(after_oob, r"interface GigabitEthernet0/5\b")
+
+    def test_iosv_bootstrap_ipv6_slaac_uses_vrf_definition(self):
+        cfg = Config(
+            username="cisco",
+            password="cisco",
+            domainname="virl.lab",
+            nameserver="8.8.8.8",
+        )
+        node = TopogenNode(
+            hostname="R1",
+            loopback=None,
+            interfaces=[
+                TopogenInterface(
+                    description="OOB Management",
+                    slot=5,
+                    vrf="Mgmt-vrf",
+                )
+            ],
+        )
+        args = Namespace(
+            dev_template="iosv",
+            template="iosv",
+            enable_mgmt=True,
+            mgmt_vrf="Mgmt-vrf",
+            mgmt_slot=5,
+            mgmt_bridge=True,
+            mgmt_gw=None,
+            mgmt_ipv6_mode="slaac",
+        )
+        config = _render_bootstrap_config(cfg, node, args)
+        self.assertNotIn("ip vrf Mgmt-vrf", config)
+        self.assertEqual(config.count("vrf definition Mgmt-vrf"), 1)
+        self.assertIn("address-family ipv6", config)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("ipv6 address autoconfig", oob)
+
+    def test_mgmt_global_vrf_omits_vrf_stanzas(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "simple",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "global",
+                "--mgmt-bridge",
+            ]
+        )
+        self.assertNotIn("ip vrf ", config)
+        self.assertNotIn("vrf definition ", config)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertNotIn("vrf forwarding", oob)
+        self.assertNotIn("ip vrf forwarding", oob)
+        self.assertIn("ip address dhcp", oob)
+
+
+if __name__ == "__main__":
+    unittest.main()
