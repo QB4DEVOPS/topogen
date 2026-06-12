@@ -884,6 +884,11 @@ def resolve_staging_flags(args) -> None:
 
 def main():
     """main function, returns 0 on success, 1 otherwise"""
+    if len(sys.argv) > 1 and sys.argv[1] == "sync-nac-mgmt":
+        from topogen.nac_mgmt_sync import main as sync_nac_mgmt_main
+
+        return sync_nac_mgmt_main(sys.argv[2:])
+
     parser = create_argparser()
     args = parser.parse_args()
     normalize_template_inputs(args)

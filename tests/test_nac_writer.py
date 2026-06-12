@@ -263,6 +263,8 @@ class TestNacWriter(unittest.TestCase):
                     "host_vars/iosv-01.yaml",
                     "verify_reachability.yaml",
                     "devices.yaml",
+                    "sync-nac-mgmt.py",
+                    "NAC-WORKFLOW.md",
                     "nac_metadata.yaml",
                 ],
             )
@@ -812,6 +814,84 @@ class TestNacWriter(unittest.TestCase):
             write_nac_metadata_yaml(model, metadata_path, overwrite=True)
             self.assertEqual(first_devices, devices_path.read_text(encoding="utf-8"))
             self.assertEqual(first_metadata, metadata_path.read_text(encoding="utf-8"))
+
+    def test_write_nac_tree_emits_mgmt_sync_scaffold_dhcp_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                ],
+            )
+            args = SimpleNamespace(
+                enable_mgmt=True,
+                mgmt_slot=5,
+                mgmt_vrf="Mgmt-vrf",
+                mgmt_ipv6_mode=None,
+                mgmt_bridge=True,
+            )
+            nac_root = Path(tmp) / "nac"
+            write_nac_tree(
+                nac_root=nac_root,
+                node=node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+                args=args,
+                overwrite=True,
+            )
+            sync_script = nac_root / "sync-nac-mgmt.py"
+            workflow = nac_root / "NAC-WORKFLOW.md"
+            self.assertTrue(sync_script.is_file())
+            self.assertTrue(workflow.is_file())
+            self.assertIn("topogen.nac_mgmt_sync", sync_script.read_text(encoding="utf-8"))
+            self.assertIn("mgmt_sync.json", workflow.read_text(encoding="utf-8"))
+            self.assertFalse((nac_root / "ssh-fanout.py").exists())
+
+            metadata = yaml.safe_load((nac_root / "nac_metadata.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["mgmt_mode"], "dhcp")
+            self.assertEqual(metadata["mgmt_vrf"], "Mgmt-vrf")
+            self.assertEqual(metadata["mgmt_interface"], "GigabitEthernet0/5")
+            self.assertIn("sync-nac-mgmt.py", metadata["generated_artifacts"])
+
+    def test_write_nac_tree_emits_slaac_ipv6_extras(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            node = TopogenNode(
+                hostname="R1",
+                loopback=IPv4Interface("10.0.0.1/32"),
+                interfaces=[
+                    TopogenInterface(address=IPv4Interface("172.16.0.6/30"), slot=0),
+                ],
+            )
+            args = SimpleNamespace(
+                enable_mgmt=True,
+                mgmt_slot=5,
+                mgmt_vrf="Mgmt-vrf",
+                mgmt_ipv6_mode="slaac",
+                mgmt_bridge=True,
+            )
+            nac_root = Path(tmp) / "nac"
+            write_nac_tree(
+                nac_root=nac_root,
+                node=node,
+                device_template="iosv",
+                template="iosv",
+                mode="simple",
+                args=args,
+                overwrite=True,
+            )
+            self.assertTrue((nac_root / "ssh-fanout.py").is_file())
+            self.assertTrue((nac_root / "router-hosts.csv").is_file())
+            hosts_csv = (nac_root / "router-hosts.csv").read_text(encoding="utf-8")
+            self.assertIn("label,canonical,hostname,ipv6_mgmt", hosts_csv)
+            self.assertIn("R1,iosv-01,R1", hosts_csv)
+
+            metadata = yaml.safe_load((nac_root / "nac_metadata.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["mgmt_mode"], "slaac")
+            self.assertEqual(metadata["mgmt_ipv6_mode"], "slaac")
+            sync_script = nac_root / "sync-nac-mgmt.py"
+            self.assertIn('DEFAULT_MODE = "slaac"', sync_script.read_text(encoding="utf-8"))
 
     def test_inventory_ansible_host_uses_host_ip_for_cidr(self):
         with tempfile.TemporaryDirectory() as tmp:
