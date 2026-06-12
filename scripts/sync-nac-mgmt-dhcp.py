@@ -11,23 +11,24 @@ import sys
 from ipaddress import ip_address
 from pathlib import Path
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
+SCRIPTS = ROOT / "scripts"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from nac_mgmt_sync_lib import (  # noqa: E402
+    ROUTER_NODE_DEFINITIONS,
+    canonical_name as _canonical_name,
+    mgmt_interface_name as _mgmt_interface_name,
+    patch_nac_files as _patch_nac_files,
+)
 
 MGMT_IFACE_FILTER = "GigabitEthernet5"
 BRIDGE_PREFIX = "192.168.1."
-ROUTER_NODE_DEFINITIONS = frozenset({"csr1000v", "iosv"})
 IP_RE = re.compile(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b")
-
-
-def _mgmt_interface_name(node_definition: str, mgmt_slot: int) -> str:
-    if node_definition == "iosv":
-        return f"GigabitEthernet0/{mgmt_slot}"
-    return f"GigabitEthernet{mgmt_slot}"
 
 
 def _dhcp_fix_commands(iface_name: str) -> str:
@@ -87,52 +88,6 @@ def _parse_mgmt_ip(output: str, iface_filter: str) -> str | None:
         if str(ip).startswith(BRIDGE_PREFIX):
             return str(ip)
     return None
-
-
-def _canonical_name(index: int) -> str:
-    return f"iosv-{index:02d}"
-
-
-def _load_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _dump_yaml(path: Path, data: dict) -> None:
-    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-
-
-def _patch_nac_files(nac_root: Path, mapping: dict[str, str]) -> None:
-    nac_yaml = nac_root / "nac.yaml"
-    inventory_yaml = nac_root / "inventory.yaml"
-    devices_yaml = nac_root / "devices.yaml"
-
-    nac_data = _load_yaml(nac_yaml)
-    for device in nac_data.get("iosxe", {}).get("devices", []):
-        name = device.get("name", "")
-        if name in mapping:
-            device["host"] = mapping[name]
-    _dump_yaml(nac_yaml, nac_data)
-
-    inv_data = _load_yaml(inventory_yaml)
-    host_groups: list[dict] = []
-    all_block = inv_data.get("all", {})
-    if isinstance(all_block.get("hosts"), dict):
-        host_groups.append(all_block["hosts"])
-    for group in all_block.get("children", {}).values():
-        if isinstance(group, dict) and isinstance(group.get("hosts"), dict):
-            host_groups.append(group["hosts"])
-    for hosts in host_groups:
-        for host_name, host_vars in hosts.items():
-            if host_name in mapping and isinstance(host_vars, dict):
-                host_vars["ansible_host"] = mapping[host_name]
-    _dump_yaml(inventory_yaml, inv_data)
-
-    dev_data = _load_yaml(devices_yaml)
-    for device in dev_data.get("devices", []):
-        name = device.get("name", "")
-        if name in mapping:
-            device["mgmt_ip"] = mapping[name]
-    _dump_yaml(devices_yaml, dev_data)
 
 
 def main() -> int:

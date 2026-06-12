@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.13
-Date Modified: 2026-06-09
+Doc Version: v1.3.14
+Date Modified: 2026-06-11
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - docs(developer): document `cml2/` vs `topogen --up` for NaC bootstrap at scale
+    - DEVELOPER.md adds a comparison table: prefer `cml2/` Terraform (`init` + `apply`, optional `plan`) for large labs and CI; use `topogen --up <yaml> [-i]` for quick one-off imports with no Terraform state. Notes mutual exclusion with `--terraform-cml2` at generation time.
+    - Files: DEVELOPER.md (rev v1.9.1 → v1.9.2), CHANGES.md (rev v1.3.13 → v1.3.14)
   - chore(docs): remove internal validation pipeline runbooks from public repo
     - Delete `docs/validation/TG-162-pipeline.md` and `docs/validation/TG-165-pipeline.md`; drop references from DEVELOPER.md, validation scripts, and `docs/nac/DMVPN-day0-nac-gap-audit.md`.
     - Files: DEVELOPER.md, scripts/validate-tg162-dmvpn-live.ps1, scripts/validate-tg165.ps1, docs/nac/DMVPN-day0-nac-gap-audit.md, CHANGES.md

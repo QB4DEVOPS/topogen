@@ -328,6 +328,10 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
             args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
         if getattr(args, "mgmt_bridge", False):
             args_bits.append("--mgmt-bridge")
+        if getattr(args, "mgmt_ipv6_mode", None):
+            args_bits.append(f"--mgmt-ipv6-mode {args.mgmt_ipv6_mode}")
+        if getattr(args, "mgmt_ipv6_cidr", None):
+            args_bits.append(f"--mgmt-ipv6-cidr {args.mgmt_ipv6_cidr}")
     if getattr(args, "ntp_server", None):
         args_bits.append(f"--ntp {args.ntp_server}")
         if getattr(args, "ntp_vrf", None):
@@ -355,6 +359,26 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
     if getattr(args, "remark", None):
         desc += f" | remark: {args.remark}"
     return desc
+
+
+def _build_mgmt_context(args: object, *, mgmt_slot: int | None = None) -> dict[str, Any] | None:
+    """Build Jinja mgmt context dict for OOB management (IPv4 DHCP or IPv6 SLAAC/DHCPv6)."""
+    if not getattr(args, "enable_mgmt", False):
+        return None
+    slot = mgmt_slot if mgmt_slot is not None else int(getattr(args, "mgmt_slot", 5))
+    ctx: dict[str, Any] = {
+        "enabled": True,
+        "slot": slot,
+        "vrf": getattr(args, "mgmt_vrf", None),
+        "gw": getattr(args, "mgmt_gw", None),
+    }
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    if ipv6_mode:
+        ctx["ipv6_mode"] = ipv6_mode
+        ipv6_cidr = getattr(args, "mgmt_ipv6_cidr", None)
+        if ipv6_cidr:
+            ctx["ipv6_cidr"] = ipv6_cidr
+    return ctx
 
 
 def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None:
@@ -433,14 +457,7 @@ def _emit_offline_ca_root_mgmt_node(
             )
         ],
     )
-    ca_mgmt_ctx = None
-    if enable_mgmt:
-        ca_mgmt_ctx = {
-            "enabled": True,
-            "slot": mgmt_slot,
-            "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-            "gw": getattr(args, "mgmt_gw", None),
-        }
+    ca_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
     ca_ntp_ctx = None
     if getattr(args, "ntp_server", None):
         ca_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
@@ -740,16 +757,27 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
         "!",
     ]
 
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    if ipv6_mode:
+        lines.extend(["ipv6 unicast-routing", "!"])
+
     if mgmt_vrf:
-        if csr_style:
-            lines.extend(
-                [
-                    f"vrf definition {mgmt_vrf}",
-                    " address-family ipv4",
-                    " exit-address-family",
-                    "!",
-                ]
-            )
+        if csr_style or ipv6_mode:
+            vrf_lines = [
+                f"vrf definition {mgmt_vrf}",
+                f" rd 1:{mgmt_slot}",
+                " address-family ipv4",
+                " exit-address-family",
+            ]
+            if ipv6_mode:
+                vrf_lines.extend(
+                    [
+                        " address-family ipv6",
+                        " exit-address-family",
+                    ]
+                )
+            vrf_lines.append("!")
+            lines.extend(vrf_lines)
         else:
             lines.extend(
                 [
@@ -762,9 +790,15 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
     lines.append(f"interface {if_label}")
     lines.append(" description OOB Management")
     if mgmt_vrf:
-        fwd = "vrf forwarding" if csr_style else "ip vrf forwarding"
+        fwd = "vrf forwarding" if (csr_style or ipv6_mode) else "ip vrf forwarding"
         lines.append(f" {fwd} {mgmt_vrf}")
-    if mgmt_bridge:
+    if ipv6_mode:
+        lines.append(" ipv6 enable")
+        if ipv6_mode == "slaac":
+            lines.append(" ipv6 address autoconfig")
+        elif ipv6_mode == "dhcpv6":
+            lines.append(" ipv6 address dhcp")
+    elif mgmt_bridge:
         lines.append(" ip address dhcp")
     else:
         mgmt_iface = next(
@@ -1888,14 +1922,7 @@ class Renderer:
             )
 
             # Build mgmt context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(self.args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ntp_ctx = {
@@ -2702,6 +2729,10 @@ class Renderer:
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
             if getattr(args, "mgmt_bridge", False):
                 args_bits.append("--mgmt-bridge")
+            if getattr(args, "mgmt_ipv6_mode", None):
+                args_bits.append(f"--mgmt-ipv6-mode {args.mgmt_ipv6_mode}")
+            if getattr(args, "mgmt_ipv6_cidr", None):
+                args_bits.append(f"--mgmt-ipv6-cidr {args.mgmt_ipv6_cidr}")
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_inband", False):
@@ -2987,14 +3018,7 @@ class Renderer:
             nac_router_nodes.append(nac_node)
 
             # Build mgmt context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -3094,14 +3118,7 @@ class Renderer:
                     )
                 ],
             )
-            ks_mgmt_ctx = None
-            if enable_mgmt:
-                ks_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ks_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ks_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ks_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
@@ -3164,14 +3181,7 @@ class Renderer:
                 ca_base_tpl = env.get_template(f"csr-eigrp{Renderer.J2SUFFIX}")
             except TemplateNotFound:
                 raise TopogenError("CA template not found: csr-eigrp")
-            ca_mgmt_ctx = None
-            if enable_mgmt:
-                ca_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ca_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ca_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ca_ntp_ctx = {
@@ -3767,14 +3777,7 @@ class Renderer:
             loopback_ip = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
 
             # Build mgmt context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -3910,14 +3913,7 @@ class Renderer:
                     )
                 ],
             )
-            ks_mgmt_ctx = None
-            if enable_mgmt:
-                ks_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ks_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ks_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ks_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
@@ -3989,14 +3985,7 @@ class Renderer:
                 raise TopogenError("CA template not found: csr-eigrp")
 
             # Render base config with EIGRP routing
-            ca_mgmt_ctx = None
-            if enable_mgmt:
-                ca_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ca_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ca_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ca_ntp_ctx = {
@@ -4557,14 +4546,7 @@ class Renderer:
             _append_nac_mgmt_interface(node, args, n)
             nac_router_nodes.append(node)
             # Build mgmt context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -4651,14 +4633,7 @@ class Renderer:
                     )
                 ],
             )
-            ks_mgmt_ctx = None
-            if enable_mgmt:
-                ks_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ks_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ks_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ks_ntp_ctx = {
@@ -4750,14 +4725,7 @@ class Renderer:
                     )
                 ],
             )
-            ca_mgmt_ctx = None
-            if enable_mgmt:
-                ca_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ca_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ca_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ca_ntp_ctx = {
@@ -5314,14 +5282,7 @@ class Renderer:
             _append_nac_mgmt_interface(node, args, n)
             nac_router_nodes.append(node)
             # Build mgmt/ntp context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -5417,14 +5378,7 @@ class Renderer:
                     )
                 ],
             )
-            ks_mgmt_ctx = None
-            if enable_mgmt:
-                ks_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ks_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ks_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ks_ntp_ctx = {"server": args.ntp_server, "vrf": getattr(args, "ntp_vrf", None)}
@@ -5502,14 +5456,7 @@ class Renderer:
                 raise TopogenError(f"CA template not found: {ca_template_name}")
 
             # Render base config with routing protocol
-            ca_mgmt_ctx = None
-            if enable_mgmt:
-                ca_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            ca_mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ca_ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ca_ntp_ctx = {
@@ -6097,14 +6044,7 @@ class Renderer:
             _append_nac_mgmt_interface(node_obj, args, node_index + 1)
             nac_router_nodes.append(node_obj)
 
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -6622,14 +6562,7 @@ class Renderer:
             _append_nac_mgmt_interface(node_obj, args, idx + 1)
             nac_router_nodes.append(node_obj)
 
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -6932,14 +6865,7 @@ class Renderer:
             l_addr = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
 
             # Build mgmt context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(self.args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ntp_ctx = {
@@ -7019,14 +6945,7 @@ class Renderer:
             ca_l_addr = IPv4Interface(f"{l_base}.255.254/32")
 
             # Build mgmt/ntp context for CA
-            ca_mgmt_ctx = None
-            if enable_mgmt:
-                ca_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(self.args, "mgmt_gw", None),
-                }
+            ca_mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
             ca_ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ca_ntp_ctx = {
@@ -7113,14 +7032,7 @@ class Renderer:
                 loader=_jinja2.FileSystemLoader(_ks_tpl_dir),
             ).get_template(f"csr-getvpn-ks{Renderer.J2SUFFIX}")
 
-            ks_mgmt_ctx = None
-            if enable_mgmt:
-                ks_mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(self.args, "mgmt_gw", None),
-                }
+            ks_mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
             ks_ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ks_ntp_ctx = {
@@ -7288,14 +7200,7 @@ class Renderer:
             )
 
             # Build mgmt context for template
-            mgmt_ctx = None
-            if enable_mgmt:
-                mgmt_ctx = {
-                    "enabled": True,
-                    "slot": mgmt_slot,
-                    "vrf": getattr(self.args, "mgmt_vrf", None) or "Mgmt-vrf",
-                    "gw": getattr(self.args, "mgmt_gw", None),
-                }
+            mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
             ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ntp_ctx = {

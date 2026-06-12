@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.0
-Date Modified: 2026-06-09
+Doc Version: v1.9.2
+Date Modified: 2026-06-11
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -294,7 +294,7 @@ Pitfall:
 
 - `CHANGES.md`: what changed between released versions
 
-- `TODO.md`: in-progress ideas/roadmap (not guaranteed implemented)
+- `TODO.md`: optional maintainer notes (not guaranteed implemented); internal backlog is tracked in Jira (TG project on roberthosford.atlassian.net)
 
 
 
@@ -432,6 +432,8 @@ Implementation: `src/topogen/render.py` — `_render_bootstrap_config()`,
 calls). Provenance: `--bootstrap` is appended via `_append_common_offline_args_bits()`
 into lab `description`, hidden `notes`, and annotation `text_content`.
 
+**Import path:** at scale, use `cml2/` Terraform (see [Choosing CML import path](#choosing-cml-import-path-cml2-vs-topogen--up)); reserve `topogen --up` for small quick imports.
+
 **Live E2E (CSR1000v, mgmt-bridge):** generate with `--nac --bootstrap
 --terraform-cml2 --mgmt --mgmt-bridge`; `terraform apply` in `cml2/`; sync mgmt
 DHCP hosts (`scripts/sync-nac-mgmt-dhcp.py`, CML snooping fallback when local
@@ -529,6 +531,26 @@ Relationship to NaC:
 - `--terraform-cml2` and `--nac` are independent. When both are enabled, `cml2/` and `nac/` are sibling directories under the generated lab root.
 - Do not place CML lifecycle files under `nac/`; the `nac/` Terraform workspace targets device configuration through `netascode/nac-iosxe`.
 
+### Choosing CML import path (`cml2/` vs `topogen --up`)
+
+For **NaC bootstrap at scale**, prefer the generated `cml2/` workspace. Use
+`topogen --up` only for quick one-off manual imports (small labs, local iteration).
+
+| Path | Best for | CML state | Deploy |
+|------|----------|-----------|--------|
+| `cml2/` | Large labs (100+ nodes), CI/CD, repeatable IaC lifecycle; pairs with `nac/` | Terraform state under `out/<lab>/cml2/` | After `topogen ... --offline-yaml --terraform-cml2 [--nac --bootstrap]`: `terraform -chdir=out/<lab>/cml2 init` then `apply` (`plan` optional but recommended) |
+| `topogen --up <yaml>` | Fast manual import, no Terraform footprint | None (direct CML API import) | `topogen --up out/<lab>/<lab>.yaml [-i]` — shorthand for `--import-yaml --import --start`; add `-i`/`--insecure` when the lab controller uses a self-signed cert |
+
+**Terraform vs CLI:** `plan` is optional for both `cml2/` and `nac/` workspaces;
+`init` + `apply` are required on Terraform paths. TopoGen does not run Terraform for
+you.
+
+**Guardrails:** `--terraform-cml2` rejects import flags (`--up`, `--import`,
+`--import-yaml`) at generation time — generate the scaffold first, then
+`terraform apply` in `cml2/`. Do not substitute `topogen --up` for `cml2/apply`
+on large NaC bootstrap labs (e.g. TG-190 300-node flat); agents and operators
+should follow the `cml2/` + `nac/` sibling workflow documented above.
+
 Tests (run when touching CML2 lifecycle):
 
 | File | Purpose |
@@ -609,7 +631,7 @@ Nice to have:
 
 - `CHANGES.md` (release notes)
 
-- `TODO.md` (roadmap)
+- `TODO.md` (optional maintainer notes; Jira TG backlog)
 
 - `.github/workflows/` (CI)
 

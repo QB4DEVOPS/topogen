@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.7
-Date Modified: 2026-06-09
+Doc Version: v1.8.8
+Date Modified: 2026-06-11
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -50,7 +50,7 @@ controller, creating the lab, nodes and links on the fly.
 | CONTRIBUTING.md | Contributors | Branching, commits, PR conventions |
 | TESTED.md | CI/CD | Platform and dependency validation |
 | CHANGES.md | All | Release history |
-| TODO.md | Developers | Roadmap and planned work |
+| TODO.md | Maintainers | Optional maintainer notes; internal backlog tracked in Jira (TG project) |
 | PKI.md | Users, developers | PKI flags, CA-ROOT, EEM, auto-deploy certs, troubleshooting |
 | docs/nac/iosxe-one-router-golden-contract.md | Developers | Canonical one-router IOS-XE NaC contract (TG-116) |
 | docs/nac/topogen-to-nac-field-mapping.md | Developers | TopoGen-to-NaC field mapping matrix for adapter work |
