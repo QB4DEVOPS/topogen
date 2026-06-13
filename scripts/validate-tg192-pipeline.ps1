@@ -75,8 +75,8 @@ if ($Regenerate) {
         "--cml-version", "0.3.1",
         "4",
         "--mode", "flat",
-        "-T", "iosv",
-        "--device-template", "iosv",
+        "-T", "csr-ospf",
+        "--device-template", "csr1000v",
         "-L", $LabTitle,
         "--offline-yaml", $yamlPath,
         "--nac", "--bootstrap", "--terraform-cml2",
@@ -172,6 +172,8 @@ if ($LiveApply) {
                 $syncScript,
                 "--lab-id", $labId,
                 "--nac-root", $nacDir,
+                "--mode", "slaac",
+                "--device-template", "csr1000v",
                 "--cml-snoop-only",
                 "--set-pyats-creds"
             )
@@ -200,7 +202,7 @@ if ($LiveApply) {
                         Tee-Object -FilePath (Join-Path $liveEvidence "nac-init.log") | Out-Null
                     Write-Gate "terraform init (nac)" ($LASTEXITCODE -eq 0)
 
-                    terraform apply -auto-approve -input=false 2>&1 |
+                    terraform apply -auto-approve -input=false -parallelism=1 2>&1 |
                         Tee-Object -FilePath (Join-Path $liveEvidence "nac-apply.log") | Out-Null
                     Write-Gate "terraform apply (nac)" ($LASTEXITCODE -eq 0)
                     $ErrorActionPreference = $prevEap
@@ -259,6 +261,7 @@ if ($LiveApply) {
                     --evidence-dir $liveEvidence `
                     --jira-key $JiraKey `
                     --lab-title $LabTitle `
+                    --device-template csr1000v `
                     --mgmt-sync $mgmtReportPath 2>&1 | Out-String
                 $evidenceExit = $LASTEXITCODE
                 $ErrorActionPreference = $prevEap
