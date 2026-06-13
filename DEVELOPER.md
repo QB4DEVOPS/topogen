@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.5
+Doc Version: v1.9.6
 Date Modified: 2026-06-13
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -107,7 +107,7 @@ For detailed version information (Python, CML servers, node images, dependencies
 
 ## CML lab schema versions (confirmed)
 
-The `--cml-version` flag controls the `version:` field in offline YAML **and** which optional fields are emitted. Known mapping from CML release to lab schema version:
+The `--cml-version` flag controls the `version:` field in offline YAML **and** which optional fields are emitted. It is **authoritative** when passed on the CLI. **`--cml-server`** (`src/topogen/cml_server.py`) is operator-facing only: it sets `cml_version` when `--cml-version` was not passed explicitly. Feature gates (`resolve_staging_flags()`, `_intent_annotation_lines()`, `_staging_version_ok()`) always read effective `cml_version`. Known mapping from CML release to lab schema version:
 
 - CML 2.5 = schema `0.2.0` (max). Accepted: `0.0.1`–`0.2.0`. Fields: `annotations`, `notes`. No `smart_annotations`.
 - CML 2.6.1 = schema `0.2.1`. Fields: `annotations`, `notes`. No `smart_annotations`.
@@ -116,7 +116,7 @@ The `--cml-version` flag controls the `version:` field in offline YAML **and** w
 - CML 2.9 = schema `0.3.0`. Accepted: `0.0.1`–`0.3.0`. Fields: `annotations`, `notes`, `smart_annotations`.
 - CML 2.10 = schema `0.3.1`. Accepted: `0.0.1`–`0.3.1`. Lab-level: `lab.node_staging` block (`enabled`, `start_remaining`, `abort_on_failure`). Per-node: `priority` (integer, higher boots first; `null` = unassigned), `pyats` block (`username`, `password`, `enable_password` — all nullable), `parameters: {}` (consistently present), `configuration` changed from plain string to list of `{name, content}` objects (CML 2.10 still accepts plain-string on import). Per-link: `conditioning: {}` (link conditioning, empty by default). Per-interface: `mac_address: null` and `slot: N` now consistently present. Note: **Autostart** (Enable Autostart, Priority, Delay Next Lab Start) is a server-side setting only — not exported in YAML, out of scope for offline generation. Fields: `annotations`, `notes`, `smart_annotations`, `node_staging`. **TG-165:** `--pki` auto-enables staging via `resolve_staging_flags()` in `main.py` unless `--no-staging` is set; requires `--cml-version >= 0.3.1` or staging is omitted with a warning.
 
-TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`. **TG-167:** intent metadata (description, hidden notes, scaled down-only annotation) is applied offline via `_finalize_offline_yaml_with_intent()` and online via `Renderer._apply_online_lab_intent()` after topology build. Optional `--intent-spot` adds an `unmanaged_switch` marker node (default off).
+TopoGen omits `smart_annotations` when `--cml-version` is `<= 0.2.2`. See `_intent_annotation_lines()` in `src/topogen/render.py`. **TG-194:** unmapped `--cml-server` values above the known map use `HIGHEST_KNOWN_CML_SCHEMA`; gaps and versions below 2.5 use nearest-lower mapped server (INFO log). Intent/regenerate provenance includes both `--cml-server` and `--cml-version` when present (`append_cml_schema_provenance_args()`). **TG-167:** intent metadata (description, hidden notes, scaled down-only annotation) is applied offline via `_finalize_offline_yaml_with_intent()` and online via `Renderer._apply_online_lab_intent()` after topology build. Optional `--intent-spot` adds an `unmanaged_switch` marker node (default off).
 
 ## 5-minute environment validation
 

@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.10
+Doc Version: v1.8.11
 Date Modified: 2026-06-13
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
@@ -601,13 +601,14 @@ configuration:
                         and final result
 ```
 
-**CML version / schema compatibility:** The `--cml-version` flag sets the lab schema version in offline YAML **and** controls which optional fields are emitted. Known mapping:
+**CML version / schema compatibility:** The `--cml-version` flag sets the lab schema version in offline YAML **and** controls which optional fields are emitted. It is **authoritative** when passed explicitly. **`--cml-server`** is a convenience alias for operators who think in controller versions — it sets the schema only when `--cml-version` is omitted. Known mapping:
 
-- CML 2.5–2.7 = schema `0.2.0`–`0.2.2`. No `smart_annotations` in YAML.
+- CML 2.5 = schema `0.2.0`. CML 2.6 = `0.2.1`. CML 2.7 = `0.2.2`. No `smart_annotations` in YAML.
 - CML 2.8–2.9 = schema `0.3.0`. `smart_annotations` included.
 - CML 2.10 = schema `0.3.1`. Adds `lab.node_staging` and per-node `priority` for staged boot.
+- Unknown future `--cml-server` (e.g. `2.13`) → highest known schema (`0.3.1` today) with an INFO log. Versions below the lowest mapped release (e.g. `2.4`) use the nearest lower anchor (`2.5` / `0.2.0`).
 
-When targeting CML 2.7 or earlier, use `--cml-version 0.2.2` (or lower). TopoGen automatically omits `smart_annotations` for schema versions `<= 0.2.2`.
+When targeting CML 2.7 or earlier, use `--cml-version 0.2.2` (or lower), or `--cml-server 2.7`. TopoGen automatically omits `smart_annotations` for schema versions `<= 0.2.2`.
 
 At a minimum, the amount of nodes to be created must be provided.
 

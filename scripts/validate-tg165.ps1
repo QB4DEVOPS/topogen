@@ -54,6 +54,7 @@ function Invoke-Topogen {
 }
 
 $stagedYaml = Join-Path $ArtifactRoot "pki-staged.yaml"
+$stagedServerYaml = Join-Path $ArtifactRoot "pki-staged-cml-server.yaml"
 $noStagingYaml = Join-Path $ArtifactRoot "pki-no-staging.yaml"
 $oldSchemaYaml = Join-Path $ArtifactRoot "pki-old-schema.yaml"
 
@@ -71,6 +72,21 @@ if (Test-Path $stagedYaml) {
     Write-Gate "case A: priority 900" ($a -match "priority:\s*900")
 } else {
     Write-Gate "case A: file exists" $false $stagedYaml
+}
+
+$rcA2 = Invoke-Topogen @(
+    "--pki", "--cml-server", "2.10",
+    "--offline-yaml", $stagedServerYaml
+)
+Write-Gate "generate case A2 (--pki --cml-server 2.10)" ($rcA2 -eq 0)
+
+if (Test-Path $stagedServerYaml) {
+    $a2 = Get-Content $stagedServerYaml -Raw
+    Write-Gate "case A2: version 0.3.1" ($a2 -match "version:\s*'?0\.3\.1'?")
+    Write-Gate "case A2: node_staging present" ($a2 -match "node_staging:")
+    Write-Gate "case A2: --cml-server in provenance" ($a2 -match "--cml-server 2\.10")
+} else {
+    Write-Gate "case A2: file exists" $false $stagedServerYaml
 }
 
 $rcB = Invoke-Topogen @(

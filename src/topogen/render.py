@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.0
+# Doc Version: v1.4.1
 # Date Modified: 2026-06-13
 #
 # - Called by: src/topogen/main.py
@@ -111,6 +111,7 @@ from virl2_client.models import Interface, Lab, Node
 
 from topogen import templates
 from topogen.cml2 import write_cml2_lifecycle_scaffold
+from topogen.cml_server import append_cml_schema_provenance_args
 from topogen.config import Config
 from topogen.dnshost import dnshostconfig
 from topogen.lxcfrr import lxcfrr_bootconfig
@@ -345,9 +346,7 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
             args_bits.append(f"--ntp-vrf {args.ntp_vrf}")
     if getattr(args, "start_lab", False):
         args_bits.append("--start")
-    cml_ver = getattr(args, "cml_version", None)
-    if cml_ver:
-        args_bits.append(f"--cml-version {cml_ver}")
+    append_cml_schema_provenance_args(args_bits, args)
     if getattr(args, "staging", False):
         args_bits.append("--staging")
     if getattr(args, "yaml_output", None):
@@ -2730,8 +2729,7 @@ class Renderer:
             args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
             args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         version = getattr(args, "cml_version", "0.3.0")
-        if version:
-            args_bits.append(f"--cml-version {version}")
+        append_cml_schema_provenance_args(args_bits, args)
         if getattr(args, "enable_mgmt", False):
             args_bits.append("--mgmt")
             args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")
@@ -3565,8 +3563,7 @@ class Renderer:
             args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
             args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         version = getattr(args, "cml_version", "0.3.0")
-        if version:
-            args_bits.append(f"--cml-version {version}")
+        append_cml_schema_provenance_args(args_bits, args)
         if getattr(args, "enable_mgmt", False):
             args_bits.append("--mgmt")
             args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")
@@ -4338,8 +4335,7 @@ class Renderer:
             if getattr(args, "gi0_zero", False):
                 args_bits.append("--gi0-zero")
         version = getattr(args, "cml_version", "0.3.0")
-        if version:
-            args_bits.append(f"--cml-version {version}")
+        append_cml_schema_provenance_args(args_bits, args)
         if getattr(args, "enable_mgmt", False):
             args_bits.append("--mgmt")
             args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")
@@ -5064,8 +5060,7 @@ class Renderer:
             args_bits.append(f"--getvpn-group-id {getattr(args, 'getvpn_group_id', 1)}")
             args_bits.append(f"--getvpn-rekey-interval {getattr(args, 'getvpn_rekey_interval', 86400)}")
         version = getattr(args, "cml_version", "0.3.0")
-        if version:
-            args_bits.append(f"--cml-version {version}")
+        append_cml_schema_provenance_args(args_bits, args)
         staging = getattr(args, "staging", False) and _staging_version_ok(version)
         if staging:
             args_bits.append("--staging")
@@ -5892,8 +5887,7 @@ class Renderer:
         args_bits: list[str] = [f"nodes={total}", f"-m {args.mode}", f"-T {args.template}"]
         if dev_def != args.template:
             args_bits.append(f"--device-template {dev_def}")
-        if version:
-            args_bits.append(f"--cml-version {version}")
+        append_cml_schema_provenance_args(args_bits, args)
         if enable_mgmt:
             args_bits.append("--mgmt")
             args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")
@@ -6383,8 +6377,7 @@ class Renderer:
         args_bits: list[str] = [f"nodes={total}", f"-m {args.mode}", f"-T {args.template}"]
         if dev_def != args.template:
             args_bits.append(f"--device-template {dev_def}")
-        if version:
-            args_bits.append(f"--cml-version {version}")
+        append_cml_schema_provenance_args(args_bits, args)
         if enable_mgmt:
             args_bits.append("--mgmt")
             args_bits.append(f"--mgmt-cidr {args.mgmt_cidr}")

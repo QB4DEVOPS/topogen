@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.10.0
+# Doc Version: v1.11.1
 # Date Modified: 2026-06-13
 #
 """
@@ -43,6 +43,7 @@ import os
 import sys
 
 import topogen
+from topogen.cml_server import resolve_cml_server_version, valid_cml_server
 from topogen.models import TopogenError
 from topogen.render import (
     Renderer,
@@ -865,6 +866,15 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         help="With --offline-yaml, print the topogen --up <file> command to run later",
     )
     parser.add_argument(
+        "--cml-server",
+        dest="cml_server",
+        type=valid_cml_server,
+        default=None,
+        metavar="MAJOR.MINOR",
+        help="Target CML controller version (e.g. 2.10). Sets lab YAML schema when "
+        "--cml-version is omitted; explicit --cml-version always wins.",
+    )
+    parser.add_argument(
         "--cml-version",
         dest="cml_version",
         type=str,
@@ -882,7 +892,9 @@ def create_argparser(parser_class=argparse.ArgumentParser):
             "0.3.0",
             "0.3.1",
         ],
-        help="CML lab schema version for offline YAML (CML 2.5: 0.2.0, CML 2.7: 0.2.2, CML 2.8/2.9: 0.3.0, CML 2.10: 0.3.1)",
+        help="CML lab schema version for offline YAML (authoritative; CML 2.5: 0.2.0, "
+        "2.6: 0.2.1, 2.7: 0.2.2, 2.8/2.9: 0.3.0, 2.10: 0.3.1). Use --cml-server as a "
+        "convenience when schema is not set explicitly.",
     )
     parser.add_argument(
         "nodes",
@@ -954,7 +966,10 @@ def resolve_staging_flags(args) -> None:
 
     if getattr(args, "staging", False):
         if _cml_version_tuple(getattr(args, "cml_version", "0.3.0")) < (0, 3, 1):
-            _LOGGER.warning("--staging ignored: requires --cml-version >= 0.3.1")
+            _LOGGER.warning(
+                "--staging ignored: requires CML 2.10 "
+                "(--cml-server 2.10 or --cml-version 0.3.1)"
+            )
             args.staging = False
             if getattr(args, "pki_enabled", False) and not getattr(args, "no_staging", False):
                 _LOGGER.warning(
@@ -1115,6 +1130,7 @@ def main():
             if args.mode not in ("flat", "flat-pair", "dmvpn"):
                 parser.error("--getvpn requires mode flat, flat-pair, or dmvpn")
 
+        resolve_cml_server_version(args, sys.argv)
         resolve_staging_flags(args)
 
         # Validate mgmt flags
