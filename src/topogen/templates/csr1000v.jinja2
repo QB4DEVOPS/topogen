@@ -80,48 +80,7 @@ interface GigabitEthernet{{ iface.slot + 1 }}
 !
 {%- endfor %}
 !
-{%- if mgmt and mgmt.enabled %}
-{%- if mgmt.ipv6_mode %}
-ipv6 unicast-routing
-!
-{%- endif %}
-{%- if mgmt.vrf %}
-vrf definition {{ mgmt.vrf }}
- rd 1:{{ mgmt.slot }}
- address-family ipv4
- exit-address-family
-{%- if mgmt.ipv6_mode %}
- address-family ipv6
- exit-address-family
-{%- endif %}
-!
-{%- endif %}
-interface GigabitEthernet{{ mgmt.slot }}
-    description OOB Management
-    {%- if mgmt.vrf %}
-    vrf forwarding {{ mgmt.vrf }}
-    {%- endif %}
-    {%- if mgmt.ipv6_mode %}
-    ipv6 enable
-    {%- if mgmt.ipv6_mode == 'slaac' %}
-    ipv6 address autoconfig
-    {%- elif mgmt.ipv6_mode == 'dhcpv6' %}
-    ipv6 address dhcp
-    {%- endif %}
-    {%- else %}
-    ip address dhcp
-    {%- endif %}
-    no cdp enable
-    no shutdown
-!
-{%- if mgmt.gw %}
-{%- if mgmt.vrf %}
-ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
-{%- else %}
-ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
-{%- endif %}
-{%- endif %}
-{%- endif %}
+{% include '_csr_mgmt_oob.jinja2' %}
 {%- if ntp and ntp.server %}
 {%- if ntp.vrf %}
 ntp server vrf {{ ntp.vrf }} {{ ntp.server }}

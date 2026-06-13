@@ -890,6 +890,7 @@ class TestNacWriter(unittest.TestCase):
             metadata = yaml.safe_load((nac_root / "nac_metadata.yaml").read_text(encoding="utf-8"))
             self.assertEqual(metadata["mgmt_mode"], "slaac")
             self.assertEqual(metadata["mgmt_ipv6_mode"], "slaac")
+            self.assertTrue(metadata["mgmt_ipv6_only"])
             sync_script = nac_root / "sync-nac-mgmt.py"
             self.assertIn('DEFAULT_MODE = "slaac"', sync_script.read_text(encoding="utf-8"))
 
@@ -1162,7 +1163,7 @@ class TestNacWriter(unittest.TestCase):
             config=Config(),
             node=node,
             date=datetime.now(timezone.utc),
-            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None},
+            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None, "ipv4_dhcp": True},
         )
         names = _interface_names(rendered)
         self.assertEqual(names.count("GigabitEthernet5"), 1)
@@ -1201,7 +1202,7 @@ class TestNacWriter(unittest.TestCase):
             config=Config(),
             node=node,
             date=datetime.now(timezone.utc),
-            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None},
+            mgmt={"enabled": True, "slot": 5, "vrf": "Mgmt-vrf", "gw": None, "ipv4_dhcp": True},
         )
         names = _interface_names(rendered)
         self.assertEqual(names.count("GigabitEthernet0/5"), 1)

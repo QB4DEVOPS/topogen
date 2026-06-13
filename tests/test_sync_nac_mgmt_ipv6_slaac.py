@@ -15,10 +15,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from argparse import Namespace
+
 from topogen.nac_mgmt_sync import (  # noqa: E402
+    default_sync_mode_from_args,
     format_nac_device_host,
     parse_mgmt_ipv6,
     patch_nac_files,
+    resolve_sync_mode,
 )
 
 IFACE = "GigabitEthernet0/5"
@@ -103,6 +107,37 @@ def _write_min_nac_tree(root: Path) -> None:
     )
 
 
+class TestDefaultSyncModeFromArgs(unittest.TestCase):
+    def test_slaac_maps_to_ipv6_sync(self):
+        args = Namespace(mgmt_ipv6_mode="slaac")
+        self.assertEqual(default_sync_mode_from_args(args), "slaac")
+
+    def test_dhcpv6_maps_to_ipv6_sync(self):
+        args = Namespace(mgmt_ipv6_mode="dhcpv6")
+        self.assertEqual(default_sync_mode_from_args(args), "slaac")
+
+    def test_no_ipv6_mode_maps_to_dhcp(self):
+        args = Namespace(mgmt_ipv6_mode=None)
+        self.assertEqual(default_sync_mode_from_args(args), "dhcp")
+
+
+class TestResolveSyncModeAuto(unittest.TestCase):
+    def test_auto_prefers_mgmt_ipv6_mode_dhcpv6_over_mgmt_mode_dhcp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            nac_root = Path(tmp)
+            (nac_root / "nac_metadata.yaml").write_text(
+                yaml.safe_dump(
+                    {"mgmt_mode": "dhcp", "mgmt_ipv6_mode": "dhcpv6"},
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                resolve_sync_mode("auto", nac_root=nac_root, default_mode="dhcp"),
+                "slaac",
+            )
+
+
 class TestParseMgmtIpv6(unittest.TestCase):
     def test_parses_global_slaac_from_brief(self):
         got = parse_mgmt_ipv6(BRIEF_GLOBAL_SLAAC, IFACE)
@@ -158,6 +193,13 @@ class TestPatchNacFilesIpv6(unittest.TestCase):
             dev = yaml.safe_load((nac_root / "devices.yaml").read_text(encoding="utf-8"))
             by_dev = {d["name"]: d for d in dev["devices"]}
             self.assertEqual(by_dev["iosv-01"]["mgmt_ip"], mapping["iosv-01"])
+
+            mapping_ipv4 = {"iosv-01": "192.168.1.10"}
+            patch_nac_files(nac_root, mapping, mapping_ipv4)
+            dev = yaml.safe_load((nac_root / "devices.yaml").read_text(encoding="utf-8"))
+            by_dev = {d["name"]: d for d in dev["devices"]}
+            self.assertEqual(by_dev["iosv-01"]["mgmt_ipv4"], "192.168.1.10")
+            self.assertNotIn("mgmt_ipv4", by_dev["iosv-02"])
 
             report = {
                 "mode": "slaac",

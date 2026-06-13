@@ -46,6 +46,23 @@ class TestBuildCiReport(unittest.TestCase):
         self.assertEqual(report["mgmt_sync"]["synced"], 4)
         self.assertEqual(report["mgmt_sync"]["total"], 1)
 
+    def test_includes_mapping_ipv4_when_present(self):
+        report = build_ci_report(
+            jira_key="TG-190",
+            lab_id=LAB_ID,
+            lab_title="TG-190-dual",
+            status="pass",
+            mgmt_sync={
+                "mode": "slaac",
+                "synced": 2,
+                "synced_ipv4": 2,
+                "mapping": {"iosv-01": "2600::1"},
+                "mapping_ipv4": {"iosv-01": "192.168.1.10"},
+            },
+        )
+        self.assertEqual(report["mgmt_sync"]["mapping_ipv4"]["iosv-01"], "192.168.1.10")
+        self.assertEqual(report["mgmt_sync"]["synced_ipv4"], 2)
+
 
 class TestEmbedNotes(unittest.TestCase):
     def test_appends_hidden_marker(self):

@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.8
-Date Modified: 2026-06-11
+Doc Version: v1.8.9
+Date Modified: 2026-06-13
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -396,8 +396,10 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--gi0-zero] [--vrf] [--pair-vrf PAIR_VRF]
                [--dmvpn-fvrf DMVPN_FVRF]
                [--dmvpn-ipsec-mode {transport,tunnel}] [--mgmt]
+               [--mgmt-ipv4-dhcp] [--mgmt-ipv6-dhcp] [--mgmt-ipv6-slaac]
                [--mgmt-cidr MGMT_CIDR] [--mgmt-gw MGMT_GW]
                [--mgmt-slot MGMT_SLOT] [--mgmt-vrf MGMT_VRF] [--mgmt-bridge]
+               [--mgmt-ipv6-mode {slaac,dhcpv6}] [--mgmt-ipv6-cidr MGMT_IPV6_CIDR]
                [--ntp NTP_SERVER] [--ntp-vrf NTP_VRF] [--ntp-inband]
                [--ntp-oob NTP_OOB_SERVER] [--pki] [--archive] [--getvpn]
                [--getvpn-group-id GETVPN_GROUP_ID]
@@ -487,8 +489,18 @@ options:
   --dmvpn-ipsec-mode {transport,tunnel}
                         DMVPN IPsec transform-set mode: transport (default,
                         recommended for GRE) or tunnel, default "transport"
-  --mgmt                Enable a dedicated OOB management network (SWmgmt0 +
-                        router mgmt interfaces)
+  --mgmt                Enable OOB management fabric (SWoob, router mgmt
+                        interfaces, optional VRF). Addressing is separate:
+                        --mgmt-ipv4-dhcp and/or --mgmt-ipv6-dhcp / --mgmt-ipv6-slaac.
+  --mgmt-ipv4-dhcp      IPv4 DHCP on the OOB interface (ip address dhcp). With
+                        --mgmt-bridge and no other addressing flags, IPv4 DHCP
+                        is implied for backward compatibility.
+  --mgmt-ipv6-dhcp      IPv6 DHCPv6 on the OOB interface (ipv6 address dhcp).
+                        IPv6-only unless combined with --mgmt-ipv4-dhcp.
+                        Requires --mgmt and named --mgmt-vrf.
+  --mgmt-ipv6-slaac     IPv6 SLAAC on the OOB interface (ipv6 address
+                        autoconfig). IPv6-only unless combined with --mgmt-ipv4-dhcp.
+                        Requires --mgmt and named --mgmt-vrf.
   --mgmt-cidr MGMT_CIDR
                         Management network CIDR, default "10.254.0.0/16"
   --mgmt-gw MGMT_GW     Management network gateway IP (optional); adds a
@@ -500,6 +512,12 @@ options:
                         vrf"); use "global" for global routing table
   --mgmt-bridge         Add external-connector to bridge OOB management
                         network to external network (requires --mgmt)
+  --mgmt-ipv6-mode {slaac,dhcpv6}
+                        Legacy alias for --mgmt-ipv6-slaac (slaac) or --mgmt-ipv6-dhcp
+                        (dhcpv6). Prefer the explicit flags for new labs.
+  --mgmt-ipv6-cidr MGMT_IPV6_CIDR
+                        Optional IPv6 prefix hint for SLAAC/DHCPv6 pool (metadata;
+                        static IPv6 OOB addressing not implemented).
   --ntp NTP_SERVER      NTP server IP address (optional)
   --ntp-vrf NTP_VRF     VRF for NTP (e.g. Mgmt-vrf). Omit for global. With
                         --mgmt, default is mgmt VRF unless --ntp-inband.
@@ -993,14 +1011,26 @@ When enabled, the generated router configs include a `ip vrf NAME` stanza and ap
 
 All modes (`simple`, `nx`, `flat`, `flat-pair`, `dmvpn`) support an optional out-of-band management network. This adds a dedicated `SWoob0` unmanaged switch and connects each router's management interface to it.
 
-- `--mgmt`: enable management network
+- `--mgmt`: enable OOB management fabric (switch + router mgmt interfaces)
+- `--mgmt-ipv4-dhcp`: IPv4 DHCP on OOB Gi (`ip address dhcp`); implied when `--mgmt-bridge` with no other addressing flags
+- `--mgmt-ipv6-dhcp`: IPv6 DHCPv6 on OOB Gi (`ipv6 address dhcp`); requires named `--mgmt-vrf`
+- `--mgmt-ipv6-slaac`: IPv6 SLAAC on OOB Gi (`ipv6 address autoconfig`); requires named `--mgmt-vrf`
+- `--mgmt-ipv6-mode {slaac,dhcpv6}`: legacy alias for the two IPv6 flags above
+- `--mgmt-ipv6-cidr PREFIX`: optional metadata hint (static IPv6 OOB not implemented)
 - `--mgmt-cidr CIDR`: management network CIDR (default: `10.254.0.0/16`)
 - `--mgmt-gw IP`: optional gateway IP; adds a default route in the mgmt VRF
 - `--mgmt-slot N`: interface slot for management (default: 5; IOSv uses Gi0/5, CSR uses Gi5)
 - `--mgmt-vrf NAME`: VRF name for management interface (default: `Mgmt-vrf`); use `global` for global routing table
 - `--mgmt-bridge`: add external-connector to bridge OOB management network to external network (requires `--mgmt`)
 
-When enabled, the generated router configs include a management interface with DHCP addressing.
+When enabled, router configs get OOB management interfaces per the addressing flags (IPv4 DHCP, IPv6 DHCPv6, IPv6 SLAAC, or dual-stack). Labs with **16+ routers** and `--mgmt` require an explicit IPv6 mode (or split IPv6 flag) and a named `--mgmt-vrf`.
+
+Example (external bridge, IPv6 DHCPv6 only on CML 2.10):
+
+```powershell
+topogen -m flat 6 --mgmt --mgmt-bridge --mgmt-vrf Mgmt-vrf --mgmt-ipv6-dhcp `
+  --cml-version 0.3.1 --nac --offline-yaml out/flat-v6-dhcp.yaml --overwrite
+```
 
 The `--mgmt-bridge` flag creates an `ext-conn-mgmt` external_connector node using "System Bridge" mode, connecting SWoob0 to your physical/external network. This enables bidirectional connectivity, allowing routers to reach external resources (internet, NTP servers, external DHCP) and external systems to access the lab's management network.
 

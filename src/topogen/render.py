@@ -328,8 +328,15 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
             args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
         if getattr(args, "mgmt_bridge", False):
             args_bits.append("--mgmt-bridge")
-        if getattr(args, "mgmt_ipv6_mode", None):
-            args_bits.append(f"--mgmt-ipv6-mode {args.mgmt_ipv6_mode}")
+        if getattr(args, "mgmt_ipv4_dhcp", False):
+            args_bits.append("--mgmt-ipv4-dhcp")
+        ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+        if ipv6_mode == "dhcpv6":
+            args_bits.append("--mgmt-ipv6-dhcp")
+        elif ipv6_mode == "slaac":
+            args_bits.append("--mgmt-ipv6-slaac")
+        elif ipv6_mode:
+            args_bits.append(f"--mgmt-ipv6-mode {ipv6_mode}")
         if getattr(args, "mgmt_ipv6_cidr", None):
             args_bits.append(f"--mgmt-ipv6-cidr {args.mgmt_ipv6_cidr}")
     if getattr(args, "ntp_server", None):
@@ -362,7 +369,7 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
 
 
 def _build_mgmt_context(args: object, *, mgmt_slot: int | None = None) -> dict[str, Any] | None:
-    """Build Jinja mgmt context dict for OOB management (IPv4 DHCP or IPv6 SLAAC/DHCPv6)."""
+    """Build Jinja mgmt context dict for OOB fabric plus optional IPv4/IPv6 addressing."""
     if not getattr(args, "enable_mgmt", False):
         return None
     slot = mgmt_slot if mgmt_slot is not None else int(getattr(args, "mgmt_slot", 5))
@@ -371,6 +378,7 @@ def _build_mgmt_context(args: object, *, mgmt_slot: int | None = None) -> dict[s
         "slot": slot,
         "vrf": getattr(args, "mgmt_vrf", None),
         "gw": getattr(args, "mgmt_gw", None),
+        "ipv4_dhcp": bool(getattr(args, "mgmt_ipv4_dhcp", False)),
     }
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     if ipv6_mode:
@@ -712,8 +720,10 @@ def _append_nac_mgmt_interface(node: TopogenNode, args: Namespace, router_index:
     dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
     model_slot = mgmt_slot - 1 if dev_def == "csr1000v" else mgmt_slot
     mgmt_bridge = bool(getattr(args, "mgmt_bridge", False))
+    ipv4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     mgmt_address = None
-    if not mgmt_bridge:
+    if not mgmt_bridge and not ipv4_dhcp and not ipv6_mode:
         mgmt_address = IPv4Interface(
             f"{mgmt_net.network_address + router_index}/{mgmt_net.prefixlen}"
         )
@@ -758,6 +768,7 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
     ]
 
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    ipv4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
     if ipv6_mode:
         lines.extend(["ipv6 unicast-routing", "!"])
 
@@ -792,15 +803,17 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
     if mgmt_vrf:
         fwd = "vrf forwarding" if (csr_style or ipv6_mode) else "ip vrf forwarding"
         lines.append(f" {fwd} {mgmt_vrf}")
+    if ipv4_dhcp:
+        lines.append(" ip address dhcp")
     if ipv6_mode:
+        if not ipv4_dhcp:
+            lines.append(" no ip address")
         lines.append(" ipv6 enable")
         if ipv6_mode == "slaac":
             lines.append(" ipv6 address autoconfig")
         elif ipv6_mode == "dhcpv6":
             lines.append(" ipv6 address dhcp")
-    elif mgmt_bridge:
-        lines.append(" ip address dhcp")
-    else:
+    elif not ipv4_dhcp:
         mgmt_iface = next(
             (iface for iface in node.interfaces if iface.description == "OOB Management"),
             None,

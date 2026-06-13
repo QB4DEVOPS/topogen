@@ -81,8 +81,82 @@ class TestMgmtIpv6VrfOfflineRender(unittest.TestCase):
         self.assertRegex(config, r"interface GigabitEthernet5\b")
         oob = _oob_block(config, r"GigabitEthernet5")
         self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("no ip address", oob)
         self.assertIn("ipv6 address autoconfig", oob)
         self.assertNotIn("ip address dhcp", oob)
+
+    def test_csr_ospf_dhcpv6_explicit_flag_renders_ipv6_oob(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "csr-ospf",
+                "--device-template",
+                "csr1000v",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-dhcp",
+                "--mgmt-bridge",
+            ]
+        )
+        oob = _oob_block(config, r"GigabitEthernet5")
+        self.assertIn("no ip address", oob)
+        self.assertIn("ipv6 address dhcp", oob)
+        self.assertNotIn("ip address dhcp", oob)
+
+    def test_dual_stack_oob_renders_ipv4_and_ipv6_dhcp(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-bridge",
+                "--mgmt-ipv4-dhcp",
+                "--mgmt-ipv6-dhcp",
+            ]
+        )
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ip address dhcp", oob)
+        self.assertIn("ipv6 address dhcp", oob)
+        self.assertNotIn("no ip address", oob)
+
+    def test_csr_ospf_dhcpv6_renders_ipv6_oob(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "csr-ospf",
+                "--device-template",
+                "csr1000v",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-mode",
+                "dhcpv6",
+                "--mgmt-bridge",
+            ]
+        )
+        self.assertIn("address-family ipv6", config)
+        self.assertEqual(config.count("vrf definition Mgmt-vrf"), 1)
+        self.assertRegex(config, r"interface GigabitEthernet5\b")
+        oob = _oob_block(config, r"GigabitEthernet5")
+        self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("no ip address", oob)
+        self.assertIn("ipv6 address dhcp", oob)
+        self.assertNotIn("ip address dhcp", oob)
+        self.assertIn("10.10.0.1", config)
 
     def test_iosv_dhcpv6_renders_ipv6_oob(self):
         config = self._run_offline_config(
@@ -104,6 +178,7 @@ class TestMgmtIpv6VrfOfflineRender(unittest.TestCase):
         self.assertRegex(config, r"interface GigabitEthernet0/5\b")
         oob = _oob_block(config, r"GigabitEthernet0/5")
         self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("no ip address", oob)
         self.assertIn("ipv6 address dhcp", oob)
         self.assertNotIn("ip address dhcp", oob)
 
@@ -174,6 +249,7 @@ class TestMgmtIpv6VrfOfflineRender(unittest.TestCase):
                 "--mgmt",
                 "--mgmt-vrf",
                 "Mgmt-vrf",
+                "--mgmt-ipv4-dhcp",
             ]
         )
         oob = _oob_block(config, r"GigabitEthernet5")

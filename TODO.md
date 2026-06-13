@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.54
-Date Modified: 2026-06-11
+Doc Version: v1.6.55
+Date Modified: 2026-06-13
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -109,6 +109,7 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] **TG-190 CP2: OOB IPv6 DHCPv6/SLAAC on external bridge** — ([TG-190](https://roberthosford.atlassian.net/browse/TG-190), epic TG-189) Split `--mgmt-ipv4-dhcp` / `--mgmt-ipv6-dhcp` / `--mgmt-ipv6-slaac`; shared OOB template partials; dual-stack mgmt sync; CSR live matrix 6/6 flat + bootstrap PASS; IOSv ProveCycle PASS. Evidence: `artifacts/pipeline-proof/TG-190/`. Follow-ups: deterministic IPv6 (TG-83), static OOB IPv6, `--cml-server` opt-in (TG-194).
 - [x] DMVPN flat and flat-pair offline NaC artifacts (TG-151): `--nac` now emits the sibling `nac/` tree for DMVPN flat and flat-pair offline YAML generation while preserving the original flat-pair CML YAML path/config when `--nac` is omitted. See CHANGES.md.
 - [x] CML2 Terraform lifecycle scaffold (`--terraform-cml2`, alias `--cml2`) for generated offline labs: emits `out/<lab>/cml2/` with `main.tf`, `versions.tf`, `variables.tf`, `outputs.tf`, and `.gitignore` targeting `CiscoDevNet/cml2` and the generated YAML through a relative path. See CHANGES.md TG-150 entry.
 - [x] Two-tier OOB management for all online modes: `render_node_network` (NX), `render_node_sequence` (simple), and `render_flat_network` (flat) now use SWoob0 (aggregation) + SWoob1..N (access) matching offline reference. Previously used a single switch that couldn't scale. See CHANGES.md.

@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.3
-Date Modified: 2026-06-11
+Doc Version: v1.9.4
+Date Modified: 2026-06-13
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -437,8 +437,9 @@ into lab `description`, hidden `notes`, and annotation `text_content`.
 **Live E2E (CSR1000v, mgmt-bridge):** generate with `--nac --bootstrap
 --terraform-cml2 --mgmt --mgmt-bridge`; `terraform apply` in `cml2/`; sync mgmt
 addresses from the emitted `nac/sync-nac-mgmt.py` (or `topogen sync-nac-mgmt`;
-same implementation in `src/topogen/nac_mgmt_sync.py`). CML L3 snooping is used
-when local pyATS is unavailable. See `nac/NAC-WORKFLOW.md` in every `--nac` tree.
+same implementation in `src/topogen/nac_mgmt_sync.py`). Sync uses **pyATS on the
+CML controller** (2.10+) when available; falls back to CML L3 snooping. See
+`nac/NAC-WORKFLOW.md` in every `--nac` tree and [CML 2.10 and mgmt sync](#cml-210-pyats-and-mgmt-sync-operator-caveats).
 Live-validated 2026-06-09: `TG186-BOOTSTRAP-E2E` (2× CSR1000v nx), 11 NaC
 resources, OSPF neighbor FULL on Gi1 (bootstrap replaces full Jinja in CML YAML).
 
@@ -446,6 +447,35 @@ resources, OSPF neighbor FULL on Gi1 (bootstrap replaces full Jinja in CML YAML)
 otherwise DHCP (IPv4 mgmt-bridge). `nac_metadata.yaml` records `mgmt_mode`,
 `mgmt_vrf`, `mgmt_interface`, and `mgmt_ipv6_mode`. Report: `nac/mgmt_sync.json`.
 Legacy `scripts/sync-nac-mgmt-*.py` wrappers remain for repo-local use.
+
+#### CML 2.10, pyATS, and mgmt sync (operator caveats)
+
+TG-190 IPv6 OOB and the NaC bootstrap pipeline assume a **CML 2.10** controller for
+mgmt address sync. Generate labs with `--cml-version 0.3.1` (schema for 2.10).
+
+| Topic | What operators need to know |
+|-------|------------------------------|
+| **Where pyATS runs** | On the **CML server** (built into 2.10), not on the operator laptop. `sync-nac-mgmt.py` calls `node.run_pyats_command()` via the CML API (`virl2_client` + `VIRL2_*` env). No local pyATS install required. |
+| **CML MCP** | Optional for Cursor/agent debugging (`send_cli_command`). **Not** used by CI, ProveCycle, or the emitted `nac/sync-nac-mgmt.py`. Non-AI operators use the Python sync script only. |
+| **Node pyATS creds** | CLI on nodes must be reachable with credentials CML knows. Use `--set-pyats-creds` on sync (or set `pyats:` on nodes in CML 2.10 YAML / UI) — defaults match bootstrap day-0 (`cisco` / `cisco`). |
+| **Fallbacks** | If pyATS is not ready: **CML L3 snooping** on the OOB interface (`--cml-snoop-only` skips pyATS). CI alias push may use **CML console SSH** when pyATS from the runner is unavailable. |
+| **Timing** | `terraform apply -var=wait=true` waits for **BOOTED**, not for DHCP/SLAAC addresses. Re-run sync or use pipeline retries until `mgmt_sync.json` shows `synced` ≥ router count. |
+| **Client vs server** | `virl2_client` on the operator host may be 2.9.x while the controller is 2.10.x; that is usually fine (compatibility warning only). |
+
+**Recommended sync (IPv6 SLAAC / DHCPv6 on mgmt bridge):**
+
+```bash
+python out/<lab>/nac/sync-nac-mgmt.py \
+  --lab-id "$LAB_ID" --nac-root out/<lab>/nac \
+  --set-pyats-creds
+```
+
+Add `--cml-snoop-only` only when pyATS on the controller is known broken; snooping
+may lag behind address assignment on large labs.
+
+**CML < 2.10:** pyATS-on-controller and the `pyats:` node block are not available.
+Use IPv4 mgmt-bridge sync (`--mode dhcp`) and expect limited IPv6 automation; not
+the TG-190 CP2 target platform.
 
 ### CML CI/CD pipeline (TG-192)
 
@@ -503,8 +533,10 @@ Use the **emitted** helper (not `scripts/` as primary path):
 
 ```bash
 python out/<lab>/nac/sync-nac-mgmt.py \
-  --lab-id "$LAB_ID" --nac-root out/<lab>/nac --cml-snoop-only   # IPv6 SLAAC
-# or: --mode dhcp --fix-dhcp                                     # IPv4 mgmt-bridge
+  --lab-id "$LAB_ID" --nac-root out/<lab>/nac \
+  --set-pyats-creds
+# IPv6-only / SLAAC labs may also pass --cml-snoop-only if controller pyATS fails
+# IPv4 mgmt-bridge: --mode dhcp --fix-dhcp
 ```
 
 Equivalent: `topogen sync-nac-mgmt` (same `src/topogen/nac_mgmt_sync.py`).

@@ -41,6 +41,7 @@ class TestCiFinalize(unittest.TestCase):
                 router_ipv6={"iosv-01": "2600::1"},
             )
         self.assertEqual(result["applied"], 1)
+        node.update.assert_called_once()
         node.run_pyats_config_command.assert_called_once()
         node.run_pyats_command.assert_called_once_with("write memory", config=False)
 
@@ -54,6 +55,23 @@ class TestCiFinalize(unittest.TestCase):
         self.assertIn("2600::1", html_out)
         self.assertIn("uptime", html_out)
         self.assertIn("slaac", html_out)
+
+    def test_guide_lists_dual_stack(self):
+        html_out = build_lab_guide_html(
+            "TG-190",
+            {
+                "routers": {
+                    "R1": {
+                        "mgmt_ipv6": "2600:1700::1",
+                        "mgmt_ipv4": "192.168.1.10",
+                    }
+                }
+            },
+            "GigabitEthernet5",
+        )
+        self.assertIn("IPv6", html_out)
+        self.assertIn("IPv4", html_out)
+        self.assertIn("192.168.1.10", html_out)
 
 
 if __name__ == "__main__":

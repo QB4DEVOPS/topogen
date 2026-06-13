@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -54,64 +53,23 @@ def _config_block(lines: list[str]) -> str:
     return "\n".join(lines)
 
 
-def _ssh_credentials() -> tuple[str, str]:
-    user = os.environ.get("IOSXE_USERNAME", "cisco")
-    password = os.environ.get("IOSXE_PASSWORD", "cisco")
-    return user, password
+def _push_router_config(
+    lab,
+    node,
+    config_block: str,
+    mgmt_ipv6: str | None,
+) -> str:
+    from topogen.cml_console_cli import push_router_config
+
+    return push_router_config(lab, node, config_block, mgmt_ipv6)
 
 
-def _ssh_push_config(host: str, config_block: str) -> None:
-    try:
-        import paramiko
-    except ImportError as exc:
-        raise RuntimeError("paramiko required for SSH fallback (pip install paramiko)") from exc
-
-    user, password = _ssh_credentials()
-    bracketed = host
-    if ":" in host and not host.startswith("["):
-        bracketed = f"[{host}]"
-
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(
-        bracketed,
-        username=user,
-        password=password,
-        look_for_keys=False,
-        allow_agent=False,
-        timeout=30,
-    )
-    try:
-        shell = client.invoke_shell()
-        time.sleep(0.5)
-        shell.send("enable\n")
-        time.sleep(0.3)
-        shell.send(f"{password}\n")
-        time.sleep(0.3)
-        shell.send("configure terminal\n")
-        time.sleep(0.3)
-        for line in config_block.splitlines():
-            shell.send(line + "\n")
-            time.sleep(0.15)
-        shell.send("end\n")
-        time.sleep(0.3)
-        shell.send("write memory\n")
-        time.sleep(0.3)
-        shell.send("\n")
-        time.sleep(2.0)
-    finally:
-        client.close()
-
-
-def _push_router_config(node, config_block: str, mgmt_ipv6: str | None) -> None:
-    try:
-        node.run_pyats_config_command(config_block)
-        node.run_pyats_command("write memory", config=False)
-        return
-    except Exception as pyats_exc:
-        if mgmt_ipv6 is None:
-            raise pyats_exc
-        _ssh_push_config(mgmt_ipv6, config_block)
+def _pyats_credentials() -> dict[str, str]:
+    return {
+        "username": os.environ.get("IOSXE_USERNAME", "cisco"),
+        "password": os.environ.get("IOSXE_PASSWORD", "cisco"),
+        "enable_password": os.environ.get("IOSXE_ENABLE_PASSWORD", "cisco"),
+    }
 
 
 def apply_ci_aliases_pyats(
@@ -125,6 +83,7 @@ def apply_ci_aliases_pyats(
 ) -> dict[str, Any]:
     mgmt_iface = mgmt_interface_name(device_template, mgmt_slot)
     router_ipv6 = router_ipv6 or {}
+    pyats_creds = _pyats_credentials()
     result: dict[str, Any] = {"routers": 0, "applied": 0, "saved": 0, "nodes": {}}
 
     for index, node in _collect_router_nodes(lab):
@@ -148,9 +107,10 @@ def apply_ci_aliases_pyats(
             result["applied"] += 1
             continue
         try:
-            _push_router_config(node, block, mgmt_ipv6)
+            if not dry_run:
+                node.update({"pyats": pyats_creds}, exclude_configurations=True)
+            entry["via"] = _push_router_config(lab, node, block, mgmt_ipv6)
             entry["ok"] = True
-            entry["via"] = "pyats-or-ssh"
             result["applied"] += 1
             entry["saved"] = True
             result["saved"] += 1
@@ -165,21 +125,40 @@ def build_lab_guide_html(jira_key: str, mgmt_sync: dict[str, Any], mgmt_iface: s
     routers = mgmt_sync.get("routers") or {}
     for label in sorted(routers, key=lambda x: int(x[1:]) if x[1:].isdigit() else x):
         row = routers[label]
-        ipv6 = row.get("mgmt_ipv6") or row.get("mgmt_ip") or "—"
+        ipv6 = row.get("mgmt_ipv6")
+        ipv4 = row.get("mgmt_ipv4")
+        addr_parts: list[str] = []
+        if ipv6:
+            addr_parts.append(f"IPv6 <code>{html.escape(str(ipv6))}</code>")
+        if ipv4:
+            addr_parts.append(f"IPv4 <code>{html.escape(str(ipv4))}</code>")
+        if not addr_parts:
+            legacy = row.get("mgmt_ip")
+            if legacy:
+                addr_parts.append(f"<code>{html.escape(str(legacy))}</code>")
+        addr_text = ", ".join(addr_parts) if addr_parts else "—"
         alias_hint = ""
-        if ipv6 and ipv6 != "—":
+        if ipv6:
             alias_hint = f" — alias <code>slaac_{html.escape(_slaac_alias_token(str(ipv6)))}</code>"
         rows.append(
-            f"<li><b>{label}</b> {mgmt_iface}: "
-            f"<code>{html.escape(str(ipv6))}</code>{alias_hint}</li>"
+            f"<li><b>{label}</b> {mgmt_iface}: {addr_text}{alias_hint}</li>"
         )
     mapping = mgmt_sync.get("mapping") or {}
+    mapping_ipv4 = mgmt_sync.get("mapping_ipv4") or {}
     if not rows and mapping:
-        for name, addr in sorted(mapping.items()):
-            alias_hint = f" — alias <code>slaac_{html.escape(_slaac_alias_token(addr))}</code>"
+        for name in sorted(mapping):
+            v6 = mapping.get(name)
+            v4 = mapping_ipv4.get(name)
+            parts: list[str] = []
+            if v6:
+                parts.append(f"IPv6 <code>{html.escape(v6)}</code>")
+            if v4:
+                parts.append(f"IPv4 <code>{html.escape(v4)}</code>")
+            alias_hint = ""
+            if v6:
+                alias_hint = f" — alias <code>slaac_{html.escape(_slaac_alias_token(v6))}</code>"
             rows.append(
-                f"<li><b>{name}</b> {mgmt_iface}: "
-                f"<code>{html.escape(addr)}</code>{alias_hint}</li>"
+                f"<li><b>{name}</b> {mgmt_iface}: {', '.join(parts)}{alias_hint}</li>"
             )
     body = "\n".join(rows) if rows else "<li>no mgmt addresses synced</li>"
     return (

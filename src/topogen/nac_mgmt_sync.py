@@ -52,7 +52,9 @@ def canonical_name(index: int) -> str:
 
 def default_sync_mode_from_args(args) -> SyncMode:
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None) if args else None
-    return "slaac" if ipv6_mode == "slaac" else "dhcp"
+    if ipv6_mode in ("slaac", "dhcpv6"):
+        return "slaac"
+    return "dhcp"
 
 
 def load_yaml(path: Path) -> dict:
@@ -79,7 +81,11 @@ def format_nac_device_host(addr: str) -> str:
     return addr
 
 
-def patch_nac_files(nac_root: Path, mapping: dict[str, str]) -> None:
+def patch_nac_files(
+    nac_root: Path,
+    mapping: dict[str, str],
+    mapping_ipv4: dict[str, str] | None = None,
+) -> None:
     nac_yaml = nac_root / "nac.yaml"
     inventory_yaml = nac_root / "inventory.yaml"
     devices_yaml = nac_root / "devices.yaml"
@@ -106,10 +112,13 @@ def patch_nac_files(nac_root: Path, mapping: dict[str, str]) -> None:
     dump_yaml(inventory_yaml, inv_data)
 
     dev_data = load_yaml(devices_yaml)
+    mapping_ipv4 = mapping_ipv4 or {}
     for device in dev_data.get("devices", []):
         name = device.get("name", "")
         if name in mapping:
             device["mgmt_ip"] = mapping[name]
+        if name in mapping_ipv4:
+            device["mgmt_ipv4"] = mapping_ipv4[name]
     dump_yaml(devices_yaml, dev_data)
 
 
@@ -130,6 +139,9 @@ def resolve_sync_mode(
             metadata_path = nac_root / "nac_metadata.yaml"
             if metadata_path.is_file():
                 metadata = load_yaml(metadata_path)
+                mgmt_ipv6_mode = str(metadata.get("mgmt_ipv6_mode", "")).lower()
+                if mgmt_ipv6_mode in ("slaac", "dhcpv6"):
+                    return "slaac"
                 mgmt_mode = str(metadata.get("mgmt_mode", "")).lower()
                 if mgmt_mode in ("dhcp", "slaac"):
                     return mgmt_mode  # type: ignore[return-value]
@@ -409,6 +421,7 @@ def sync_slaac_from_lab(
     lab.sync_l3_addresses_if_outdated()
     iface_name = mgmt_interface_name(device_template, mgmt_slot)
     mapping: dict[str, str] = {}
+    mapping_ipv4: dict[str, str] = {}
     report: dict[str, object] = {
         "mode": "slaac",
         "lab_id": lab_id,
@@ -433,7 +446,9 @@ def sync_slaac_from_lab(
         entry: dict[str, str | None] = {
             "state": str(node.state),
             "mgmt_ipv6": None,
+            "mgmt_ipv4": None,
             "source": None,
+            "ipv4_source": None,
             "error": None,
         }
 
@@ -472,6 +487,29 @@ def sync_slaac_from_lab(
         entry["mgmt_ipv6"] = mgmt_ipv6
         if mgmt_ipv6:
             mapping[canonical] = mgmt_ipv6
+
+        mgmt_ipv4: str | None = None
+        if not cml_snoop_only:
+            try:
+                ip_brief = str(
+                    node.run_pyats_command(
+                        f"show ip interface brief | include {node_iface}",
+                        config=False,
+                    )
+                )
+                mgmt_ipv4 = _parse_mgmt_ipv4(ip_brief, node_iface)
+                if mgmt_ipv4:
+                    entry["ipv4_source"] = "pyats"
+            except Exception:  # noqa: BLE001
+                pass
+        if not mgmt_ipv4:
+            mgmt_ipv4 = _mgmt_ip_from_cml_interface(node, node_iface)
+            if mgmt_ipv4:
+                entry["ipv4_source"] = "cml_snooped"
+        entry["mgmt_ipv4"] = mgmt_ipv4
+        if mgmt_ipv4:
+            mapping_ipv4[canonical] = mgmt_ipv4
+
         report["routers"][label] = entry
 
         processed += 1
@@ -482,6 +520,8 @@ def sync_slaac_from_lab(
             )
 
     report["total_routers"] = total
+    if mapping_ipv4:
+        report["mapping_ipv4"] = mapping_ipv4
     return mapping, report
 
 
@@ -537,10 +577,12 @@ def sync_nac_mgmt(
         exit_code = 0 if mapping else 1
 
     if mapping:
-        patch_nac_files(nac_root, mapping)
+        patch_nac_files(nac_root, mapping, report.get("mapping_ipv4"))
 
     report["synced"] = len(mapping)
     report["mapping"] = mapping
+    if report.get("mapping_ipv4"):
+        report["synced_ipv4"] = len(report["mapping_ipv4"])
     report_path = write_sync_report(nac_root, report)
     print(json.dumps({"synced": len(mapping), "report": str(report_path)}, indent=2))
     return exit_code
