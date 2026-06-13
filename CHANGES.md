@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.14
+Doc Version: v1.3.15
 Date Modified: 2026-06-11
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(cicd): CML CI/CD pipeline + per-ticket scoped CML users (TG-192)
+    - `topogen provision-cml-user` creates lab-scoped users (`admin: false`, `lab_view`+`lab_exec`) via `virl2_client`; `--revoke` for teardown. `capture-lab-evidence` / `finalize-ci-lab` embed CI report in lab notes plus visible (status-colored) and hidden canvas annotations. DEVELOPER.md runbook documents service vs customer credential tiers, full Jira→READY pipeline, and env vars. GitHub Actions skeleton `.github/workflows/cml-nac-pipeline.yml` (offline gates always; live apply behind `workflow_dispatch`). `scripts/validate-tg192-pipeline.ps1` offline + optional live gates using emitted `nac/sync-nac-mgmt.py`. `scripts/jira-cml-webhook.py` bridges Jira webhooks to `repository_dispatch` and READY comments. `validate-tg162-dmvpn-live.ps1` prefers emitted sync script when present. IPv6 SLAAC mgmt hosts bracketed in `nac.yaml`.
+    - Files: src/topogen/cml_user.py, src/topogen/cml_lab_evidence.py, src/topogen/cml_ci_finalize.py, src/topogen/main.py, src/topogen/nac_mgmt_sync.py, tests/test_cml_user_provision.py, tests/test_cml_lab_evidence.py, tests/test_cml_ci_finalize.py, scripts/validate-tg192-pipeline.ps1, scripts/jira-cml-webhook.py, .github/workflows/cml-nac-pipeline.yml, scripts/validate-tg162-dmvpn-live.ps1, DEVELOPER.md, TODO.md, CHANGES.md
   - feat(nac): emit mgmt sync scaffold with `--nac` (TG-191)
     - Every `--nac` tree includes `nac/sync-nac-mgmt.py` (unified DHCP/SLAAC/auto modes), `NAC-WORKFLOW.md`, and `mgmt_sync.json` report schema. IPv6 SLAAC labs also get `ssh-fanout.py` and `router-hosts.csv`. Consolidated sync logic in `src/topogen/nac_mgmt_sync.py`; `scripts/` wrappers re-export for backward compatibility. Optional `topogen sync-nac-mgmt` subcommand. `nac_metadata.yaml` gains `mgmt_mode`, `mgmt_vrf`, `mgmt_interface`, `mgmt_ipv6_mode`.
     - Files: src/topogen/nac_mgmt_sync.py, src/topogen/nac.py, src/topogen/main.py, scripts/sync-nac-mgmt-dhcp.py, scripts/sync-nac-mgmt-ipv6-slaac.py, scripts/nac_mgmt_sync_lib.py, tests/test_sync_nac_mgmt_ipv6_slaac.py, tests/test_nac_writer.py, DEVELOPER.md, TODO.md, CHANGES.md

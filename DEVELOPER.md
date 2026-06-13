@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.2
+Doc Version: v1.9.3
 Date Modified: 2026-06-11
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -446,6 +446,136 @@ resources, OSPF neighbor FULL on Gi1 (bootstrap replaces full Jinja in CML YAML)
 otherwise DHCP (IPv4 mgmt-bridge). `nac_metadata.yaml` records `mgmt_mode`,
 `mgmt_vrf`, `mgmt_interface`, and `mgmt_ipv6_mode`. Report: `nac/mgmt_sync.json`.
 Legacy `scripts/sync-nac-mgmt-*.py` wrappers remain for repo-local use.
+
+### CML CI/CD pipeline (TG-192)
+
+End-to-end automation for Jira-triggered NaC bootstrap labs: generate → `cml2/` deploy →
+emitted mgmt sync → `nac/` apply → verify → per-ticket customer CML user → READY Jira
+comment. Teardown on ticket Done (opt-in / manual approval for destroy).
+
+**Canonical flow (large labs — prefer `cml2/` over `topogen --up`):**
+
+```
+Jira trigger → topogen generate → terraform apply (cml2/) → wait BOOTED
+  → python nac/sync-nac-mgmt.py → terraform apply (nac/) → verify gates
+  → topogen provision-cml-user (lab_view+lab_exec) → Jira READY comment
+On ticket Done → delete customer user → terraform destroy (cml2/)
+```
+
+#### Credential tiers
+
+| Tier | Identity | Scope | Where stored |
+|------|----------|-------|--------------|
+| **Service account** | CI / operator admin | Full CML admin for deploy, sync, verify | `TF_VAR_*`, `VIRL2_*`, `IOSXE_*` in CI secrets / vault only |
+| **Customer account** | `tg-<ticket>-<suffix>` | Single lab: `lab_view` + `lab_exec` only (`admin: false`) | Password via vault / 1Password — **never** in Jira comments |
+
+#### Trigger
+
+- Jira issue labeled `cml-lab` (or equivalent pipeline label); ticket key becomes the lab title suffix.
+- Webhook: `scripts/jira-cml-webhook.py` → GitHub `repository_dispatch` (`cml-lab-provision` / `cml-lab-teardown`).
+- CI: `.github/workflows/cml-nac-pipeline.yml` (`workflow_dispatch` or `repository_dispatch`).
+
+#### Generate (reference: 300-node IPv6 SLAAC — TG-190-flat-300-nac-v6)
+
+```bash
+topogen --cml-version 0.3.1 -L "TG-190-flat-300-nac-v6" \
+  300 --mode flat -T iosv --device-template iosv \
+  --offline-yaml out/TG-190-flat-300-nac-v6.yaml \
+  --nac --bootstrap --terraform-cml2 \
+  --mgmt --mgmt-vrf Mgmt-vrf --mgmt-ipv6-mode slaac --mgmt-bridge \
+  --mgmt-ipv6-cidr fd00:10:254::/64 \
+  --overwrite
+```
+
+CI smoke (4 nodes): `.\scripts\validate-tg192-pipeline.ps1 -Regenerate` (see script for flags).
+
+#### Deploy
+
+```bash
+terraform -chdir=out/<lab>/cml2 init
+terraform -chdir=out/<lab>/cml2 apply -auto-approve -var=wait=true
+LAB_ID=$(terraform -chdir=out/<lab>/cml2 output -raw lab_id)
+```
+
+#### Sync
+
+Use the **emitted** helper (not `scripts/` as primary path):
+
+```bash
+python out/<lab>/nac/sync-nac-mgmt.py \
+  --lab-id "$LAB_ID" --nac-root out/<lab>/nac --cml-snoop-only   # IPv6 SLAAC
+# or: --mode dhcp --fix-dhcp                                     # IPv4 mgmt-bridge
+```
+
+Equivalent: `topogen sync-nac-mgmt` (same `src/topogen/nac_mgmt_sync.py`).
+
+#### NaC apply
+
+```bash
+export IOSXE_USERNAME=... IOSXE_PASSWORD=...
+terraform -chdir=out/<lab>/nac init
+terraform -chdir=out/<lab>/nac apply -auto-approve
+```
+
+#### Verify (minimal gates)
+
+- `mgmt_sync.json`: `synced` count matches router count.
+- `terraform apply` exit code 0 (cml2 + nac).
+- Optional: `ansible-playbook verify_reachability.yaml` or `ssh-fanout.py` for IPv6 SLAAC labs.
+
+#### Handoff
+
+```bash
+topogen provision-cml-user \
+  --lab-id "$LAB_ID" \
+  --username "tg-TG-xxx-<suffix>" \
+  --description "TG-xxx scoped user"
+```
+
+Or CML MCP `create_cml_user` with `admin: false`, permissions `lab_view` + `lab_exec`.
+
+**READY Jira comment template** (password **not** in comment):
+
+```
+CML lab READY — TG-xxx
+- Lab: <title> (<lab_uuid>)
+- URL: <cml_base>/lab/<lab_uuid>
+- Customer user: tg-TG-xxx-<suffix> (password: vault link / operator handoff)
+- Sync: <N>/<N> routers in mgmt_sync.json
+- NaC apply: success
+```
+
+Post via `scripts/jira-cml-webhook.py --event ready-comment ...` or Atlassian MCP `addCommentToJiraIssue`.
+
+#### Teardown (on Jira Done — explicit operator approval recommended)
+
+```bash
+topogen provision-cml-user --username "tg-TG-xxx-<suffix>" --revoke
+terraform -chdir=out/<lab>/cml2 destroy -auto-approve
+```
+
+Webhook: `repository_dispatch` type `cml-lab-teardown` (see `scripts/jira-cml-webhook.py`).
+
+#### Environment variables
+
+| Variable | Used by |
+|----------|---------|
+| `TF_VAR_address`, `TF_VAR_username`, `TF_VAR_password` (or `TF_VAR_token`), `TF_VAR_skip_verify` | `cml2/` Terraform provider |
+| `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` | `sync-nac-mgmt.py`, `provision-cml-user` |
+| `IOSXE_USERNAME`, `IOSXE_PASSWORD`, `IOSXE_URL` | NaC Terraform / device NETCONF |
+| `CUSTOMER_CML_PASSWORD` | Optional fixed password for `provision-cml-user` (else CSPRNG) |
+| `GITHUB_TOKEN`, `JIRA_*` | Webhook dispatch / Jira comments |
+
+GitHub Actions secret names (values in vault only): `CML_TF_ADDRESS`, `CML_TF_USERNAME`,
+`CML_TF_PASSWORD`, `CML_TF_SKIP_VERIFY`, `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS`,
+`IOSXE_USERNAME`, `IOSXE_PASSWORD`, `JIRA_WEBHOOK_SECRET`.
+
+#### Scale note
+
+Labs with **16+ routers** and `--mgmt` require `--mgmt-ipv6-mode slaac` (or dhcpv6); see
+`docs/TG-190-checkpoint-1.md`.
+
+**Offline validation:** `.\scripts\validate-tg192-pipeline.ps1` (pass `-LiveApply` for live CML).
 
 **Success criteria per case:** TopoGen exit 0; `terraform init` exit 0; `terraform plan -input=false`
 exit 0; stdout contains `Plan: N to add, 0 to change, 0 to destroy.`; no `Unsupported attribute`

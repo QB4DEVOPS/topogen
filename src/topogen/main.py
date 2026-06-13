@@ -889,6 +889,21 @@ def main():
 
         return sync_nac_mgmt_main(sys.argv[2:])
 
+    if len(sys.argv) > 1 and sys.argv[1] == "provision-cml-user":
+        from topogen.cml_user import main as provision_cml_user_main
+
+        return provision_cml_user_main(sys.argv[2:])
+
+    if len(sys.argv) > 1 and sys.argv[1] == "capture-lab-evidence":
+        from topogen.cml_lab_evidence import main as capture_lab_evidence_main
+
+        return capture_lab_evidence_main(sys.argv[2:])
+
+    if len(sys.argv) > 1 and sys.argv[1] == "finalize-ci-lab":
+        from topogen.cml_ci_finalize import main as finalize_ci_lab_main
+
+        return finalize_ci_lab_main(sys.argv[2:])
+
     parser = create_argparser()
     args = parser.parse_args()
     normalize_template_inputs(args)
