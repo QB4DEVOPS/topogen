@@ -150,6 +150,14 @@ TopoGen also emitted helper scripts for live lab management address sync.
    Default sync mode at generation time: **{default_mode}** (`--mode auto` reads `nac_metadata.yaml`).
    Report written to `mgmt_sync.json`.
 
+   **CML 2.10 required for IPv6 OOB sync.** pyATS runs on the **controller** (not your
+   laptop). This script uses the CML API (`VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS`) —
+   not CML MCP. Pass `--set-pyats-creds` so nodes have CLI credentials for pyATS
+   (defaults: `cisco` / `cisco`, matching bootstrap day-0). If pyATS is unavailable,
+   sync falls back to CML L3 snooping on the mgmt interface; use `--cml-snoop-only`
+   to force snoop-only. Re-run sync after boot if addresses are not ready yet
+   (`terraform wait=true` only guarantees BOOTED).
+
 4. **Apply device configuration** with NaC Terraform:
 
    ```bash
@@ -178,7 +186,8 @@ python ssh-fanout.py --uptime
 
 | Variable | Used by |
 |----------|---------|
-| `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` | `sync-nac-mgmt.py` (CML API) |
+| `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` | `sync-nac-mgmt.py` (CML API + controller pyATS) |
+| `IOSXE_USERNAME`, `IOSXE_PASSWORD`, `IOSXE_ENABLE_PASSWORD` | Optional overrides for `--set-pyats-creds` |
 | `IOSXE_URL`, `IOSXE_USERNAME`, `IOSXE_PASSWORD` | `terraform apply` in this directory |
 
 Do not commit credentials or `terraform.tfvars` with secrets.
@@ -616,9 +625,9 @@ def build_canonical_nac_model(
             is_dmvpn_pair = (
                 dmvpn_context and str(iface_description) == DMVPN_PAIR_DESCRIPTION
             )
-            # The OOB management interface is provisioned out-of-band by the CML
-            # day-0 template ("ip address dhcp") and is the transport the NaC
-            # provider connects through. It must never be emitted as a
+            # OOB management is provisioned out-of-band by the CML day-0 template
+            # (IPv4: ip address dhcp; IPv6-only: no ip address + ipv6 address …) and is
+            # the transport the NaC provider connects through. It must never be emitted as a
             # Terraform-managed interface: writing a fabricated static address on
             # it overlaps data subnets and severs the management session (TG-163).
             # It is retained in the informational fat model and still feeds
@@ -973,13 +982,19 @@ def _mgmt_metadata_fields(args, device_template: str) -> dict:
         return {}
     mgmt_slot = int(getattr(args, "mgmt_slot", 5))
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    ipv4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
     mgmt_mode = default_sync_mode_from_args(args)
-    return {
+    fields = {
         "mgmt_mode": mgmt_mode,
         "mgmt_vrf": getattr(args, "mgmt_vrf", None) or "",
         "mgmt_interface": mgmt_interface_name(device_template, mgmt_slot),
         "mgmt_ipv6_mode": ipv6_mode or "",
     }
+    if ipv4_dhcp:
+        fields["mgmt_ipv4_dhcp"] = True
+    if ipv6_mode:
+        fields["mgmt_ipv6_only"] = not ipv4_dhcp
+    return fields
 
 
 def write_nac_mgmt_sync_scaffold(

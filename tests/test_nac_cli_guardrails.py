@@ -27,6 +27,7 @@ if str(SRC) not in sys.path:
 from topogen.main import (  # pylint: disable=wrong-import-position
     MGMT_IPV4_OOB_NODE_LIMIT,
     create_argparser,
+    finalize_mgmt_addressing_args,
     main,
     normalize_template_inputs,
     validate_bootstrap_guardrails,
@@ -48,6 +49,9 @@ class TestNacCliGuardrails(unittest.TestCase):
         validate_nac_mvp_guardrails(args, self.parser)
         validate_bootstrap_guardrails(args, self.parser)
         validate_cml2_lifecycle_guardrails(args, self.parser)
+        if getattr(args, "enable_mgmt", False) and args.mgmt_vrf and args.mgmt_vrf.lower() == "global":
+            args.mgmt_vrf = None
+        finalize_mgmt_addressing_args(args, self.parser)
         validate_mgmt_ipv6_guardrails(args, self.parser)
         return args
 
@@ -410,7 +414,7 @@ class TestNacCliGuardrails(unittest.TestCase):
                     ]
                 )
         self.assertNotEqual(cm.exception.code, 0)
-        self.assertIn("--mgmt-ipv6-mode requires --mgmt", stderr.getvalue())
+        self.assertIn("IPv6 OOB flags", stderr.getvalue())
 
     def test_mgmt_ipv6_mode_rejects_global_vrf(self):
         with self.assertRaises(SystemExit) as cm:
@@ -432,6 +436,7 @@ class TestNacCliGuardrails(unittest.TestCase):
                 normalize_template_inputs(args)
                 if args.mgmt_vrf and args.mgmt_vrf.lower() == "global":
                     args.mgmt_vrf = None
+                finalize_mgmt_addressing_args(args, self.parser)
                 validate_mgmt_ipv6_guardrails(args, self.parser)
         self.assertNotEqual(cm.exception.code, 0)
         self.assertIn("named --mgmt-vrf", stderr.getvalue())
@@ -499,7 +504,7 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertNotEqual(cm.exception.code, 0)
         err = stderr.getvalue()
         self.assertIn("300 nodes", err)
-        self.assertIn("--mgmt-ipv6-mode", err)
+        self.assertIn("--mgmt-ipv6-dhcp", err)
         self.assertIn("IPv4 OOB", err)
 
     def test_mgmt_ipv4_oob_allowed_below_scale_threshold(self):
@@ -537,7 +542,7 @@ class TestNacCliGuardrails(unittest.TestCase):
                     ]
                 )
         self.assertNotEqual(cm.exception.code, 0)
-        self.assertIn("--mgmt-ipv6-mode", stderr.getvalue())
+        self.assertIn("--mgmt-ipv6-dhcp", stderr.getvalue())
 
 
 if __name__ == "__main__":

@@ -71,6 +71,16 @@ def build_ci_report(
             "synced": synced,
             "total": total,
             "mapping": mapping,
+            **(
+                {"mapping_ipv4": mgmt.get("mapping_ipv4")}
+                if mgmt.get("mapping_ipv4")
+                else {}
+            ),
+            **(
+                {"synced_ipv4": int(mgmt.get("synced_ipv4", 0) or 0)}
+                if mgmt.get("mapping_ipv4")
+                else {}
+            ),
         },
         "gates": gates or {},
         "config_extract": config_extract or {},

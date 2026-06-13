@@ -135,19 +135,63 @@ def validate_bootstrap_guardrails(args, parser):
 MGMT_IPV4_OOB_NODE_LIMIT = 16
 
 
+def finalize_mgmt_addressing_args(args, parser) -> None:
+    """Resolve explicit DHCP flags and legacy --mgmt-ipv6-mode into a single model."""
+    if not getattr(args, "enable_mgmt", False):
+        return
+
+    v6_dhcp = bool(getattr(args, "mgmt_ipv6_dhcp", False))
+    v6_slaac = bool(getattr(args, "mgmt_ipv6_slaac", False))
+    v6_mode = getattr(args, "mgmt_ipv6_mode", None)
+
+    if v6_dhcp and v6_slaac:
+        parser.error("--mgmt-ipv6-dhcp and --mgmt-ipv6-slaac are mutually exclusive")
+    if v6_dhcp:
+        if v6_mode and v6_mode != "dhcpv6":
+            parser.error(
+                "--mgmt-ipv6-dhcp conflicts with --mgmt-ipv6-mode "
+                f"{v6_mode!r} (use one IPv6 acquisition method)"
+            )
+        args.mgmt_ipv6_mode = "dhcpv6"
+    elif v6_slaac:
+        if v6_mode and v6_mode != "slaac":
+            parser.error(
+                "--mgmt-ipv6-slaac conflicts with --mgmt-ipv6-mode "
+                f"{v6_mode!r} (use one IPv6 acquisition method)"
+            )
+        args.mgmt_ipv6_mode = "slaac"
+
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    v4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
+    if not v4_dhcp and not ipv6_mode and getattr(args, "mgmt_bridge", False):
+        # Backward compat: bridged OOB without explicit addressing still uses IPv4 DHCP.
+        args.mgmt_ipv4_dhcp = True
+
+
+def _mgmt_uses_ipv4_oob(args) -> bool:
+    """True when router OOB will carry IPv4 (DHCP, static from --mgmt-cidr, or bridge DHCP)."""
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    if ipv6_mode and not getattr(args, "mgmt_ipv4_dhcp", False):
+        return False
+    if getattr(args, "mgmt_ipv4_dhcp", False):
+        return True
+    if getattr(args, "mgmt_bridge", False):
+        return True
+    return bool(getattr(args, "enable_mgmt", False))
+
+
 def validate_mgmt_ipv6_guardrails(args, parser):
-    """Fail-fast guardrails for OOB IPv6 management (TG-190 checkpoint 1)."""
+    """Fail-fast guardrails for OOB management addressing (TG-190)."""
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     node_count = int(getattr(args, "nodes", 0) or 0)
     if (
-        not ipv6_mode
-        and getattr(args, "enable_mgmt", False)
+        _mgmt_uses_ipv4_oob(args)
         and node_count >= MGMT_IPV4_OOB_NODE_LIMIT
     ):
         parser.error(
             f"With --mgmt and {node_count} nodes, IPv4 OOB (ip address dhcp or static "
             f"addresses from --mgmt-cidr) exhausts the shared management bridge and can "
-            f"destabilize the lab. Use --mgmt-ipv6-mode slaac or dhcpv6 with a named "
+            f"destabilize the lab. Use --mgmt-ipv6-dhcp or --mgmt-ipv6-slaac with a named "
             f"--mgmt-vrf (and --mgmt-bridge for external RA/DHCPv6) for IPv6-only OOB "
             f"at scale."
         )
@@ -161,13 +205,13 @@ def validate_mgmt_ipv6_guardrails(args, parser):
                 parser.error(f"Invalid --mgmt-ipv6-cidr: {exc}")
         return
     if not getattr(args, "enable_mgmt", False):
-        parser.error("--mgmt-ipv6-mode requires --mgmt")
+        parser.error("IPv6 OOB flags (--mgmt-ipv6-dhcp, --mgmt-ipv6-slaac, --mgmt-ipv6-mode) require --mgmt")
     mgmt_vrf = getattr(args, "mgmt_vrf", None)
     if mgmt_vrf and str(mgmt_vrf).lower() == "global":
         mgmt_vrf = None
     if not mgmt_vrf:
         parser.error(
-            "--mgmt-ipv6-mode requires a named --mgmt-vrf (not global routing table)"
+            "IPv6 OOB requires a named --mgmt-vrf (not global routing table)"
         )
     if getattr(args, "mgmt_ipv6_cidr", None):
         from ipaddress import IPv6Network
@@ -517,7 +561,40 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="enable_mgmt",
         action="store_true",
         default=False,
-        help="Enable a dedicated OOB management network (SWmgmt0 + router mgmt interfaces)",
+        help=(
+            "Enable OOB management fabric (SWoob, router mgmt interfaces, optional VRF). "
+            "Addressing is separate: --mgmt-ipv4-dhcp and/or --mgmt-ipv6-dhcp / --mgmt-ipv6-slaac."
+        ),
+    )
+    parser.add_argument(
+        "--mgmt-ipv4-dhcp",
+        dest="mgmt_ipv4_dhcp",
+        action="store_true",
+        default=False,
+        help=(
+            "IPv4 DHCP on the OOB interface (ip address dhcp). With --mgmt-bridge and no "
+            "other addressing flags, IPv4 DHCP is implied for backward compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-dhcp",
+        dest="mgmt_ipv6_dhcp",
+        action="store_true",
+        default=False,
+        help=(
+            "IPv6 DHCPv6 on the OOB interface (ipv6 address dhcp). IPv6-only unless "
+            "combined with --mgmt-ipv4-dhcp. Requires --mgmt and named --mgmt-vrf."
+        ),
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-slaac",
+        dest="mgmt_ipv6_slaac",
+        action="store_true",
+        default=False,
+        help=(
+            "IPv6 SLAAC on the OOB interface (ipv6 address autoconfig). IPv6-only unless "
+            "combined with --mgmt-ipv4-dhcp. Requires --mgmt and named --mgmt-vrf."
+        ),
     )
     parser.add_argument(
         "--mgmt-cidr",
@@ -560,7 +637,10 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         type=str,
         choices=("slaac", "dhcpv6"),
         default=None,
-        help="OOB management IPv6 mode in mgmt VRF: slaac (autoconfig) or dhcpv6 (requires --mgmt and named --mgmt-vrf)",
+        help=(
+            "Legacy alias for --mgmt-ipv6-slaac (slaac) or --mgmt-ipv6-dhcp (dhcpv6). "
+            "Prefer the explicit flags for new labs."
+        ),
     )
     parser.add_argument(
         "--mgmt-ipv6-cidr",
@@ -1056,6 +1136,7 @@ def main():
         # Validate mgmt-bridge requires mgmt
         if getattr(args, "mgmt_bridge", False) and not getattr(args, "enable_mgmt", False):
             parser.error("--mgmt-bridge requires --mgmt to be enabled")
+        finalize_mgmt_addressing_args(args, parser)
         validate_mgmt_ipv6_guardrails(args, parser)
         # Validate NTP flags
         if getattr(args, "ntp_server", None):

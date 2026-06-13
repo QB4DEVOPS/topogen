@@ -1,0 +1,63 @@
+{# OOB addressing: --mgmt-ipv4-dhcp and/or --mgmt-ipv6-{dhcp,slaac}; fabric is --mgmt only. #}
+{%- if mgmt and mgmt.enabled %}
+{%- set ipv4_dhcp = mgmt.ipv4_dhcp | default(false) %}
+{%- set ipv6_mode = mgmt.ipv6_mode | default(none) %}
+{%- set ipv6_only = ipv6_mode and not ipv4_dhcp %}
+{%- if ipv6_mode %}
+ipv6 unicast-routing
+!
+{%- endif %}
+{%- if mgmt.vrf %}
+{%- if ipv6_mode %}
+vrf definition {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+ address-family ipv4
+ exit-address-family
+ address-family ipv6
+ exit-address-family
+!
+{%- else %}
+ip vrf {{ mgmt.vrf }}
+ rd 1:{{ mgmt.slot }}
+!
+{%- endif %}
+{%- endif %}
+interface GigabitEthernet0/{{ mgmt.slot }}
+    description OOB Management
+    {%- if mgmt.vrf %}
+    {%- if ipv6_mode %}
+    vrf forwarding {{ mgmt.vrf }}
+    {%- else %}
+    ip vrf forwarding {{ mgmt.vrf }}
+    {%- endif %}
+    {%- endif %}
+    {%- if ipv4_dhcp %}
+    ip address dhcp
+    {%- elif ipv6_only %}
+    no ip address
+    {%- else %}
+    {%- for iface in node.interfaces if (iface.description | default('')) == 'OOB Management' %}
+    {%- if iface.address %}
+    ip address {{ iface.address.ip }} {{ iface.address.netmask }}
+    {%- endif %}
+    {%- endfor %}
+    {%- endif %}
+    {%- if ipv6_mode %}
+    ipv6 enable
+    {%- if ipv6_mode == 'slaac' %}
+    ipv6 address autoconfig
+    {%- elif ipv6_mode == 'dhcpv6' %}
+    ipv6 address dhcp
+    {%- endif %}
+    {%- endif %}
+    no cdp enable
+    no shutdown
+!
+{%- if mgmt.gw %}
+{%- if mgmt.vrf %}
+ip route vrf {{ mgmt.vrf }} 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- else %}
+ip route 0.0.0.0 0.0.0.0 {{ mgmt.gw }}
+{%- endif %}
+{%- endif %}
+{%- endif %}
