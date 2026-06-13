@@ -1,3 +1,10 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+#
+# Purpose: TG-192 — unit tests for finalize-ci-lab / CI alias push (TG-190 console fallback).
+# Blast Radius: Test-only.
+
 import sys
 import unittest
 from pathlib import Path

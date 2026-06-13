@@ -1,4 +1,6 @@
 {
+  "artifact_doc_version": "v1.0.0",
+  "artifact_date_modified": "2026-06-13",
   "schema": "topogen-ci-report-v1",
   "jira_key": "TG-190",
   "lab_id": "253b6661-3bdf-4148-bacf-fe57d5707bb0",

@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.10.0
-# Date Modified: 2026-06-08
+# Doc Version: v1.11.0
+# Date Modified: 2026-06-13
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
 # - Reads from: TopogenNode/TopogenInterface objects, render context (mode/template/device-template)

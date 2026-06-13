@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-13
+#
+# - Called by: emitted nac/sync-nac-mgmt.py, topogen sync-nac-mgmt subcommand
+# - Reads from: CML virl2_client, controller pyATS, nac host_vars/devices.yaml
+# - Writes to: host_vars/*.yaml, devices.yaml, mgmt_sync.json
+# - Calls into: virl2_client, optional pyATS on CML controller
 """NaC OOB management host sync from live CML labs (DHCP IPv4 or SLAAC IPv6)."""
 
 from __future__ import annotations

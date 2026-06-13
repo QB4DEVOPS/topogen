@@ -1,5 +1,8 @@
 # File Chain (see DEVELOPER.md):
-# Purpose: TG-190 — unit tests for IPv6 SLAAC NaC mgmt sync parse/patch logic.
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-13
+#
+# Purpose: TG-190 — unit tests for IPv6 SLAAC/DHCPv6 NaC mgmt sync parse/patch logic.
 # Blast Radius: Test-only.
 
 import json

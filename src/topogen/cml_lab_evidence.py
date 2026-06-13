@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-13
+#
+# - Called by: topogen capture-lab-evidence subcommand
+# - Reads from: mgmt_sync.json, ci_report.json, live CML lab
+# - Writes to: lab notes, canvas annotations, exported topology YAML
+# - Calls into: virl2_client
 """Embed CI test evidence in a live CML lab and export post-run topology YAML."""
 
 from __future__ import annotations

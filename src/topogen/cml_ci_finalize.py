@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-13
+#
+# - Called by: topogen finalize-ci-lab subcommand, validate-tg192-pipeline.ps1
+# - Reads from: live CML lab, mgmt_sync.json, pyATS testbed
+# - Writes to: lab notes/annotations, lab guide HTML, post-run YAML export
+# - Calls into: cml_console_cli (fallback), virl2_client, pyATS
 """Post-sync CI finalize: pyATS aliases, wr mem, lab guide, extract, export YAML."""
 
 from __future__ import annotations

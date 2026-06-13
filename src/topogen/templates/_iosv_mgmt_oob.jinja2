@@ -1,4 +1,12 @@
-{# OOB addressing: --mgmt-ipv4-dhcp and/or --mgmt-ipv6-{dhcp,slaac}; fabric is --mgmt only. #}
+{# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+#
+# - Called by: iosv*.jinja2 templates via {% include %}
+# - Reads from: mgmt context (ipv4_dhcp, ipv6_mode, mgmt_vrf, slot)
+# - Writes to: IOSv OOB GigabitEthernet0/N mgmt stanza
+# - Calls into: None (template partial)
+#}
 {%- if mgmt and mgmt.enabled %}
 {%- set ipv4_dhcp = mgmt.ipv4_dhcp | default(false) %}
 {%- set ipv6_mode = mgmt.ipv6_mode | default(none) %}

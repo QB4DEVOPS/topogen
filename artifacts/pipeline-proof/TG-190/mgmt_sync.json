@@ -1,4 +1,6 @@
 {
+  "artifact_doc_version": "v1.0.0",
+  "artifact_date_modified": "2026-06-13",
   "mode": "slaac",
   "lab_id": "253b6661-3bdf-4148-bacf-fe57d5707bb0",
   "nac_root": "C:\\Users\\rohosfor\\Documents\\Projects Folder\\topogen\\out\\TG-190-e2e-pass\\nac",

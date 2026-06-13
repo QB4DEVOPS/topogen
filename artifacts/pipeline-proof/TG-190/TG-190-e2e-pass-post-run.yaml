@@ -1,3 +1,7 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+# TG-190 ProveCycle post-run topology export (evidence only).
 annotations:
   - border_color: '#FFFFFF'
     border_style: ''

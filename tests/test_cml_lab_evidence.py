@@ -1,4 +1,9 @@
-# Purpose: TG-192 — unit tests for CML lab CI evidence capture.
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+#
+# Purpose: TG-192 — unit tests for CML lab CI evidence capture (dual-stack mgmt TG-190).
+# Blast Radius: Test-only.
 
 import json
 import sys

@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.0
-# Date Modified: 2026-06-11
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-13
 #
 # Purpose: TG-190 CP1 — offline render asserts for OOB IPv6 mgmt in VRF.
 # Blast Radius: Test-only.

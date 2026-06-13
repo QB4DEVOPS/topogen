@@ -1,4 +1,9 @@
-# TG-192 CML CI/CD pipeline — offline gates + optional live CML/NaC apply
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.1.0
+# Date Modified: 2026-06-13
+#
+# TG-192 CML CI/CD pipeline — offline gates + optional live CML/NaC apply.
+# TG-190 CP2: --mgmt-ipv6-dhcp / split addressing in ProveCycle path.
 # Exit 0 = pass; non-zero = fail (CI-friendly)
 # Usage:
 #   .\scripts\validate-tg192-pipeline.ps1

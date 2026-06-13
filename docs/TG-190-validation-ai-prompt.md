@@ -1,3 +1,16 @@
+<!--
+File Chain (see DEVELOPER.md):
+Doc Version: v1.0.0
+Date Modified: 2026-06-13
+
+- Called by: Operators / AI agents running TG-190 CP2 live validation
+- Reads from: DEVELOPER.md, repo scripts, CML 2.10 controller
+- Writes to: None (runbook prompt only)
+- Calls into: None
+
+Purpose: AI validation prompt for TG-190 Checkpoint 2 (external bridge DHCPv6/SLAAC).
+-->
+
 # TG-190 — AI validation prompt (Checkpoint 2: DHCPv6 live)
 # Copy everything below this line into Jira TG-190 or a fresh Cursor agent chat.
 

@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+#
+# - Called by: scripts/run-csr-ipv6-matrix.ps1
+# - Reads from: live CML lab via virl2_client / console SSH
+# - Writes to: evidence JSON under out/TG-190-csr-matrix/
+# - Calls into: virl2_client, optional SSH
 """Live CSR OOB validation on BOOTED labs (console CLI)."""
 
 from __future__ import annotations

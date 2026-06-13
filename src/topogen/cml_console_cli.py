@@ -1,3 +1,11 @@
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+#
+# - Called by: cml_ci_finalize.py when runner pyATS is unavailable
+# - Reads from: CML terminal server SSH, node console ports
+# - Writes to: device running-config via console CLI
+# - Calls into: paramiko SSH
 """Push IOS config through the CML console terminal server (no local pyATS)."""
 
 from __future__ import annotations

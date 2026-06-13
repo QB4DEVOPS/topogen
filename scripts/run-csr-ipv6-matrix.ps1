@@ -1,4 +1,8 @@
-# TG-190 CSR1000v matrix: generate + cml2 init/plan/apply + live OOB validation
+# File Chain (see DEVELOPER.md):
+# Doc Version: v1.0.0
+# Date Modified: 2026-06-13
+#
+# TG-190 CSR1000v matrix: generate + cml2 init/plan/apply + live OOB validation.
 # All scenarios: --mgmt --mgmt-vrf Mgmt-vrf --mgmt-bridge
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
