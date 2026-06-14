@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.1
-# Date Modified: 2026-06-13
+# Doc Version: v1.0.2
+# Date Modified: 2026-06-14
 #
 # Purpose: TG-195 unit tests for FF10 static IPv6 OOB addressing helpers.
 
@@ -77,7 +77,8 @@ class TestMgmtAddressing(unittest.TestCase):
 
     def test_no_real_prefix_in_fixtures(self):
         for value in (DOC_PREFIX, FD80_PREFIX, DEFAULT_MGMT_CIDR):
-            self.assertNotIn("2001:db8:", value)
+            # Guard against accidental real/production prefix leakage in fixtures.
+            self.assertNotIn("2600:", value)
 
     def test_default_route_vrf_explicit(self):
         class Args:
