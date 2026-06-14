@@ -544,6 +544,264 @@ class TestNacCliGuardrails(unittest.TestCase):
         self.assertNotEqual(cm.exception.code, 0)
         self.assertIn("--mgmt-ipv6-dhcp", stderr.getvalue())
 
+    def _static_base_argv(self):
+        return [
+            "2",
+            "--mode",
+            "flat",
+            "-T",
+            "iosv",
+            "--device-template",
+            "iosv",
+            "--offline-yaml",
+            "out/iosv-static.yaml",
+        ]
+
+    def test_static_requires_mgmt(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        "2",
+                        "--mode",
+                        "flat",
+                        "--offline-yaml",
+                        "out/iosv-static.yaml",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "fd80::/64",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        err = stderr.getvalue()
+        self.assertTrue("IPv6 OOB" in err or "require --mgmt" in err)
+
+    def test_static_accepts_default_mgmt_vrf(self):
+        args = self._parse_and_validate(
+            [
+                *self._static_base_argv(),
+                "--mgmt",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+            ]
+        )
+        self.assertEqual(args.mgmt_vrf, "Mgmt-vrf")
+        self.assertEqual(args.mgmt_ipv6_mode, "static")
+
+    def test_static_requires_named_mgmt_vrf_when_global(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "global",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "fd80::/64",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("named --mgmt-vrf", stderr.getvalue())
+
+    def test_static_requires_ipv6_cidr(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("--mgmt-ipv6-cidr", stderr.getvalue())
+
+    def test_static_rejects_invalid_cidr(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "not-an-address",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("Invalid --mgmt-ipv6-cidr", stderr.getvalue())
+
+    def test_link_local_requires_ipv6_mode(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static-link-local",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("IPv6 OOB mode", stderr.getvalue())
+
+    def test_static_rejects_slaac_flag(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "fd80::/64",
+                        "--mgmt-ipv6-slaac",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        err = stderr.getvalue().lower()
+        self.assertTrue("mutually exclusive" in err or "conflicts" in err)
+
+    def test_static_rejects_dhcp_flag(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "fd80::/64",
+                        "--mgmt-ipv6-dhcp",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        err = stderr.getvalue().lower()
+        self.assertTrue("mutually exclusive" in err or "conflicts" in err)
+
+    def test_static_rejects_legacy_mode_slaac(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "fd80::/64",
+                        "--mgmt-ipv6-mode",
+                        "slaac",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("conflicts", stderr.getvalue().lower())
+
+    def test_static_rejects_legacy_mode_dhcpv6(self):
+        with self.assertRaises(SystemExit) as cm:
+            with redirect_stderr(io.StringIO()) as stderr:
+                self._parse_and_validate(
+                    [
+                        *self._static_base_argv(),
+                        "--mgmt",
+                        "--mgmt-vrf",
+                        "Mgmt-vrf",
+                        "--mgmt-ipv6-static",
+                        "--mgmt-ipv6-cidr",
+                        "fd80::/64",
+                        "--mgmt-ipv6-mode",
+                        "dhcpv6",
+                    ]
+                )
+        self.assertNotEqual(cm.exception.code, 0)
+        self.assertIn("conflicts", stderr.getvalue().lower())
+
+    def test_valid_static_minimal(self):
+        args = self._parse_and_validate(
+            [
+                *self._static_base_argv(),
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+            ]
+        )
+        self.assertEqual(args.mgmt_ipv6_mode, "static")
+        self.assertEqual(args.mgmt_ipv6_cidr, "fd80::/64")
+
+    def test_valid_slaac_with_link_local(self):
+        args = self._parse_and_validate(
+            [
+                *self._static_base_argv(),
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-slaac",
+                "--mgmt-ipv6-static-link-local",
+            ]
+        )
+        self.assertEqual(args.mgmt_ipv6_mode, "slaac")
+        self.assertTrue(args.mgmt_ipv6_static_link_local)
+
+    def test_valid_static_with_link_local(self):
+        args = self._parse_and_validate(
+            [
+                *self._static_base_argv(),
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+                "--mgmt-ipv6-static-link-local",
+            ]
+        )
+        self.assertTrue(args.mgmt_ipv6_static_link_local)
+
+    def test_cidr_without_static_unchanged(self):
+        args = self._parse_and_validate(
+            [
+                *self._static_base_argv(),
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-slaac",
+                "--mgmt-ipv6-cidr",
+                "fd00:10:254::/64",
+            ]
+        )
+        self.assertEqual(args.mgmt_ipv6_mode, "slaac")
+        self.assertFalse(getattr(args, "mgmt_ipv6_static", False))
+
+    def test_static_doc_prefix_cidr(self):
+        args = self._parse_and_validate(
+            [
+                *self._static_base_argv(),
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "2001:db8:1:2::/64",
+            ]
+        )
+        self.assertEqual(args.mgmt_ipv6_mode, "static")
+
 
 if __name__ == "__main__":
     unittest.main()

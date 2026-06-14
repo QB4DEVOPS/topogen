@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.4.1
+# Doc Version: v1.5.1
 # Date Modified: 2026-06-13
 #
 # - Called by: src/topogen/main.py
@@ -115,6 +115,13 @@ from topogen.cml_server import append_cml_schema_provenance_args
 from topogen.config import Config
 from topogen.dnshost import dnshostconfig
 from topogen.lxcfrr import lxcfrr_bootconfig
+from topogen.mgmt_addressing import (
+    mgmt_ipv4_static_host,
+    mgmt_ipv6_default_route_vrf,
+    mgmt_ipv6_static_address,
+    mgmt_ipv6_static_link_local,
+    parse_static_ipv6_anchor,
+)
 from topogen.nac import write_nac_tree
 from topogen.models import (
     CoordsGenerator,
@@ -329,17 +336,7 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
             args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
         if getattr(args, "mgmt_bridge", False):
             args_bits.append("--mgmt-bridge")
-        if getattr(args, "mgmt_ipv4_dhcp", False):
-            args_bits.append("--mgmt-ipv4-dhcp")
-        ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
-        if ipv6_mode == "dhcpv6":
-            args_bits.append("--mgmt-ipv6-dhcp")
-        elif ipv6_mode == "slaac":
-            args_bits.append("--mgmt-ipv6-slaac")
-        elif ipv6_mode:
-            args_bits.append(f"--mgmt-ipv6-mode {ipv6_mode}")
-        if getattr(args, "mgmt_ipv6_cidr", None):
-            args_bits.append(f"--mgmt-ipv6-cidr {args.mgmt_ipv6_cidr}")
+        _append_mgmt_ipv6_provenance_args(args_bits, args)
     if getattr(args, "ntp_server", None):
         args_bits.append(f"--ntp {args.ntp_server}")
         if getattr(args, "ntp_vrf", None):
@@ -367,7 +364,21 @@ def _build_intent_description(args: Namespace, *, context: str) -> str:
     return desc
 
 
-def _build_mgmt_context(args: object, *, mgmt_slot: int | None = None) -> dict[str, Any] | None:
+def _mgmt_test_alias_lines(mgmt_iface: str) -> list[str]:
+    """Exec alias that shows OOB IPv6 interface state (no banner, no pipes)."""
+    return [
+        f"alias exec topogen-test show ipv6 interface {mgmt_iface}",
+    ]
+
+
+def _build_mgmt_context(
+    args: object,
+    *,
+    mgmt_slot: int | None = None,
+    router_index: int | None = None,
+    loopback: IPv4Interface | None = None,
+    hostname: str | None = None,
+) -> dict[str, Any] | None:
     """Build Jinja mgmt context dict for OOB fabric plus optional IPv4/IPv6 addressing."""
     if not getattr(args, "enable_mgmt", False):
         return None
@@ -377,15 +388,65 @@ def _build_mgmt_context(args: object, *, mgmt_slot: int | None = None) -> dict[s
         "slot": slot,
         "vrf": getattr(args, "mgmt_vrf", None),
         "gw": getattr(args, "mgmt_gw", None),
+        "ipv6_gw": getattr(args, "mgmt_ipv6_gw", None),
         "ipv4_dhcp": bool(getattr(args, "mgmt_ipv4_dhcp", False)),
     }
+    if getattr(args, "mgmt_ipv6_gw", None):
+        ctx["ipv6_gw_vrf"] = mgmt_ipv6_default_route_vrf(args)
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    if ipv6_mode == "static" and router_index is None:
+        return ctx
     if ipv6_mode:
         ctx["ipv6_mode"] = ipv6_mode
+        ctx["ipv6_static_link_local"] = bool(
+            getattr(args, "mgmt_ipv6_static_link_local", False)
+        )
         ipv6_cidr = getattr(args, "mgmt_ipv6_cidr", None)
         if ipv6_cidr:
             ctx["ipv6_cidr"] = ipv6_cidr
+        loopback_ip = loopback.ip if loopback is not None else None
+        link_local = None
+        if getattr(args, "mgmt_ipv6_static_link_local", False) and loopback_ip is not None:
+            link_local = mgmt_ipv6_static_link_local(loopback_ip)
+            ctx["router_link_local"] = link_local
+        if ipv6_mode == "static" and router_index is not None:
+            mgmt_cidr = str(getattr(args, "mgmt_cidr", "10.254.0.0/16"))
+            ipv4_host = mgmt_ipv4_static_host(mgmt_cidr, router_index)
+            anchor = parse_static_ipv6_anchor(str(ipv6_cidr))
+            v6_iface = mgmt_ipv6_static_address(ipv4_host, anchor, mgmt_cidr)
+            ctx["ipv6_address"] = v6_iface
+            label = hostname or f"R{router_index}"
+            log_line = (
+                f"mgmt IPv6 static {label}: global={v6_iface} "
+                f"loopback={loopback_ip or 'n/a'}"
+            )
+            if link_local is not None:
+                log_line += f" link-local={link_local}"
+            _LOGGER.info(log_line)
     return ctx
+
+
+def _append_mgmt_ipv6_provenance_args(args_bits: list[str], args: object) -> None:
+    """Append IPv6 OOB provenance flags to an args_bits list."""
+    if getattr(args, "mgmt_ipv4_dhcp", False):
+        args_bits.append("--mgmt-ipv4-dhcp")
+    ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    if ipv6_mode == "dhcpv6":
+        args_bits.append("--mgmt-ipv6-dhcp")
+    elif ipv6_mode == "slaac":
+        args_bits.append("--mgmt-ipv6-slaac")
+    elif ipv6_mode == "static":
+        args_bits.append("--mgmt-ipv6-static")
+    elif ipv6_mode:
+        args_bits.append(f"--mgmt-ipv6-mode {ipv6_mode}")
+    if getattr(args, "mgmt_ipv6_static_link_local", False):
+        args_bits.append("--mgmt-ipv6-static-link-local")
+    if getattr(args, "mgmt_ipv6_cidr", None):
+        args_bits.append(f"--mgmt-ipv6-cidr {args.mgmt_ipv6_cidr}")
+    if getattr(args, "mgmt_ipv6_gw", None):
+        args_bits.append(f"--mgmt-ipv6-gw {args.mgmt_ipv6_gw}")
+    if getattr(args, "mgmt_ipv6_gw_vrf", None):
+        args_bits.append(f"--mgmt-ipv6-gw-vrf {args.mgmt_ipv6_gw_vrf}")
 
 
 def _append_common_offline_args_bits(args_bits: list[str], args: object) -> None:
@@ -722,16 +783,30 @@ def _append_nac_mgmt_interface(node: TopogenNode, args: Namespace, router_index:
     ipv4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     mgmt_address = None
+    ipv6_address = None
+    ipv6_link_local_address = None
     if not mgmt_bridge and not ipv4_dhcp and not ipv6_mode:
         mgmt_address = IPv4Interface(
             f"{mgmt_net.network_address + router_index}/{mgmt_net.prefixlen}"
         )
+    if ipv6_mode == "static" and node.loopback is not None:
+        mgmt_cidr = str(getattr(args, "mgmt_cidr", "10.254.0.0/16"))
+        ipv4_host = mgmt_ipv4_static_host(mgmt_cidr, router_index)
+        anchor = parse_static_ipv6_anchor(str(getattr(args, "mgmt_ipv6_cidr", "")))
+        ipv6_address = mgmt_ipv6_static_address(ipv4_host, anchor, mgmt_cidr)
+    if (
+        getattr(args, "mgmt_ipv6_static_link_local", False)
+        and node.loopback is not None
+    ):
+        ipv6_link_local_address = mgmt_ipv6_static_link_local(node.loopback.ip)
     node.interfaces.append(
         TopogenInterface(
             address=mgmt_address,
             vrf=getattr(args, "mgmt_vrf", None),
             description="OOB Management",
             slot=model_slot,
+            ipv6_address=ipv6_address,
+            ipv6_link_local_address=ipv6_link_local_address,
         )
     )
 
@@ -768,7 +843,7 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
 
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     ipv4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
-    if ipv6_mode:
+    if ipv6_mode and ipv6_mode != "static":
         lines.extend(["ipv6 unicast-routing", "!"])
 
     if mgmt_vrf:
@@ -808,10 +883,31 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
         if not ipv4_dhcp:
             lines.append(" no ip address")
         lines.append(" ipv6 enable")
+        ipv6_link_local = None
+        if getattr(args, "mgmt_ipv6_static_link_local", False) and node.loopback is not None:
+            ipv6_link_local = mgmt_ipv6_static_link_local(node.loopback.ip)
         if ipv6_mode == "slaac":
+            if ipv6_link_local:
+                lines.append(f" ipv6 address {ipv6_link_local} link-local")
             lines.append(" ipv6 address autoconfig")
         elif ipv6_mode == "dhcpv6":
+            if ipv6_link_local:
+                lines.append(f" ipv6 address {ipv6_link_local} link-local")
             lines.append(" ipv6 address dhcp")
+        elif ipv6_mode == "static":
+            mgmt_iface = next(
+                (iface for iface in node.interfaces if iface.description == "OOB Management"),
+                None,
+            )
+            if mgmt_iface is None or not mgmt_iface.ipv6_address:
+                raise TopogenError(
+                    "bootstrap static IPv6 OOB requires mgmt.ipv6_address on OOB interface"
+                )
+            lines.append(f" ipv6 address {mgmt_iface.ipv6_address}")
+            if mgmt_iface.ipv6_link_local_address:
+                lines.append(
+                    f" ipv6 address {mgmt_iface.ipv6_link_local_address} link-local"
+                )
     elif not ipv4_dhcp:
         mgmt_iface = next(
             (iface for iface in node.interfaces if iface.description == "OOB Management"),
@@ -835,6 +931,22 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
         else:
             lines.append(f"ip route 0.0.0.0 0.0.0.0 {mgmt_gw}")
         lines.append("!")
+    mgmt_ipv6_gw = getattr(args, "mgmt_ipv6_gw", None)
+    if mgmt_ipv6_gw and ipv6_mode == "static":
+        route_vrf = mgmt_ipv6_default_route_vrf(args)
+        if route_vrf:
+            lines.append(f"ipv6 route vrf {route_vrf} ::/0 {mgmt_ipv6_gw}")
+        else:
+            lines.append(f"ipv6 route ::/0 {mgmt_ipv6_gw}")
+        lines.append("!")
+
+    if ipv6_mode:
+        lines.extend(
+            [
+                *_mgmt_test_alias_lines(if_label),
+                "!",
+            ]
+        )
 
     lines.extend(
         [
@@ -1934,7 +2046,13 @@ class Renderer:
             )
 
             # Build mgmt context for template
-            mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                self.args,
+                mgmt_slot=mgmt_slot,
+                router_index=node_index + 1,
+                loopback=loopback,
+                hostname=node.hostname,
+            )
             ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ntp_ctx = {
@@ -2740,8 +2858,19 @@ class Renderer:
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
             if getattr(args, "mgmt_bridge", False):
                 args_bits.append("--mgmt-bridge")
-            if getattr(args, "mgmt_ipv6_mode", None):
-                args_bits.append(f"--mgmt-ipv6-mode {args.mgmt_ipv6_mode}")
+            if getattr(args, "mgmt_ipv4_dhcp", False):
+                args_bits.append("--mgmt-ipv4-dhcp")
+            ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+            if ipv6_mode == "dhcpv6":
+                args_bits.append("--mgmt-ipv6-dhcp")
+            elif ipv6_mode == "slaac":
+                args_bits.append("--mgmt-ipv6-slaac")
+            elif ipv6_mode == "static":
+                args_bits.append("--mgmt-ipv6-static")
+            elif ipv6_mode:
+                args_bits.append(f"--mgmt-ipv6-mode {ipv6_mode}")
+            if getattr(args, "mgmt_ipv6_static_link_local", False):
+                args_bits.append("--mgmt-ipv6-static-link-local")
             if getattr(args, "mgmt_ipv6_cidr", None):
                 args_bits.append(f"--mgmt-ipv6-cidr {args.mgmt_ipv6_cidr}")
         if getattr(args, "ntp_server", None):
@@ -3029,7 +3158,13 @@ class Renderer:
             nac_router_nodes.append(nac_node)
 
             # Build mgmt context for template
-            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                args,
+                mgmt_slot=mgmt_slot,
+                router_index=n,
+                loopback=loopback_ip,
+                hostname=label,
+            )
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -3787,7 +3922,13 @@ class Renderer:
             loopback_ip = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
 
             # Build mgmt context for template
-            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                args,
+                mgmt_slot=mgmt_slot,
+                router_index=rnum,
+                loopback=loopback_ip,
+                hostname=label,
+            )
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -4346,6 +4487,7 @@ class Renderer:
                 args_bits.append(f"--mgmt-vrf {args.mgmt_vrf}")
             if getattr(args, "mgmt_bridge", False):
                 args_bits.append("--mgmt-bridge")
+            _append_mgmt_ipv6_provenance_args(args_bits, args)
         if getattr(args, "ntp_server", None):
             args_bits.append(f"--ntp {args.ntp_server}")
             if getattr(args, "ntp_inband", False):
@@ -4555,7 +4697,13 @@ class Renderer:
             _append_nac_mgmt_interface(node, args, n)
             nac_router_nodes.append(node)
             # Build mgmt context for template
-            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                args,
+                mgmt_slot=mgmt_slot,
+                router_index=n,
+                loopback=node.loopback,
+                hostname=label,
+            )
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -5290,7 +5438,13 @@ class Renderer:
             _append_nac_mgmt_interface(node, args, n)
             nac_router_nodes.append(node)
             # Build mgmt/ntp context for template
-            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                args,
+                mgmt_slot=mgmt_slot,
+                router_index=n,
+                loopback=node.loopback,
+                hostname=label,
+            )
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -6051,7 +6205,13 @@ class Renderer:
             _append_nac_mgmt_interface(node_obj, args, node_index + 1)
             nac_router_nodes.append(node_obj)
 
-            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                args,
+                mgmt_slot=mgmt_slot,
+                router_index=node_index + 1,
+                loopback=loopback,
+                hostname=label,
+            )
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -6568,7 +6728,13 @@ class Renderer:
             _append_nac_mgmt_interface(node_obj, args, idx + 1)
             nac_router_nodes.append(node_obj)
 
-            mgmt_ctx = _build_mgmt_context(args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                args,
+                mgmt_slot=mgmt_slot,
+                router_index=idx + 1,
+                loopback=loopback,
+                hostname=label,
+            )
             ntp_ctx = None
             if getattr(args, "ntp_server", None):
                 ntp_ctx = {
@@ -6871,7 +7037,13 @@ class Renderer:
             l_addr = IPv4Interface(f"{l_base}.{hi}.{lo}/32")
 
             # Build mgmt context for template
-            mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                self.args,
+                mgmt_slot=mgmt_slot,
+                router_index=ridx,
+                loopback=l_addr,
+                hostname=router_label,
+            )
             ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ntp_ctx = {
@@ -7206,7 +7378,13 @@ class Renderer:
             )
 
             # Build mgmt context for template
-            mgmt_ctx = _build_mgmt_context(self.args, mgmt_slot=mgmt_slot)
+            mgmt_ctx = _build_mgmt_context(
+                self.args,
+                mgmt_slot=mgmt_slot,
+                router_index=idx + 1,
+                loopback=loopback,
+                hostname=node.hostname,
+            )
             ntp_ctx = None
             if getattr(self.args, "ntp_server", None):
                 ntp_ctx = {

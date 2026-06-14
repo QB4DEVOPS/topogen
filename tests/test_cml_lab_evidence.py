@@ -45,7 +45,7 @@ class TestBuildCiReport(unittest.TestCase):
             lab_id=LAB_ID,
             lab_title="TG-192-smoke",
             status="pass",
-            mgmt_sync={"mode": "slaac", "synced": 4, "mapping": {"iosv-01": "2600::1"}},
+            mgmt_sync={"mode": "slaac", "synced": 4, "mapping": {"iosv-01": "2001:db8::1"}},
         )
         self.assertEqual(report["schema"], "topogen-ci-report-v1")
         self.assertEqual(report["mgmt_sync"]["synced"], 4)
@@ -61,7 +61,7 @@ class TestBuildCiReport(unittest.TestCase):
                 "mode": "slaac",
                 "synced": 2,
                 "synced_ipv4": 2,
-                "mapping": {"iosv-01": "2600::1"},
+                "mapping": {"iosv-01": "2001:db8::1"},
                 "mapping_ipv4": {"iosv-01": "192.168.1.10"},
             },
         )
@@ -158,7 +158,7 @@ class TestHiddenCanvasText(unittest.TestCase):
         self.assertIn("TG-192|pass", text)
         self.assertIn("sync:6/6", text)
         self.assertIn("cfg:6/6", text)
-        self.assertNotIn("2600:", text)
+        self.assertNotIn("2001:db8:", text)
         notes = _embed_report_in_notes("", report)
         self.assertIn("topogen-ci-report-v1", notes)
 
