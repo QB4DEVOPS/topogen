@@ -1841,6 +1841,124 @@ class TestNacWriter(unittest.TestCase):
                 "tenant",
             )
 
+    def _static_nac_argv(self, *, link_local: bool = False) -> list[str]:
+        argv = [
+            "2",
+            "--mode",
+            "flat",
+            "-T",
+            "iosv",
+            "--device-template",
+            "iosv",
+            "--mgmt",
+            "--mgmt-vrf",
+            "Mgmt-vrf",
+            "--mgmt-ipv6-static",
+            "--mgmt-ipv6-cidr",
+            "fd80::/64",
+            "--nac",
+            "--overwrite",
+        ]
+        if link_local:
+            argv.append("--mgmt-ipv6-static-link-local")
+        return argv
+
+    def test_nac_static_ansible_host_global(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "static-nac.yaml"
+            rc = self._run_main([*self._static_nac_argv(), "--offline-yaml", str(out_file)])
+            self.assertEqual(rc, 0)
+            nac_root = Path(tmp) / "out" / "static-nac" / "nac"
+            inv = yaml.safe_load((nac_root / "inventory.yaml").read_text(encoding="utf-8"))
+            host = inv["all"]["hosts"]["iosv-01"]["ansible_host"]
+            self.assertIn("fd80", host)
+            self.assertNotIn("fe80::", host)
+
+    def test_nac_static_mgmt_ipv6_field(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "static-nac.yaml"
+            rc = self._run_main([*self._static_nac_argv(), "--offline-yaml", str(out_file)])
+            self.assertEqual(rc, 0)
+            inv = yaml.safe_load(
+                (Path(tmp) / "out" / "static-nac" / "nac" / "inventory.yaml").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn("fd80", inv["all"]["hosts"]["iosv-01"]["ansible_host"].lower())
+            self.assertIn("ff10", inv["all"]["hosts"]["iosv-01"]["ansible_host"].lower())
+
+    def test_nac_static_link_local_metadata(self):
+        from topogen.render import _append_nac_mgmt_interface
+
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.20.0.1/32"),
+            interfaces=[],
+        )
+        args = SimpleNamespace(
+            enable_mgmt=True,
+            mgmt_cidr="10.254.0.0/16",
+            mgmt_slot=5,
+            dev_template="iosv",
+            template="iosv",
+            mgmt_vrf="Mgmt-vrf",
+            mgmt_bridge=False,
+            mgmt_ipv4_dhcp=False,
+            mgmt_ipv6_mode="static",
+            mgmt_ipv6_cidr="fd80::/64",
+            mgmt_ipv6_static_link_local=True,
+        )
+        _append_nac_mgmt_interface(node, args, 1)
+        model = build_canonical_nac_model(
+            node,
+            device_template="iosv",
+            template="iosv",
+            mode="flat",
+            args=args,
+        )
+        self.assertEqual(
+            model["iosxe"]["devices"][0]["mgmt"]["ipv6_link_local"],
+            "fe80::FF10:20:0:1",
+        )
+
+    def test_nac_metadata_mode_static(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out" / "static-nac.yaml"
+            rc = self._run_main([*self._static_nac_argv(), "--offline-yaml", str(out_file)])
+            self.assertEqual(rc, 0)
+            metadata = yaml.safe_load(
+                (Path(tmp) / "out" / "static-nac" / "nac" / "nac_metadata.yaml").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(metadata["mgmt_ipv6_mode"], "static")
+
+    def test_select_host_prefers_global_not_ll(self):
+        from topogen.render import _append_nac_mgmt_interface
+
+        node = TopogenNode(
+            hostname="R1",
+            loopback=IPv4Interface("10.20.0.1/32"),
+            interfaces=[],
+        )
+        args = SimpleNamespace(
+            enable_mgmt=True,
+            mgmt_cidr="10.254.0.0/16",
+            mgmt_slot=5,
+            dev_template="iosv",
+            template="iosv",
+            mgmt_vrf="Mgmt-vrf",
+            mgmt_bridge=False,
+            mgmt_ipv4_dhcp=False,
+            mgmt_ipv6_mode="static",
+            mgmt_ipv6_cidr="fd80::/64",
+            mgmt_ipv6_static_link_local=True,
+        )
+        _append_nac_mgmt_interface(node, args, 1)
+        host = _select_host(node, args)
+        self.assertIn("fd80", host)
+        self.assertNotIn("fe80", host)
+
 
 if __name__ == "__main__":
     unittest.main()

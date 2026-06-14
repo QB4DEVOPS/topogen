@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.19
+Doc Version: v1.3.20
 Date Modified: 2026-06-13
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - feat(mgmt): static IPv6 OOB from explicit `/64` anchor with FF10 embedding (TG-195)
+    - `--mgmt-ipv6-static` + required `--mgmt-ipv6-cidr /64` render deterministic global `ipv6 address` on IOSv/CSR OOB (routers only). Optional `--mgmt-ipv6-static-link-local` adds loopback-derived `fe80::FF10:…` on OOB. Routers are IPv6 hosts only — no `ipv6 unicast-routing` in static mode (routing deferred). NaC `ansible_host` populated at generate time; `sync-nac-mgmt.py` skips live poll when `mgmt_ipv6_mode: static`. Examples use `fd80::/64` or `2001:db8:1:2::/64` only.
+    - Files: src/topogen/mgmt_addressing.py (rev v1.0.1), src/topogen/main.py, src/topogen/render.py, src/topogen/models.py, src/topogen/nac.py, src/topogen/nac_mgmt_sync.py, src/topogen/templates/_static_link_local.jinja2 (rev v1.0.0), src/topogen/templates/_iosv_mgmt_oob.jinja2, src/topogen/templates/_csr_mgmt_oob.jinja2, tests/test_mgmt_addressing.py (rev v1.0.0), tests/test_mgmt_ipv6_vrf.py, tests/test_nac_cli_guardrails.py, tests/test_nac_writer.py, docs/TG-195-ai-prompt.md, DEVELOPER.md, README.md, TODO.md, CHANGES.md
   - feat(cli): add `--cml-server` convenience flag for CML controller → lab YAML schema (TG-194)
     - Operator-facing `--cml-server MAJOR.MINOR` sets `cml_version` when `--cml-version` is not passed explicitly; explicit `--cml-version` always wins for emitted YAML and feature gates (`--staging`, `smart_annotations`, etc.). Known map: 2.5→0.2.0, 2.6→0.2.1, 2.7→0.2.2, 2.8/2.9→0.3.0, 2.10→0.3.1. Unknown future servers use highest known schema with INFO log; gaps use nearest-lower mapped server. Provenance records both flags when present. Staging guard messages reference CML 2.10. `validate-tg165.ps1` adds `--cml-server 2.10` PKI staging gate.
     - Files: src/topogen/cml_server.py (rev v1.0.0), src/topogen/main.py (rev v1.11.1), src/topogen/render.py (rev v1.4.1), tests/test_cml_server.py (rev v1.2.0), scripts/validate-tg165.ps1, DEVELOPER.md (rev v1.9.6), README.md (rev v1.8.11), TODO.md (rev v1.6.57), CHANGES.md (rev v1.3.19)

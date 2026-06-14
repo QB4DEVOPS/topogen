@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
+# Doc Version: v1.1.1
 # Date Modified: 2026-06-13
 #
 # Purpose: TG-190 CP1 — offline render asserts for OOB IPv6 mgmt in VRF.
@@ -390,6 +390,392 @@ class TestMgmtIpv6VrfOfflineRender(unittest.TestCase):
         self.assertNotIn("vrf forwarding", oob)
         self.assertNotIn("ip vrf forwarding", oob)
         self.assertIn("ip address dhcp", oob)
+
+
+class TestMgmtIpv6StaticOfflineRender(unittest.TestCase):
+    _STATIC_BASE = [
+        "2",
+        "--mode",
+        "flat",
+        "-T",
+        "iosv",
+        "--device-template",
+        "iosv",
+        "--mgmt",
+        "--mgmt-vrf",
+        "Mgmt-vrf",
+        "--mgmt-ipv6-static",
+        "--mgmt-ipv6-cidr",
+        "fd80::/64",
+    ]
+
+    def _run_offline_config(self, argv: list[str], label: str = "R1") -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab.yaml"
+            with patch.object(sys, "argv", ["topogen", *argv, "--offline-yaml", str(out_file)]):
+                rc = main()
+            self.assertEqual(rc, 0, f"topogen failed for argv={argv}")
+            return _extract_router_config(out_file, label)
+
+    def _run_offline_yaml(self, argv: list[str]) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab.yaml"
+            with patch.object(sys, "argv", ["topogen", *argv, "--offline-yaml", str(out_file)]):
+                rc = main()
+            self.assertEqual(rc, 0)
+            return yaml.safe_load(out_file.read_text(encoding="utf-8"))
+
+    def test_iosv_static_global_fd80_r1(self):
+        config = self._run_offline_config(self._STATIC_BASE)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 enable", oob)
+        self.assertIn("vrf forwarding Mgmt-vrf", oob)
+        self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
+        self.assertNotIn("ipv6 unicast-routing", config)
+
+    def test_iosv_static_global_r2(self):
+        config = self._run_offline_config(self._STATIC_BASE, label="R2")
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 address fd80::FF10:254:0:2/64", oob)
+
+    def test_iosv_static_doc_prefix(self):
+        argv = [*self._STATIC_BASE[:-1], "2001:db8:1:2::/64"]
+        config = self._run_offline_config(argv)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 address 2001:db8:1:2:FF10:254:0:1/64", oob)
+
+    def test_csr_static_global(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "csr1000v",
+                "--device-template",
+                "csr1000v",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+            ]
+        )
+        self.assertIn("address-family ipv6", config)
+        oob = _oob_block(config, r"GigabitEthernet5")
+        self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
+
+    def test_iosv_slaac_with_link_local(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-slaac",
+                "--mgmt-ipv6-static-link-local",
+            ]
+        )
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 address autoconfig", oob)
+        self.assertIn("ipv6 address fe80::FF10:20:0:1 link-local", oob)
+        self.assertNotIn("ipv6 address fd80::FF10:254:0:1/64", oob)
+        self.assertNotIn("FF10:254", oob)
+        self.assertIn(
+            "alias exec topogen-test show ipv6 interface GigabitEthernet0/5",
+            config,
+        )
+
+    def test_iosv_static_with_link_local(self):
+        argv = [
+            *self._STATIC_BASE[:-1],
+            "2001:db8:1:2::/64",
+            "--mgmt-ipv6-static-link-local",
+        ]
+        config = self._run_offline_config(argv)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 address 2001:db8:1:2:FF10:254:0:1/64", oob)
+        self.assertIn("ipv6 address fe80::FF10:20:0:1 link-local", oob)
+
+    def test_iosv_static_link_local_loopback_255(self):
+        argv = [
+            "2",
+            "--mode",
+            "flat",
+            "-T",
+            "iosv",
+            "--device-template",
+            "iosv",
+            "--mgmt",
+            "--mgmt-vrf",
+            "Mgmt-vrf",
+            "--loopback-255",
+            "--mgmt-ipv6-static",
+            "--mgmt-ipv6-cidr",
+            "fd80::/64",
+            "--mgmt-ipv6-static-link-local",
+        ]
+        config = self._run_offline_config(argv)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 address fe80::FF10:255:0:1 link-local", oob)
+
+    def test_iosv_static_no_slaac_stanzas(self):
+        config = self._run_offline_config(self._STATIC_BASE)
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertNotIn("autoconfig", oob)
+        self.assertNotIn("ipv6 address dhcp", oob)
+
+    def test_iosv_bootstrap_static_global(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab" / "lab.yaml"
+            argv = [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+                "--nac",
+                "--bootstrap",
+                "--offline-yaml",
+                str(out_file),
+            ]
+            with patch.object(sys, "argv", ["topogen", *argv]):
+                rc = main()
+            self.assertEqual(rc, 0)
+            config = _extract_router_config(out_file, "R1")
+            oob = _oob_block(config, r"GigabitEthernet0/5")
+            self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
+            self.assertNotIn("ipv6 unicast-routing", config)
+
+    def test_iosv_bootstrap_static_link_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab" / "lab.yaml"
+            argv = [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-static-link-local",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+                "--nac",
+                "--bootstrap",
+                "--offline-yaml",
+                str(out_file),
+            ]
+            with patch.object(sys, "argv", ["topogen", *argv]):
+                rc = main()
+            self.assertEqual(rc, 0)
+            config = _extract_router_config(out_file, "R1")
+            oob = _oob_block(config, r"GigabitEthernet0/5")
+            self.assertIn("link-local", oob)
+
+    def test_static_metadata_cidr_only_no_render(self):
+        config = self._run_offline_config(
+            [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-slaac",
+                "--mgmt-ipv6-cidr",
+                "fd00:10:254::/64",
+            ]
+        )
+        oob = _oob_block(config, r"GigabitEthernet0/5")
+        self.assertIn("ipv6 address autoconfig", oob)
+
+    def test_loopback_unchanged_with_static(self):
+        config = self._run_offline_config(self._STATIC_BASE)
+        self.assertIn("int Loopback0", config)
+        self.assertIn("10.20.0.1", config)
+
+    def test_provenance_args_bits(self):
+        data = self._run_offline_yaml(
+            [
+                *self._STATIC_BASE[:-1],
+                "2001:db8:1:2::/64",
+                "--mgmt-ipv6-static-link-local",
+            ]
+        )
+        desc = data.get("lab", {}).get("description", "")
+        self.assertIn("--mgmt-ipv6-static", desc)
+        self.assertIn("--mgmt-ipv6-cidr", desc)
+        self.assertIn("--mgmt-ipv6-static-link-local", desc)
+
+    def test_static_without_cidr_exits(self):
+        with self.assertRaises(SystemExit) as cm:
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "topogen",
+                    "2",
+                    "--mode",
+                    "flat",
+                    "--mgmt",
+                    "--mgmt-vrf",
+                    "Mgmt-vrf",
+                    "--mgmt-ipv6-static",
+                    "--offline-yaml",
+                    "out/x.yaml",
+                ],
+            ):
+                main()
+        self.assertNotEqual(cm.exception.code, 0)
+
+    def test_static_plus_slaac_exits(self):
+        with self.assertRaises(SystemExit) as cm:
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "topogen",
+                    *self._STATIC_BASE,
+                    "--mgmt-ipv6-slaac",
+                    "--offline-yaml",
+                    "out/x.yaml",
+                ],
+            ):
+                main()
+        self.assertNotEqual(cm.exception.code, 0)
+
+    def test_iosv_static_ipv6_gw_renders_default_route(self):
+        argv = [
+            *self._STATIC_BASE,
+            "--mgmt-ipv6-gw",
+            "2001:db8:1:2::1",
+        ]
+        config = self._run_offline_config(argv)
+        self.assertIn("ipv6 route vrf Mgmt-vrf ::/0 2001:db8:1:2::1", config)
+        self.assertNotIn("ip route vrf Mgmt-vrf 0.0.0.0", config)
+
+    def test_iosv_static_ipv6_gw_vrf_override(self):
+        argv = [
+            *self._STATIC_BASE,
+            "--mgmt-ipv6-gw",
+            "2001:db8:1:2::1",
+            "--mgmt-ipv6-gw-vrf",
+            "Custom-vrf",
+        ]
+        config = self._run_offline_config(argv)
+        self.assertIn("ipv6 route vrf Custom-vrf ::/0 2001:db8:1:2::1", config)
+        self.assertNotIn("ipv6 route vrf Mgmt-vrf ::/0", config)
+
+    def test_iosv_static_ipv6_gw_global_route_table(self):
+        argv = [
+            *self._STATIC_BASE,
+            "--mgmt-ipv6-gw",
+            "2001:db8:1:2::1",
+            "--mgmt-ipv6-gw-vrf",
+            "global",
+        ]
+        config = self._run_offline_config(argv)
+        self.assertIn("ipv6 route ::/0 2001:db8:1:2::1", config)
+        self.assertNotIn("ipv6 route vrf", config)
+
+    def test_iosv_static_without_ipv6_gw_no_default_route(self):
+        config = self._run_offline_config(self._STATIC_BASE)
+        self.assertNotIn("ipv6 route", config)
+
+    def test_iosv_bootstrap_static_ipv6_gw(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "lab" / "lab.yaml"
+            argv = [
+                "2",
+                "--mode",
+                "flat",
+                "-T",
+                "iosv",
+                "--device-template",
+                "iosv",
+                "--mgmt",
+                "--mgmt-vrf",
+                "Mgmt-vrf",
+                "--mgmt-ipv6-static",
+                "--mgmt-ipv6-cidr",
+                "fd80::/64",
+                "--mgmt-ipv6-gw",
+                "fd80::1",
+                "--nac",
+                "--bootstrap",
+                "--offline-yaml",
+                str(out_file),
+            ]
+            with patch.object(sys, "argv", ["topogen", *argv]):
+                rc = main()
+            self.assertEqual(rc, 0)
+            config = _extract_router_config(out_file, "R1")
+            self.assertIn("ipv6 route vrf Mgmt-vrf ::/0 fd80::1", config)
+
+    def test_static_ipv6_gw_without_static_exits(self):
+        with self.assertRaises(SystemExit) as cm:
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "topogen",
+                    "2",
+                    "--mode",
+                    "flat",
+                    "-T",
+                    "iosv",
+                    "--mgmt",
+                    "--mgmt-vrf",
+                    "Mgmt-vrf",
+                    "--mgmt-ipv6-gw",
+                    "fd80::1",
+                    "--offline-yaml",
+                    "out/x.yaml",
+                ],
+            ):
+                main()
+        self.assertNotEqual(cm.exception.code, 0)
+
+    def test_static_ipv6_gw_vrf_without_gw_exits(self):
+        with self.assertRaises(SystemExit) as cm:
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "topogen",
+                    *self._STATIC_BASE,
+                    "--mgmt-ipv6-gw-vrf",
+                    "Other-vrf",
+                    "--offline-yaml",
+                    "out/x.yaml",
+                ],
+            ):
+                main()
+        self.assertNotEqual(cm.exception.code, 0)
 
 
 if __name__ == "__main__":

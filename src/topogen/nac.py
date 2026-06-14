@@ -535,6 +535,12 @@ def _select_host(node: TopogenNode, args) -> str:
                 address = _get_iface_value(iface, "address", None)
                 if address:
                     return _normalize_ipv4_host(address)
+                ipv6_address = _get_iface_value(iface, "ipv6_address", None)
+                if ipv6_address and getattr(args, "mgmt_ipv6_mode", None) == "static":
+                    from topogen.nac_mgmt_sync import format_nac_device_host
+
+                    host = str(ipv6_address).split("/")[0]
+                    return format_nac_device_host(host)
                 if bool(getattr(args, "mgmt_bridge", False)):
                     return ""
         return ""
@@ -665,6 +671,17 @@ def build_canonical_nac_model(
                 )
         loopback = getattr(node_obj, "loopback", None)
         host = _select_host(node_obj, args)
+        mgmt_block: dict[str, str] = {"ipv4": host}
+        if getattr(args, "mgmt_ipv6_mode", None) == "static":
+            for iface in node_interfaces:
+                if str(_get_iface_value(iface, "description", "")) == "OOB Management":
+                    ipv6_addr = _get_iface_value(iface, "ipv6_address", None)
+                    if ipv6_addr:
+                        mgmt_block["ipv6"] = str(ipv6_addr)
+                    ipv6_ll = _get_iface_value(iface, "ipv6_link_local_address", None)
+                    if ipv6_ll:
+                        mgmt_block["ipv6_link_local"] = str(ipv6_ll)
+                    break
         loopbacks = []
         config_loopbacks = []
         if loopback is not None:
@@ -715,9 +732,7 @@ def build_canonical_nac_model(
                 "role": "router",
                 "template": template,
                 "device_template": device_template,
-                "mgmt": {
-                    "ipv4": host,
-                },
+                "mgmt": mgmt_block,
                 "loopbacks": loopbacks,
                 "interfaces": interfaces,
                 "metadata": {
