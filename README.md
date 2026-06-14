@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.12
-Date Modified: 2026-06-13
+Doc Version: v1.8.13
+Date Modified: 2026-06-14
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -300,6 +300,35 @@ Alternatively, use Astral/uv:
    run with `uv run`)
 4. install using `uv sync --frozen`
 
+### Dependency matrix (what needs what)
+
+Core runtime (required to run `topogen`):
+
+- Installed by: `python -m pip install -e .` or `uv sync --frozen`
+- Includes:
+  - `enlighten`
+  - `jinja2`
+  - `networkx`
+  - `pyserde[toml]`
+  - `virl2-client`
+  - `PyYAML`
+
+Optional features:
+
+- GUI (`topogen-gui`): `python -m pip install -e "[gui]"`
+- NX layout/scientific extras (`--mode nx` and related paths):
+  - Pip: `python -m pip install -e ".[all]"`
+  - uv: `uv sync --all-extras --frozen`
+
+Testing and developer tools:
+
+- uv (recommended for contributors): `uv sync --all-extras --dev --frozen`
+- pip equivalent (minimum):
+  - `python -m pip install -e .`
+  - `python -m pip install pytest`
+
+If tests fail with import errors (for example `yaml`, `pytest`, or `numpy`), re-run the matching install command above for your workflow.
+
 If `topogen -v` (or the generated lab description) shows an older version than this repo, reinstall the package in editable mode to refresh the installed package metadata:
 
 ```powershell
@@ -344,9 +373,8 @@ Note: `--device-template` maps to the CML node definition name (e.g., `iosv`, `c
 
 Note: In the GUI, `--template` is shown as a dropdown. The dropdown choices come from the packaged templates (`get_templates()`), and the default template is `iosv`. If you remove/rename `iosv.jinja2`, the GUI may error because the default is not in the available template choices.
 
-If the Networkx mode (`--mode nx`) should be used, then the following
-command is required instead to install SciPy and NumPy dependencies: `uv sync
---all-extras --dev --frozen`
+If the Networkx mode (`--mode nx`) should be used, install the scientific extras
+(`numpy`, `scipy`) via `pip install -e ".[all]"` or `uv sync --all-extras --frozen`.
 
 At this point, the `topogen` command should be available. Alternatively,
 if you did not activate the venv, use `uv run topogen`.
