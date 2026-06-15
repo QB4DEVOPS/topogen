@@ -17,7 +17,7 @@ Blast Radius: Medium (guides development priorities but doesn't affect code exec
 
 # TODO
 
-**Maintainers:** Internal backlog and sprint planning live in Jira ([TG project](https://roberthosford.atlassian.net/jira/software/projects/TG)). This file is optional context for contributors and LLMs — not the source of truth for what ships next.
+**Maintainers:** Internal backlog and sprint planning live in Jira (TG project (internal)). This file is optional context for contributors and LLMs — not the source of truth for what ships next.
 
 This file tracks in-progress work and future ideas for TopoGen.
 
@@ -109,8 +109,8 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
-- [x] **TG-194: `--cml-server` opt-in flag** — ([TG-194](https://roberthosford.atlassian.net/browse/TG-194), epic TG-189) Operator-facing CML controller version maps to lab YAML schema when `--cml-version` omitted; explicit `--cml-version` wins; provenance records both flags. Validated: 44 unit tests, 6 offline YAML cases, 6 live CML 2.10 imports, gap/negative CLI matrix. Branch `TG-194-cml-server-opt-in`.
-- [x] **TG-190 CP2: OOB IPv6 DHCPv6/SLAAC on external bridge** — ([TG-190](https://roberthosford.atlassian.net/browse/TG-190), epic TG-189) Split `--mgmt-ipv4-dhcp` / `--mgmt-ipv6-dhcp` / `--mgmt-ipv6-slaac`; shared OOB template partials; dual-stack mgmt sync; CSR live matrix 6/6 flat + bootstrap PASS; IOSv ProveCycle PASS. Evidence: `artifacts/pipeline-proof/TG-190/`. Follow-ups: deterministic IPv6 (TG-83), static OOB IPv6 (TG-195).
+- [x] **TG-194: `--cml-server` opt-in flag** — (TG-194, epic TG-189) Operator-facing CML controller version maps to lab YAML schema when `--cml-version` omitted; explicit `--cml-version` wins; provenance records both flags. Validated: 44 unit tests, 6 offline YAML cases, 6 live CML 2.10 imports, gap/negative CLI matrix. Branch `TG-194-cml-server-opt-in`.
+- [x] **TG-190 CP2: OOB IPv6 DHCPv6/SLAAC on external bridge** — (TG-190, epic TG-189) Split `--mgmt-ipv4-dhcp` / `--mgmt-ipv6-dhcp` / `--mgmt-ipv6-slaac`; shared OOB template partials; dual-stack mgmt sync; CSR live matrix 6/6 flat + bootstrap PASS; IOSv ProveCycle PASS. Evidence: `artifacts/pipeline-proof/TG-190/`. Follow-ups: deterministic IPv6 (TG-83), static OOB IPv6 (TG-195).
 - [x] DMVPN flat and flat-pair offline NaC artifacts (TG-151): `--nac` now emits the sibling `nac/` tree for DMVPN flat and flat-pair offline YAML generation while preserving the original flat-pair CML YAML path/config when `--nac` is omitted. See CHANGES.md.
 - [x] CML2 Terraform lifecycle scaffold (`--terraform-cml2`, alias `--cml2`) for generated offline labs: emits `out/<lab>/cml2/` with `main.tf`, `versions.tf`, `variables.tf`, `outputs.tf`, and `.gitignore` targeting `CiscoDevNet/cml2` and the generated YAML through a relative path. See CHANGES.md TG-150 entry.
 - [x] Two-tier OOB management for all online modes: `render_node_network` (NX), `render_node_sequence` (simple), and `render_flat_network` (flat) now use SWoob0 (aggregation) + SWoob1..N (access) matching offline reference. Previously used a single switch that couldn't scale. See CHANGES.md.
@@ -151,9 +151,9 @@ Recent completions:
 - [x] **NaC: Terraform plan deployability gate (TG-161)** — opt-in pytest (`tests/test_nac_terraform_plan.py`, `TOPOGEN_TERRAFORM_PLAN=1` / `-m terraform`) runs `terraform init` + `terraform plan` on a 9-case NaC matrix (includes DMVPN IKEv2-PSK); CI job `NaC Terraform plan contract` when NaC paths change. Supersedes the earlier `validate`-only idea (plan evaluates `nac.yaml` module locals).
 - [x] ~~**NaC: extend `--nac` to DMVPN**~~ Done for DMVPN flat and flat-pair offline paths in TG-151; deterministic `nac_router_nodes` feed the shared NaC writer.
 
-- [x] **TG-191: Emit NaC mgmt sync helper with `--nac` scaffold** — ([TG-191](https://roberthosford.atlassian.net/browse/TG-191), under TG-189/TG-190) `nac/sync-nac-mgmt.py` + `NAC-WORKFLOW.md` emitted with every `--nac` tree; unified `src/topogen/nac_mgmt_sync.py`; `topogen sync-nac-mgmt` subcommand; `nac_metadata.yaml` mgmt fields; `mgmt_sync.json` report.
+- [x] **TG-191: Emit NaC mgmt sync helper with `--nac` scaffold** — (TG-191, under TG-189/TG-190) `nac/sync-nac-mgmt.py` + `NAC-WORKFLOW.md` emitted with every `--nac` tree; unified `src/topogen/nac_mgmt_sync.py`; `topogen sync-nac-mgmt` subcommand; `nac_metadata.yaml` mgmt fields; `mgmt_sync.json` report.
 
-- [x] **TG-192: CML CI/CD pipeline + per-ticket scoped CML users** — ([TG-192](https://roberthosford.atlassian.net/browse/TG-192), epic TG-189) End-to-end Jira → generate → `cml2` deploy → emitted `sync-nac-mgmt` → NaC apply → verify → `topogen provision-cml-user` (lab_view+lab_exec, admin: false) → READY comment; teardown on Done. DEVELOPER.md runbook, `.github/workflows/cml-nac-pipeline.yml`, `scripts/jira-cml-webhook.py`, `scripts/validate-tg192-pipeline.ps1`. Reference lab: TG-190-flat-300-nac-v6 (`2be6f617-cf45-4bff-8970-2c9f28ac01d3`).
+- [x] **TG-192: CML CI/CD pipeline + per-ticket scoped CML users** — (TG-192, epic TG-189) End-to-end Jira → generate → `cml2` deploy → emitted `sync-nac-mgmt` → NaC apply → verify → `topogen provision-cml-user` (lab_view+lab_exec, admin: false) → READY comment; teardown on Done. DEVELOPER.md runbook, `.github/workflows/cml-nac-pipeline.yml`, `scripts/jira-cml-webhook.py`, `scripts/validate-tg192-pipeline.ps1`. Reference lab: TG-190-flat-300-nac-v6 (`2be6f617-cf45-4bff-8970-2c9f28ac01d3`).
 
 - [ ] **TG-109: New feature: FlexVPN** — add FlexVPN (IKEv2-native) hub-and-spoke overlay support
   - FlexVPN is the IKEv2-native replacement for DMVPN (no GRE/NHRP, pure IKEv2 + IPsec with virtual-template and route injection via IKEv2 routing or BGP)
