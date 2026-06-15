@@ -49,3 +49,8 @@ out/
 
 # Local Terraform run logs
 terraform-*.log
+
+# Runtime mgmt inventory/sync outputs (may contain live lab IPs)
+nac/router-hosts.csv
+nac/mgmt_sync.json
+**/router-hosts.csv
