@@ -11,7 +11,7 @@ Environment:
   GITHUB_TOKEN          PAT with repo dispatch (or Actions workflow scope)
   GITHUB_REPOSITORY     owner/repo (default: rohosfor/topogen on Cisco GitHub)
   JIRA_WEBHOOK_SECRET   Optional shared secret to validate inbound webhooks
-  JIRA_BASE_URL         e.g. https://roberthosford.atlassian.net
+  JIRA_BASE_URL         e.g. https://<your-instance>.atlassian.net
   JIRA_EMAIL / JIRA_API_TOKEN  For READY comments via REST (optional)
 """
 
