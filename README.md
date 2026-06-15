@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.11
-Date Modified: 2026-06-13
+Doc Version: v1.8.13
+Date Modified: 2026-06-14
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -300,6 +300,35 @@ Alternatively, use Astral/uv:
    run with `uv run`)
 4. install using `uv sync --frozen`
 
+### Dependency matrix (what needs what)
+
+Core runtime (required to run `topogen`):
+
+- Installed by: `python -m pip install -e .` or `uv sync --frozen`
+- Includes:
+  - `enlighten`
+  - `jinja2`
+  - `networkx`
+  - `pyserde[toml]`
+  - `virl2-client`
+  - `PyYAML`
+
+Optional features:
+
+- GUI (`topogen-gui`): `python -m pip install -e "[gui]"`
+- NX layout/scientific extras (`--mode nx` and related paths):
+  - Pip: `python -m pip install -e ".[all]"`
+  - uv: `uv sync --all-extras --frozen`
+
+Testing and developer tools:
+
+- uv (recommended for contributors): `uv sync --all-extras --dev --frozen`
+- pip equivalent (minimum):
+  - `python -m pip install -e .`
+  - `python -m pip install pytest`
+
+If tests fail with import errors (for example `yaml`, `pytest`, or `numpy`), re-run the matching install command above for your workflow.
+
 If `topogen -v` (or the generated lab description) shows an older version than this repo, reinstall the package in editable mode to refresh the installed package metadata:
 
 ```powershell
@@ -344,9 +373,8 @@ Note: `--device-template` maps to the CML node definition name (e.g., `iosv`, `c
 
 Note: In the GUI, `--template` is shown as a dropdown. The dropdown choices come from the packaged templates (`get_templates()`), and the default template is `iosv`. If you remove/rename `iosv.jinja2`, the GUI may error because the default is not in the available template choices.
 
-If the Networkx mode (`--mode nx`) should be used, then the following
-command is required instead to install SciPy and NumPy dependencies: `uv sync
---all-extras --dev --frozen`
+If the Networkx mode (`--mode nx`) should be used, install the scientific extras
+(`numpy`, `scipy`) via `pip install -e ".[all]"` or `uv sync --all-extras --frozen`.
 
 At this point, the `topogen` command should be available. Alternatively,
 if you did not activate the venv, use `uv run topogen`.
@@ -397,6 +425,7 @@ usage: topogen [-h] [-c CONFIGFILE] [-w] [-v] [-l LOGLEVEL] [-p] [-q]
                [--dmvpn-fvrf DMVPN_FVRF]
                [--dmvpn-ipsec-mode {transport,tunnel}] [--mgmt]
                [--mgmt-ipv4-dhcp] [--mgmt-ipv6-dhcp] [--mgmt-ipv6-slaac]
+               [--mgmt-ipv6-static] [--mgmt-ipv6-static-link-local]
                [--mgmt-cidr MGMT_CIDR] [--mgmt-gw MGMT_GW]
                [--mgmt-slot MGMT_SLOT] [--mgmt-vrf MGMT_VRF] [--mgmt-bridge]
                [--mgmt-ipv6-mode {slaac,dhcpv6}] [--mgmt-ipv6-cidr MGMT_IPV6_CIDR]
@@ -1016,21 +1045,62 @@ All modes (`simple`, `nx`, `flat`, `flat-pair`, `dmvpn`) support an optional out
 - `--mgmt-ipv4-dhcp`: IPv4 DHCP on OOB Gi (`ip address dhcp`); implied when `--mgmt-bridge` with no other addressing flags
 - `--mgmt-ipv6-dhcp`: IPv6 DHCPv6 on OOB Gi (`ipv6 address dhcp`); requires named `--mgmt-vrf`
 - `--mgmt-ipv6-slaac`: IPv6 SLAAC on OOB Gi (`ipv6 address autoconfig`); requires named `--mgmt-vrf`
-- `--mgmt-ipv6-mode {slaac,dhcpv6}`: legacy alias for the two IPv6 flags above
-- `--mgmt-ipv6-cidr PREFIX`: optional metadata hint (static IPv6 OOB not implemented)
+- `--mgmt-ipv6-static`: static global IPv6 on OOB Gi; requires `--mgmt`, named `--mgmt-vrf`, and `--mgmt-ipv6-cidr /64` (IPv6 host — no `ipv6 unicast-routing`)
+- `--mgmt-ipv6-static-link-local`: with static global, also render loopback-derived `fe80::FF10:…` link-local on OOB
+- `--mgmt-ipv6-mode {slaac,dhcpv6}`: legacy alias for the two dynamic IPv6 flags above
+- `--mgmt-ipv6-cidr PREFIX`: **required** with `--mgmt-ipv6-static` (`/64` anchor); optional metadata hint for SLAAC/DHCPv6
 - `--mgmt-cidr CIDR`: management network CIDR (default: `10.254.0.0/16`)
 - `--mgmt-gw IP`: optional gateway IP; adds a default route in the mgmt VRF
 - `--mgmt-slot N`: interface slot for management (default: 5; IOSv uses Gi0/5, CSR uses Gi5)
 - `--mgmt-vrf NAME`: VRF name for management interface (default: `Mgmt-vrf`); use `global` for global routing table
 - `--mgmt-bridge`: add external-connector to bridge OOB management network to external network (requires `--mgmt`)
 
-When enabled, router configs get OOB management interfaces per the addressing flags (IPv4 DHCP, IPv6 DHCPv6, IPv6 SLAAC, or dual-stack). Labs with **16+ routers** and `--mgmt` require an explicit IPv6 mode (or split IPv6 flag) and a named `--mgmt-vrf`.
+When enabled, router configs get OOB management interfaces per the addressing flags (IPv4 DHCP, IPv6 DHCPv6, IPv6 SLAAC, or dual-stack). Labs with **16+ routers** and `--mgmt` require an explicit IPv6 mode (or split IPv6 flag) and a named `--mgmt-vrf`. On IOS/IOS-XE, run exec aliases by name at the `#` prompt (e.g. `topogen-test` prints the test banner; `show alias` only lists alias definitions).
 
 Example (external bridge, IPv6 DHCPv6 only on CML 2.10):
 
 ```powershell
 topogen -m flat 6 --mgmt --mgmt-bridge --mgmt-vrf Mgmt-vrf --mgmt-ipv6-dhcp `
   --cml-version 0.3.1 --nac --offline-yaml out/flat-v6-dhcp.yaml --overwrite
+```
+
+Example (static IPv6 OOB, no live sync, documentation prefix):
+
+```powershell
+topogen -m flat 2 -T iosv --device-template iosv --mgmt --mgmt-vrf Mgmt-vrf `
+  --mgmt-ipv6-static --mgmt-ipv6-cidr 2001:db8:1:2::/64 `
+  --cml-server 2.10 --nac --offline-yaml out/static-v6.yaml --overwrite
+# R1 OOB: ipv6 address 2001:db8:1:2:FF10:254:0:1/64 (no ipv6 unicast-routing)
+```
+
+#### Verifying connectivity (IPv6 OOB)
+
+OOB IPv6 lives in the management VRF (`Mgmt-vrf` by default). Always include `vrf` on ping — a plain `ping ipv6 …` uses the global table and typically returns **No valid route**. Link-local targets (`fe80::/10`) also require the outgoing OOB interface (CSR: `GigabitEthernet5`; IOSv: `GigabitEthernet0/5`).
+
+With `--mgmt-ipv6-static-link-local`, routers get loopback-derived link-locals (`fe80::FF10:…`); the bridged gateway is commonly `fe80::10`. From R1/R2 after the lab is up:
+
+```
+R1#ping vrf Mgmt-vrf ipv6 fe80::10
+Output Interface: GigabitEthernet5
+Packet sent with a source address of FE80::FF10:20:0:1%GigabitEthernet5
+!!!!! Success rate is 100 percent (5/5)
+
+R2#ping vrf Mgmt-vrf ipv6 fe80::10%GigabitEthernet5
+Packet sent with a source address of FE80::FF10:20:0:2%GigabitEthernet5
+!!!!! Success rate is 100 percent (5/5)
+
+R1#ping vrf Mgmt-vrf ipv6 2001:db8:1700:21f8:7ec0::23
+!!!!! Success rate is 100 percent (5/5)
+```
+
+The first command relies on the interactive **Output Interface** prompt; the second appends `%GigabitEthernet5` on the destination. Use your lab’s global prefix/host (SLAAC, static, or a host on the bridged LAN) for the third line — replace `2001:db8:1700:21f8:7ec0::23` if your prefix differs (`2001:db8:…` in offline examples).
+
+Verify the TopoGen test marker with `show alias | include JIRA` — aliases are non-destructive plain-text expansions.
+
+On the Windows host attached to the CML system bridge, confirm the bridged NIC picked up addresses:
+
+```powershell
+ipconfig
 ```
 
 The `--mgmt-bridge` flag creates an `ext-conn-mgmt` external_connector node using "System Bridge" mode, connecting SWoob0 to your physical/external network. This enables bidirectional connectivity, allowing routers to reach external resources (internet, NTP servers, external DHCP) and external systems to access the lab's management network.

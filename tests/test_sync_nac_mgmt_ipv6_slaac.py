@@ -35,7 +35,7 @@ Interface              IPv6-Address                  Status
 GigabitEthernet0/0     unassigned                    [down/down]
 GigabitEthernet0/5     [up/up]
     FE80::5054:FF:FE58:4AA4
-    2600:1700:21F8:7EC0:5054:FF:FE58:4AA4
+    2001:db8:1700:21F8:7EC0:5054:FF:FE58:4AA4
 GigabitEthernet0/1     unassigned                    [down/down]
 """
 
@@ -54,14 +54,14 @@ DETAIL_GLOBAL = """
 GigabitEthernet0/5 is up, line protocol is up
   IPv6 is enabled, link-local address is FE80::5054:FF:FE58:4AA4
   Global unicast address(es):
-    2600:1700:21F8:7EC0:5054:FF:FE58:4AA4, subnet is 2600:1700:21F8:7EC0::/64 [VALID]
+    2001:db8:1700:21F8:7EC0:5054:FF:FE58:4AA4, subnet is 2001:db8:1700:21F8:7EC0::/64 [VALID]
   Joined group address(es):
     FF02::1
   MTU is 1500 bytes
 """
 
 BRIEF_COMPACT_LINE = """
-GigabitEthernet0/5     2600:1700:21F8:7EC0:5054:FF:FE58:4AA4
+GigabitEthernet0/5     2001:db8:1700:21F8:7EC0:5054:FF:FE58:4AA4
 GigabitEthernet0/1     unassigned
 """
 
@@ -144,7 +144,7 @@ class TestResolveSyncModeAuto(unittest.TestCase):
 class TestParseMgmtIpv6(unittest.TestCase):
     def test_parses_global_slaac_from_brief(self):
         got = parse_mgmt_ipv6(BRIEF_GLOBAL_SLAAC, IFACE)
-        self.assertEqual(got, "2600:1700:21f8:7ec0:5054:ff:fe58:4aa4")
+        self.assertEqual(got, "2001:db8:1700:21f8:7ec0:5054:ff:fe58:4aa4")
 
     def test_prefers_global_over_link_local(self):
         got = parse_mgmt_ipv6(BRIEF_FD00_ONLY, IFACE)
@@ -155,11 +155,11 @@ class TestParseMgmtIpv6(unittest.TestCase):
 
     def test_parses_detail_output(self):
         got = parse_mgmt_ipv6(DETAIL_GLOBAL, IFACE)
-        self.assertEqual(got, "2600:1700:21f8:7ec0:5054:ff:fe58:4aa4")
+        self.assertEqual(got, "2001:db8:1700:21f8:7ec0:5054:ff:fe58:4aa4")
 
     def test_parses_compact_single_line(self):
         got = parse_mgmt_ipv6(BRIEF_COMPACT_LINE, IFACE)
-        self.assertEqual(got, "2600:1700:21f8:7ec0:5054:ff:fe58:4aa4")
+        self.assertEqual(got, "2001:db8:1700:21f8:7ec0:5054:ff:fe58:4aa4")
 
     def test_missing_interface_returns_none(self):
         self.assertIsNone(parse_mgmt_ipv6(BRIEF_COMPACT_LINE, "GigabitEthernet0/99"))
@@ -171,7 +171,7 @@ class TestPatchNacFilesIpv6(unittest.TestCase):
             nac_root = Path(tmp)
             _write_min_nac_tree(nac_root)
             mapping = {
-                "iosv-01": "2600:1700:21f8:7ec0:5054:ff:fe58:4aa4",
+                "iosv-01": "2001:db8:1700:21f8:7ec0:5054:ff:fe58:4aa4",
                 "iosv-02": "fd00:10:254:0:5054:ff:fe12:3456",
             }
             patch_nac_files(nac_root, mapping)
@@ -180,7 +180,7 @@ class TestPatchNacFilesIpv6(unittest.TestCase):
             by_name = {d["name"]: d for d in nac["iosxe"]["devices"]}
             self.assertEqual(
                 by_name["iosv-01"]["host"],
-                "[2600:1700:21f8:7ec0:5054:ff:fe58:4aa4]",
+                "[2001:db8:1700:21f8:7ec0:5054:ff:fe58:4aa4]",
             )
             self.assertEqual(
                 format_nac_device_host("10.254.0.5"),

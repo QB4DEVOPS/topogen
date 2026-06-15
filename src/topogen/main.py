@@ -1,5 +1,5 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.11.1
+# Doc Version: v1.12.1
 # Date Modified: 2026-06-13
 #
 """
@@ -162,6 +162,20 @@ def finalize_mgmt_addressing_args(args, parser) -> None:
             )
         args.mgmt_ipv6_mode = "slaac"
 
+    v6_static = bool(getattr(args, "mgmt_ipv6_static", False))
+    if v6_static:
+        if v6_dhcp or v6_slaac:
+            parser.error(
+                "--mgmt-ipv6-static is mutually exclusive with "
+                "--mgmt-ipv6-dhcp and --mgmt-ipv6-slaac"
+            )
+        if v6_mode and v6_mode not in ("static",):
+            parser.error(
+                f"--mgmt-ipv6-static conflicts with --mgmt-ipv6-mode "
+                f"{v6_mode!r} (use one IPv6 acquisition method)"
+            )
+        args.mgmt_ipv6_mode = "static"
+
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     v4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
     if not v4_dhcp and not ipv6_mode and getattr(args, "mgmt_bridge", False):
@@ -182,8 +196,56 @@ def _mgmt_uses_ipv4_oob(args) -> bool:
 
 
 def validate_mgmt_ipv6_guardrails(args, parser):
-    """Fail-fast guardrails for OOB management addressing (TG-190)."""
+    """Fail-fast guardrails for OOB management addressing (TG-190, TG-195)."""
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
+    v6_static = bool(getattr(args, "mgmt_ipv6_static", False))
+    v6_static_ll = bool(getattr(args, "mgmt_ipv6_static_link_local", False))
+
+    if v6_static_ll:
+        if not getattr(args, "enable_mgmt", False):
+            parser.error("--mgmt-ipv6-static-link-local requires --mgmt")
+        if ipv6_mode not in ("static", "slaac", "dhcpv6"):
+            parser.error(
+                "--mgmt-ipv6-static-link-local requires an IPv6 OOB mode "
+                "(--mgmt-ipv6-static, --mgmt-ipv6-slaac, --mgmt-ipv6-dhcp, "
+                "or --mgmt-ipv6-mode slaac|dhcpv6)"
+            )
+
+    if getattr(args, "mgmt_ipv6_gw", None) and not v6_static:
+        parser.error("--mgmt-ipv6-gw requires --mgmt-ipv6-static")
+
+    if getattr(args, "mgmt_ipv6_gw_vrf", None) and not getattr(
+        args, "mgmt_ipv6_gw", None
+    ):
+        parser.error("--mgmt-ipv6-gw-vrf requires --mgmt-ipv6-gw")
+
+    if v6_static:
+        if not getattr(args, "enable_mgmt", False):
+            parser.error(
+                "IPv6 OOB flags (--mgmt-ipv6-static) require --mgmt"
+            )
+        mgmt_vrf = getattr(args, "mgmt_vrf", None)
+        if mgmt_vrf and str(mgmt_vrf).lower() == "global":
+            mgmt_vrf = None
+        if not mgmt_vrf:
+            parser.error(
+                "IPv6 OOB requires a named --mgmt-vrf (not global routing table)"
+            )
+        if not getattr(args, "mgmt_ipv6_cidr", None):
+            parser.error("--mgmt-ipv6-static requires --mgmt-ipv6-cidr <prefix>/64")
+        from ipaddress import IPv6Address, IPv6Network
+
+        try:
+            IPv6Network(args.mgmt_ipv6_cidr, strict=False)
+        except ValueError as exc:
+            parser.error(f"Invalid --mgmt-ipv6-cidr: {exc}")
+        if getattr(args, "mgmt_ipv6_gw", None):
+            try:
+                IPv6Address(args.mgmt_ipv6_gw)
+            except ValueError as exc:
+                parser.error(f"Invalid --mgmt-ipv6-gw: {exc}")
+        return
+
     node_count = int(getattr(args, "nodes", 0) or 0)
     if (
         _mgmt_uses_ipv4_oob(args)
@@ -206,7 +268,10 @@ def validate_mgmt_ipv6_guardrails(args, parser):
                 parser.error(f"Invalid --mgmt-ipv6-cidr: {exc}")
         return
     if not getattr(args, "enable_mgmt", False):
-        parser.error("IPv6 OOB flags (--mgmt-ipv6-dhcp, --mgmt-ipv6-slaac, --mgmt-ipv6-mode) require --mgmt")
+        parser.error(
+            "IPv6 OOB flags (--mgmt-ipv6-dhcp, --mgmt-ipv6-slaac, "
+            "--mgmt-ipv6-mode, --mgmt-ipv6-static) require --mgmt"
+        )
     mgmt_vrf = getattr(args, "mgmt_vrf", None)
     if mgmt_vrf and str(mgmt_vrf).lower() == "global":
         mgmt_vrf = None
@@ -598,6 +663,28 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         ),
     )
     parser.add_argument(
+        "--mgmt-ipv6-static",
+        dest="mgmt_ipv6_static",
+        action="store_true",
+        default=False,
+        help=(
+            "Static global IPv6 on OOB (ipv6 address <prefix>). Requires --mgmt, named "
+            "--mgmt-vrf, and --mgmt-ipv6-cidr /64. Routers are IPv6 hosts only (no "
+            "ipv6 unicast-routing)."
+        ),
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-static-link-local",
+        dest="mgmt_ipv6_static_link_local",
+        action="store_true",
+        default=False,
+        help=(
+            "With --mgmt-ipv6-static, --mgmt-ipv6-slaac, or --mgmt-ipv6-dhcp, also render "
+            "loopback-derived fe80::FF10:… link-local on OOB (and other IPv6-enabled "
+            "interfaces). IOS uses the static link-local as the IID source for SLAAC globals."
+        ),
+    )
+    parser.add_argument(
         "--mgmt-cidr",
         dest="mgmt_cidr",
         type=str,
@@ -610,6 +697,26 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         type=str,
         default=None,
         help="Management network gateway IP (optional); adds a default route in the mgmt VRF if set",
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-gw",
+        dest="mgmt_ipv6_gw",
+        type=str,
+        default=None,
+        help=(
+            "Optional IPv6 default-route next hop in the mgmt VRF with "
+            "--mgmt-ipv6-static (ipv6 route vrf … ::/0 …)."
+        ),
+    )
+    parser.add_argument(
+        "--mgmt-ipv6-gw-vrf",
+        dest="mgmt_ipv6_gw_vrf",
+        type=str,
+        default=None,
+        help=(
+            "Optional VRF for --mgmt-ipv6-gw (default: same as --mgmt-vrf). "
+            "Use 'global' for ipv6 route ::/0 without a VRF clause."
+        ),
     )
     parser.add_argument(
         "--mgmt-slot",
@@ -648,7 +755,11 @@ def create_argparser(parser_class=argparse.ArgumentParser):
         dest="mgmt_ipv6_cidr",
         type=str,
         default=None,
-        help="Optional IPv6 prefix hint for SLAAC/DHCPv6 pool (e.g. fd00:10:254::/64)",
+        help=(
+            "Required with --mgmt-ipv6-static (/64 anchor for FF10 embedding). "
+            "Optional metadata hint for --mgmt-ipv6-dhcp / --mgmt-ipv6-slaac "
+            "(e.g. fd80::/64 or 2001:db8:1:2::/64)."
+        ),
     )
     parser.add_argument(
         "--ntp",
