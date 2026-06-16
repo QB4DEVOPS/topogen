@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.6
+Doc Version: v1.9.7
 Date Modified: 2026-06-13
 
 - Called by: Developers (new contributors, AI assistants), maintainers
@@ -444,9 +444,28 @@ Live-validated 2026-06-09: `TG186-BOOTSTRAP-E2E` (2× CSR1000v nx), 11 NaC
 resources, OSPF neighbor FULL on Gi1 (bootstrap replaces full Jinja in CML YAML).
 
 **Mgmt sync modes:** `--mgmt-ipv6-mode slaac` sets default sync to IPv6 SLAAC;
-otherwise DHCP (IPv4 mgmt-bridge). `nac_metadata.yaml` records `mgmt_mode`,
+otherwise DHCP (IPv4 mgmt-bridge). `--mgmt-ipv6-static` fills NaC inventory at
+generate time (no live sync). `nac_metadata.yaml` records `mgmt_mode`,
 `mgmt_vrf`, `mgmt_interface`, and `mgmt_ipv6_mode`. Report: `nac/mgmt_sync.json`.
 Legacy `scripts/sync-nac-mgmt-*.py` wrappers remain for repo-local use.
+
+#### Static IPv6 OOB (TG-195, FF10 embedding)
+
+Routers only (`R1`…`R{n}`). Operator supplies explicit `/64` via
+`--mgmt-ipv6-cidr` with `--mgmt-ipv6-static`. Global address from mgmt IPv4 carve
+(`mgmt_net.network_address + router_index`) embedded after the anchor:
+
+| Default `--mgmt-cidr` | IPv4 mgmt | Anchor | Static global OOB |
+|-----------------------|-----------|--------|---------------------|
+| `10.254.0.0/16` | `10.254.0.1` | `fd80::/64` | `fd80::FF10:254:0:1/64` |
+| `10.254.0.0/16` | `10.254.0.1` | `2001:db8:1:2::/64` | `2001:db8:1:2:FF10:254:0:1/64` |
+
+Optional `--mgmt-ipv6-static-link-local` derives one `fe80::FF10:20:hi:lo` per router
+from Loopback0 (same on every IPv6-enabled interface). **No `ipv6 unicast-routing`**
+in static mode — routers are IPv6 hosts on OOB; routing is a future task.
+
+Implementation: `src/topogen/mgmt_addressing.py`, `_iosv_mgmt_oob.jinja2`,
+`_csr_mgmt_oob.jinja2`, `_static_link_local.jinja2`.
 
 #### CML 2.10, pyATS, and mgmt sync (operator caveats)
 

@@ -42,3 +42,10 @@ nx-*.yaml
 [Nn][Xx]-*.yaml
 
 out/
+
+# MCP local scratch/output
+.mcp-init.*
+.mcp-tools.*
+
+# Local Terraform run logs
+terraform-*.log

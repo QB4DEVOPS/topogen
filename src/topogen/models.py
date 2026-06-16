@@ -113,6 +113,8 @@ class TopogenInterface:
     vrf: str | None = None
     description: str = ""
     slot: int = 0
+    ipv6_address: str | None = None
+    ipv6_link_local_address: str | None = None
 
 
 @dataclass

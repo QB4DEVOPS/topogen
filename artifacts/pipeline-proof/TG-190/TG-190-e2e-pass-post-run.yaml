@@ -296,7 +296,7 @@ nodes:
           \ media-type rj45\n!\ninterface GigabitEthernet0/3\n no ip address\n shutdown\n\
           \ duplex auto\n speed auto\n media-type rj45\n!\ninterface GigabitEthernet0/4\n\
           \ no ip address\n shutdown\n duplex auto\n speed auto\n media-type rj45\n\
-          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::c\n\
+          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::c\n\
           \ vrf forwarding Mgmt-vrf\n no ip address\n duplex auto\n speed auto\n media-type\
           \ rj45\n no cdp enable\n ipv6 address dhcp\n ipv6 enable\n!\nrouter ospf\
           \ 1\n passive-interface Loopback0\n network 10.10.0.1 0.0.0.0 area 0\n network\
@@ -305,7 +305,7 @@ nodes:
           \ authentication password\n!\nipv6 ioam timestamp\n!\n!\n!\ncontrol-plane\n\
           !\nalias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\n\
           alias exec uptime show version | include uptime\nalias exec slaac_600170021f87e\
-          \ show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::c\n\
+          \ show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::c\n\
           banner exec ^C\n**************************************************************************\n\
           * IOSv is strictly limited to use for evaluation, demonstration and IOS\
           \  *\n* education. IOSv is provided as-is and is not supported by Cisco's\
@@ -431,7 +431,7 @@ nodes:
           \ media-type rj45\n!\ninterface GigabitEthernet0/3\n no ip address\n shutdown\n\
           \ duplex auto\n speed auto\n media-type rj45\n!\ninterface GigabitEthernet0/4\n\
           \ no ip address\n shutdown\n duplex auto\n speed auto\n media-type rj45\n\
-          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::47\n\
+          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::47\n\
           \ vrf forwarding Mgmt-vrf\n no ip address\n duplex auto\n speed auto\n media-type\
           \ rj45\n no cdp enable\n ipv6 address dhcp\n ipv6 enable\n!\nrouter ospf\
           \ 1\n passive-interface Loopback0\n network 10.10.0.2 0.0.0.0 area 0\n network\
@@ -440,7 +440,7 @@ nodes:
           \ authentication password\n!\nipv6 ioam timestamp\n!\n!\n!\ncontrol-plane\n\
           !\nalias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\n\
           alias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec\
-          \ show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::47\n\
+          \ show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::47\n\
           banner exec ^C\n**************************************************************************\n\
           * IOSv is strictly limited to use for evaluation, demonstration and IOS\
           \  *\n* education. IOSv is provided as-is and is not supported by Cisco's\
@@ -566,7 +566,7 @@ nodes:
           \ media-type rj45\n!\ninterface GigabitEthernet0/3\n no ip address\n shutdown\n\
           \ duplex auto\n speed auto\n media-type rj45\n!\ninterface GigabitEthernet0/4\n\
           \ no ip address\n shutdown\n duplex auto\n speed auto\n media-type rj45\n\
-          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::49\n\
+          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::49\n\
           \ vrf forwarding Mgmt-vrf\n no ip address\n duplex auto\n speed auto\n media-type\
           \ rj45\n no cdp enable\n ipv6 address dhcp\n ipv6 enable\n!\nrouter ospf\
           \ 1\n passive-interface Loopback0\n network 10.10.0.3 0.0.0.0 area 0\n network\
@@ -575,7 +575,7 @@ nodes:
           \ authentication password\n!\nipv6 ioam timestamp\n!\n!\n!\ncontrol-plane\n\
           !\nalias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\n\
           alias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec\
-          \ show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::49\n\
+          \ show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::49\n\
           banner exec ^C\n**************************************************************************\n\
           * IOSv is strictly limited to use for evaluation, demonstration and IOS\
           \  *\n* education. IOSv is provided as-is and is not supported by Cisco's\
@@ -701,7 +701,7 @@ nodes:
           \ media-type rj45\n!\ninterface GigabitEthernet0/3\n no ip address\n shutdown\n\
           \ duplex auto\n speed auto\n media-type rj45\n!\ninterface GigabitEthernet0/4\n\
           \ no ip address\n shutdown\n duplex auto\n speed auto\n media-type rj45\n\
-          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::39\n\
+          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::39\n\
           \ vrf forwarding Mgmt-vrf\n no ip address\n duplex auto\n speed auto\n media-type\
           \ rj45\n no cdp enable\n ipv6 address dhcp\n ipv6 enable\n!\nrouter ospf\
           \ 1\n passive-interface Loopback0\n network 10.10.0.4 0.0.0.0 area 0\n network\
@@ -710,7 +710,7 @@ nodes:
           \ authentication password\n!\nipv6 ioam timestamp\n!\n!\n!\ncontrol-plane\n\
           !\nalias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\n\
           alias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec\
-          \ show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::39\n\
+          \ show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::39\n\
           banner exec ^C\n**************************************************************************\n\
           * IOSv is strictly limited to use for evaluation, demonstration and IOS\
           \  *\n* education. IOSv is provided as-is and is not supported by Cisco's\
@@ -836,7 +836,7 @@ nodes:
           \ media-type rj45\n!\ninterface GigabitEthernet0/3\n no ip address\n shutdown\n\
           \ duplex auto\n speed auto\n media-type rj45\n!\ninterface GigabitEthernet0/4\n\
           \ no ip address\n shutdown\n duplex auto\n speed auto\n media-type rj45\n\
-          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::30\n\
+          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::30\n\
           \ vrf forwarding Mgmt-vrf\n no ip address\n duplex auto\n speed auto\n media-type\
           \ rj45\n no cdp enable\n ipv6 address dhcp\n ipv6 enable\n!\nrouter ospf\
           \ 1\n passive-interface Loopback0\n network 10.10.0.5 0.0.0.0 area 0\n network\
@@ -845,7 +845,7 @@ nodes:
           \ authentication password\n!\nipv6 ioam timestamp\n!\n!\n!\ncontrol-plane\n\
           !\nalias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\n\
           alias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec\
-          \ show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::30\n\
+          \ show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::30\n\
           banner exec ^C\n**************************************************************************\n\
           * IOSv is strictly limited to use for evaluation, demonstration and IOS\
           \  *\n* education. IOSv is provided as-is and is not supported by Cisco's\
@@ -971,7 +971,7 @@ nodes:
           \ media-type rj45\n!\ninterface GigabitEthernet0/3\n no ip address\n shutdown\n\
           \ duplex auto\n speed auto\n media-type rj45\n!\ninterface GigabitEthernet0/4\n\
           \ no ip address\n shutdown\n duplex auto\n speed auto\n media-type rj45\n\
-          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::3d\n\
+          !\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::3d\n\
           \ vrf forwarding Mgmt-vrf\n no ip address\n duplex auto\n speed auto\n media-type\
           \ rj45\n no cdp enable\n ipv6 address dhcp\n ipv6 enable\n!\nrouter ospf\
           \ 1\n passive-interface Loopback0\n network 10.10.0.6 0.0.0.0 area 0\n network\
@@ -980,7 +980,7 @@ nodes:
           \ authentication password\n!\nipv6 ioam timestamp\n!\n!\n!\ncontrol-plane\n\
           !\nalias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\n\
           alias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec\
-          \ show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::3d\n\
+          \ show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::3d\n\
           banner exec ^C\n**************************************************************************\n\
           * IOSv is strictly limited to use for evaluation, demonstration and IOS\
           \  *\n* education. IOSv is provided as-is and is not supported by Cisco's\
@@ -1173,14 +1173,14 @@ lab:
     --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --mgmt-bridge --nac --terraform-cml2 --ca ca.pem
     -L TG-190-e2e-pass --offline-yaml C:/Users/rohosfor/Documents/Projects Folder/topogen/out/TG-190-e2e-pass/TG-190-e2e-pass.yaml'
   notes: |-
-    <h3>TopoGen CI — TG-190</h3><p>Post-SLAAC management sync (lab guide)</p><ul><li><b>R1</b> GigabitEthernet0/5: <code>2600:1700:21f8:7ec0::c</code> — alias <code>slaac_600170021f87ec0c</code></li>
-    <li><b>R2</b> GigabitEthernet0/5: <code>2600:1700:21f8:7ec0::47</code> — alias <code>slaac_00170021f87ec047</code></li>
-    <li><b>R3</b> GigabitEthernet0/5: <code>2600:1700:21f8:7ec0::49</code> — alias <code>slaac_00170021f87ec049</code></li>
-    <li><b>R4</b> GigabitEthernet0/5: <code>2600:1700:21f8:7ec0::39</code> — alias <code>slaac_00170021f87ec039</code></li>
-    <li><b>R5</b> GigabitEthernet0/5: <code>2600:1700:21f8:7ec0::30</code> — alias <code>slaac_00170021f87ec030</code></li>
-    <li><b>R6</b> GigabitEthernet0/5: <code>2600:1700:21f8:7ec0::3d</code> — alias <code>slaac_00170021f87ec03d</code></li></ul><p>Router exec aliases (all nodes):</p><ul><li><code>slaac</code> → <code>show ipv6 interface GigabitEthernet0/5 | include Global</code></li><li><code>uptime</code> → <code>show version | include uptime</code></li><li><code>slaac_&lt;token&gt;</code> → per-router Gi5 address (token = last 16 hex chars of SLAAC)</li></ul>
+    <h3>TopoGen CI — TG-190</h3><p>Post-SLAAC management sync (lab guide)</p><ul><li><b>R1</b> GigabitEthernet0/5: <code>2001:db8:1700:21f8:7ec0::c</code> — alias <code>slaac_600170021f87ec0c</code></li>
+    <li><b>R2</b> GigabitEthernet0/5: <code>2001:db8:1700:21f8:7ec0::47</code> — alias <code>slaac_00170021f87ec047</code></li>
+    <li><b>R3</b> GigabitEthernet0/5: <code>2001:db8:1700:21f8:7ec0::49</code> — alias <code>slaac_00170021f87ec049</code></li>
+    <li><b>R4</b> GigabitEthernet0/5: <code>2001:db8:1700:21f8:7ec0::39</code> — alias <code>slaac_00170021f87ec039</code></li>
+    <li><b>R5</b> GigabitEthernet0/5: <code>2001:db8:1700:21f8:7ec0::30</code> — alias <code>slaac_00170021f87ec030</code></li>
+    <li><b>R6</b> GigabitEthernet0/5: <code>2001:db8:1700:21f8:7ec0::3d</code> — alias <code>slaac_00170021f87ec03d</code></li></ul><p>Router exec aliases (all nodes):</p><ul><li><code>slaac</code> → <code>show ipv6 interface GigabitEthernet0/5 | include Global</code></li><li><code>uptime</code> → <code>show version | include uptime</code></li><li><code>slaac_&lt;token&gt;</code> → per-router Gi5 address (token = last 16 hex chars of SLAAC)</li></ul>
     <span style="color: white; font-size: 1pt; opacity: 0;">Generated by topogen v0.3.0 (offline YAML) | args: nodes=6 -m flat -T iosv --flat-group-size 20 --cml-version 0.3.1 --mgmt --mgmt-cidr 10.254.0.0/16 --mgmt-slot 5 --mgmt-vrf Mgmt-vrf --mgmt-bridge --nac --terraform-cml2 --ca ca.pem -L TG-190-e2e-pass --offline-yaml C:/Users/rohosfor/Documents/Projects Folder/topogen/out/TG-190-e2e-pass/TG-190-e2e-pass.yaml</span>
-    <span style="color: white; font-size: 1pt; opacity: 0;">TOPOGEN_CI_REPORT={&quot;config_extract&quot;:{&quot;ci_aliases&quot;:{&quot;applied&quot;:6,&quot;nodes&quot;:{&quot;R1&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_600170021f87ec0c show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::c\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::c&quot;,&quot;label&quot;:&quot;R1&quot;,&quot;mgmt_ipv6&quot;:&quot;2600:1700:21f8:7ec0::c&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R2&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec047 show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::47\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::47&quot;,&quot;label&quot;:&quot;R2&quot;,&quot;mgmt_ipv6&quot;:&quot;2600:1700:21f8:7ec0::47&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R3&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec049 show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::49\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::49&quot;,&quot;label&quot;:&quot;R3&quot;,&quot;mgmt_ipv6&quot;:&quot;2600:1700:21f8:7ec0::49&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R4&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec039 show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::39\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::39&quot;,&quot;label&quot;:&quot;R4&quot;,&quot;mgmt_ipv6&quot;:&quot;2600:1700:21f8:7ec0::39&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R5&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec030 show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::30\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::30&quot;,&quot;label&quot;:&quot;R5&quot;,&quot;mgmt_ipv6&quot;:&quot;2600:1700:21f8:7ec0::30&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R6&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec03d show ipv6 interface GigabitEthernet0/5 | include 2600:1700:21f8:7ec0::3d\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2600:1700:21f8:7ec0::3d&quot;,&quot;label&quot;:&quot;R6&quot;,&quot;mgmt_ipv6&quot;:&quot;2600:1700:21f8:7ec0::3d&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;}},&quot;routers&quot;:6,&quot;saved&quot;:6},&quot;extracted&quot;:6,&quot;nodes&quot;:{&quot;R1&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R2&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R3&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R4&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R5&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R6&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;}},&quot;routers&quot;:6},&quot;finished_at&quot;:&quot;2026-06-13T04:14:56+00:00&quot;,&quot;gates&quot;:{},&quot;jira_key&quot;:&quot;TG-190&quot;,&quot;lab_id&quot;:&quot;253b6661-3bdf-4148-bacf-fe57d5707bb0&quot;,&quot;lab_title&quot;:&quot;TG-190-e2e-pass&quot;,&quot;mgmt_sync&quot;:{&quot;mapping&quot;:{&quot;iosv-01&quot;:&quot;2600:1700:21f8:7ec0::c&quot;,&quot;iosv-02&quot;:&quot;2600:1700:21f8:7ec0::47&quot;,&quot;iosv-03&quot;:&quot;2600:1700:21f8:7ec0::49&quot;,&quot;iosv-04&quot;:&quot;2600:1700:21f8:7ec0::39&quot;,&quot;iosv-05&quot;:&quot;2600:1700:21f8:7ec0::30&quot;,&quot;iosv-06&quot;:&quot;2600:1700:21f8:7ec0::3d&quot;},&quot;mode&quot;:&quot;slaac&quot;,&quot;synced&quot;:6,&quot;total&quot;:6},&quot;schema&quot;:&quot;topogen-ci-report-v1&quot;,&quot;status&quot;:&quot;pass&quot;}</span>
+    <span style="color: white; font-size: 1pt; opacity: 0;">TOPOGEN_CI_REPORT={&quot;config_extract&quot;:{&quot;ci_aliases&quot;:{&quot;applied&quot;:6,&quot;nodes&quot;:{&quot;R1&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_600170021f87ec0c show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::c\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::c&quot;,&quot;label&quot;:&quot;R1&quot;,&quot;mgmt_ipv6&quot;:&quot;2001:db8:1700:21f8:7ec0::c&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R2&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec047 show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::47\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::47&quot;,&quot;label&quot;:&quot;R2&quot;,&quot;mgmt_ipv6&quot;:&quot;2001:db8:1700:21f8:7ec0::47&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R3&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec049 show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::49\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::49&quot;,&quot;label&quot;:&quot;R3&quot;,&quot;mgmt_ipv6&quot;:&quot;2001:db8:1700:21f8:7ec0::49&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R4&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec039 show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::39\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::39&quot;,&quot;label&quot;:&quot;R4&quot;,&quot;mgmt_ipv6&quot;:&quot;2001:db8:1700:21f8:7ec0::39&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R5&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec030 show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::30\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::30&quot;,&quot;label&quot;:&quot;R5&quot;,&quot;mgmt_ipv6&quot;:&quot;2001:db8:1700:21f8:7ec0::30&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;},&quot;R6&quot;:{&quot;config&quot;:&quot;alias exec slaac show ipv6 interface GigabitEthernet0/5 | include Global\nalias exec uptime show version | include uptime\nalias exec slaac_00170021f87ec03d show ipv6 interface GigabitEthernet0/5 | include 2001:db8:1700:21f8:7ec0::3d\ninterface GigabitEthernet0/5\n description OOB Mgmt | TG-190 | 2001:db8:1700:21f8:7ec0::3d&quot;,&quot;label&quot;:&quot;R6&quot;,&quot;mgmt_ipv6&quot;:&quot;2001:db8:1700:21f8:7ec0::3d&quot;,&quot;ok&quot;:true,&quot;saved&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;,&quot;via&quot;:&quot;cml-console&quot;}},&quot;routers&quot;:6,&quot;saved&quot;:6},&quot;extracted&quot;:6,&quot;nodes&quot;:{&quot;R1&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R2&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R3&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R4&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R5&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;},&quot;R6&quot;:{&quot;ok&quot;:true,&quot;state&quot;:&quot;BOOTED&quot;}},&quot;routers&quot;:6},&quot;finished_at&quot;:&quot;2026-06-13T04:14:56+00:00&quot;,&quot;gates&quot;:{},&quot;jira_key&quot;:&quot;TG-190&quot;,&quot;lab_id&quot;:&quot;253b6661-3bdf-4148-bacf-fe57d5707bb0&quot;,&quot;lab_title&quot;:&quot;TG-190-e2e-pass&quot;,&quot;mgmt_sync&quot;:{&quot;mapping&quot;:{&quot;iosv-01&quot;:&quot;2001:db8:1700:21f8:7ec0::c&quot;,&quot;iosv-02&quot;:&quot;2001:db8:1700:21f8:7ec0::47&quot;,&quot;iosv-03&quot;:&quot;2001:db8:1700:21f8:7ec0::49&quot;,&quot;iosv-04&quot;:&quot;2001:db8:1700:21f8:7ec0::39&quot;,&quot;iosv-05&quot;:&quot;2001:db8:1700:21f8:7ec0::30&quot;,&quot;iosv-06&quot;:&quot;2001:db8:1700:21f8:7ec0::3d&quot;},&quot;mode&quot;:&quot;slaac&quot;,&quot;synced&quot;:6,&quot;total&quot;:6},&quot;schema&quot;:&quot;topogen-ci-report-v1&quot;,&quot;status&quot;:&quot;pass&quot;}</span>
   title: TG-190-e2e-pass
   node_staging:
     enabled: false

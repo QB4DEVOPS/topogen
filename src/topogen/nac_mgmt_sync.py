@@ -60,6 +60,8 @@ def canonical_name(index: int) -> str:
 
 def default_sync_mode_from_args(args) -> SyncMode:
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None) if args else None
+    if ipv6_mode == "static":
+        return "dhcp"
     if ipv6_mode in ("slaac", "dhcpv6"):
         return "slaac"
     return "dhcp"
@@ -148,6 +150,8 @@ def resolve_sync_mode(
             if metadata_path.is_file():
                 metadata = load_yaml(metadata_path)
                 mgmt_ipv6_mode = str(metadata.get("mgmt_ipv6_mode", "")).lower()
+                if mgmt_ipv6_mode == "static":
+                    return "dhcp"
                 if mgmt_ipv6_mode in ("slaac", "dhcpv6"):
                     return "slaac"
                 mgmt_mode = str(metadata.get("mgmt_mode", "")).lower()
@@ -345,7 +349,7 @@ def pick_preferred_global(addresses: list[str]) -> str | None:
             globals_.append(addr)
     if not globals_:
         return None
-    for prefix in ("2600:", "fd00:"):
+    for prefix in ("2001:db8:", "fd00:"):
         for addr in globals_:
             if addr.lower().startswith(prefix):
                 return addr
@@ -553,6 +557,24 @@ def sync_nac_mgmt(
         report_path = write_sync_report(nac_root, report)
         print(json.dumps({"synced": len(mapping), "report": str(report_path)}, indent=2))
         return 0
+
+    metadata_path = nac_root / "nac_metadata.yaml"
+    if metadata_path.is_file():
+        metadata = load_yaml(metadata_path)
+        if str(metadata.get("mgmt_ipv6_mode", "")).lower() == "static":
+            report = {
+                "mode": "static",
+                "skipped": True,
+                "reason": "static IPv6 OOB inventory complete at generate time",
+            }
+            report_path = write_sync_report(nac_root, report)
+            print(
+                "INFO: static IPv6 OOB — inventory complete at generate time; "
+                "skipping live sync.",
+                file=sys.stderr,
+            )
+            print(json.dumps({"skipped": True, "report": str(report_path)}, indent=2))
+            return 0
 
     if not lab_id:
         print("--lab-id is required unless --mapping-file is provided", file=sys.stderr)
