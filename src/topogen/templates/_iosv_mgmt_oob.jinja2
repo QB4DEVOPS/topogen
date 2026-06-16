@@ -11,10 +11,6 @@
 {%- set ipv4_dhcp = mgmt.ipv4_dhcp | default(false) %}
 {%- set ipv6_mode = mgmt.ipv6_mode | default(none) %}
 {%- set ipv6_only = ipv6_mode and not ipv4_dhcp %}
-{%- if ipv6_mode and ipv6_mode != 'static' %}
-ipv6 unicast-routing
-!
-{%- endif %}
 {%- if mgmt.vrf %}
 {%- if ipv6_mode %}
 vrf definition {{ mgmt.vrf }}
