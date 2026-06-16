@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.7
-Date Modified: 2026-06-13
+Doc Version: v1.9.8
+Date Modified: 2026-06-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
