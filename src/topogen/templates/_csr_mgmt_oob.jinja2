@@ -45,6 +45,7 @@ interface GigabitEthernet{{ mgmt.slot }}
     {%- endif %}
     {%- if ipv6_mode %}
     ipv6 enable
+    ipv6 nd ra suppress all
     {%- if ipv6_mode == 'slaac' %}
     ipv6 address autoconfig
     {%- elif ipv6_mode == 'dhcpv6' %}
