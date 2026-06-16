@@ -52,6 +52,7 @@ interface GigabitEthernet0/{{ mgmt.slot }}
     {%- endif %}
     {%- if ipv6_mode %}
     ipv6 enable
+    ipv6 nd ra suppress all
     {%- if ipv6_mode == 'slaac' %}
     {% include '_static_link_local.jinja2' %}
     ipv6 address autoconfig
