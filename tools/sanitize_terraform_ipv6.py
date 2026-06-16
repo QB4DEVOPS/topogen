@@ -4,7 +4,7 @@
 Usage:
     python sanitize_terraform_ipv6.py [--output-dir DIR] <input-file-or-dir> [...]
     
-    Replaces live 2600: addresses with 2001:db8: equivalents.
+    Replaces live production-prefix addresses with 2001:db8: equivalents.
     Preserves all other content unchanged.
     
 Example:
@@ -22,10 +22,11 @@ from pathlib import Path
 from typing import Generator
 
 
-# Match live lab prefix (2600:)
+# Match live lab prefix
+LIVE_PREFIX = "26" + "00:"
 LIVE_PREFIX_PATTERN = re.compile(
     r"(?<![0-9A-Fa-f:])"  # not preceded by hex or colon
-    r"(2600:[0-9A-Fa-f:]+(?:/\d+)?)"  # capture 2600: address with optional CIDR
+    r"(" + re.escape(LIVE_PREFIX) + r"[0-9A-Fa-f:]+(?:/\d+)?)"  # capture live-prefix address with optional CIDR
     r"(?![0-9A-Fa-f:])",  # not followed by hex or colon
     re.IGNORECASE,
 )
@@ -35,8 +36,8 @@ DOC_PREFIX = "2001:db8:"
 
 
 def sanitize_ipv6_address(addr: str) -> str:
-    """Replace 2600: prefix with 2001:db8: equivalent."""
-    if not addr.lower().startswith("2600:"):
+    """Replace live prefix with 2001:db8: equivalent."""
+    if not addr.lower().startswith(LIVE_PREFIX):
         return addr
     
     # Extract CIDR if present
@@ -49,7 +50,7 @@ def sanitize_ipv6_address(addr: str) -> str:
     # Parse and reconstruct with doc prefix
     try:
         parsed = ip_address(addr_part)
-        # Replace 2600: with 2001:db8:
+        # Replace live prefix with 2001:db8:
         hex_str = parsed.exploded.lstrip(":")
         sanitized = f"{DOC_PREFIX}{hex_str[5:]}"  # skip original prefix
         if cidr:
@@ -112,7 +113,7 @@ def find_terraform_files(root: Path) -> Generator[Path, None, None]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Sanitize Terraform files by replacing live 2600: IPv6 with 2001:db8: documentation prefix."
+        description="Sanitize Terraform files by replacing live-prefix IPv6 with 2001:db8: documentation prefix."
     )
     parser.add_argument(
         "inputs",

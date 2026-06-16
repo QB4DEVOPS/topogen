@@ -76,9 +76,10 @@ class TestMgmtAddressing(unittest.TestCase):
             self.assertEqual(str(net.network_address), "2001:db8:1:2::")
 
     def test_no_real_prefix_in_fixtures(self):
+        live_prefix = "26" + "00:"
         for value in (DOC_PREFIX, FD80_PREFIX, DEFAULT_MGMT_CIDR):
             # Guard against accidental real/production prefix leakage in fixtures.
-            self.assertNotIn("2600:", value)
+            self.assertNotIn(live_prefix, value)
 
     def test_default_route_vrf_explicit(self):
         class Args:

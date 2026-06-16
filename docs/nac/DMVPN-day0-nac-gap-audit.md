@@ -222,19 +222,19 @@ The table in `DEVELOPER.md` § “NaC DMVPN coverage matrix (TG-162)” remains 
 
 ## Jira breakdown (created)
 
-**Epic:** [TG-170](https://roberthosford.atlassian.net/browse/TG-170) — DMVPN day-0 ≡ NaC — close projection gaps and track nac-iosxe upstream  
-**Prior audit (Done):** [TG-162](https://roberthosford.atlassian.net/browse/TG-162) — relates to TG-170
+**Epic:** TG-170 — DMVPN day-0 ≡ NaC — close projection gaps and track nac-iosxe upstream  
+**Prior audit (Done):** TG-162 — relates to TG-170
 
 | Key | Type | Summary |
 |-----|------|---------|
-| [TG-171](https://roberthosford.atlassian.net/browse/TG-171) | Story | Emit IKEv2-PKI crypto in NaC when nac-iosxe schema supports it |
-| [TG-172](https://roberthosford.atlassian.net/browse/TG-172) | Story | Guard DMVPN tunnel protection when crypto body is absent in NaC |
-| [TG-173](https://roberthosford.atlassian.net/browse/TG-173) | Task | Design multi-hub DMVPN NaC hub vs spoke role model |
-| [TG-174](https://roberthosford.atlassian.net/browse/TG-174) | Task | Upstream spike: nac-iosxe NHRP, mGRE mode, and tunnel-key |
-| [TG-175](https://roberthosford.atlassian.net/browse/TG-175) | Task | Upstream spike: EIGRP routing strategy for DMVPN NaC |
-| [TG-176](https://roberthosford.atlassian.net/browse/TG-176) | Story | FVRF + IKEv2-PSK DMVPN NaC regression coverage |
-| [TG-177](https://roberthosford.atlassian.net/browse/TG-177) | Task | Wire DMVPN day-0 NaC gap audit script into CI or release checklist |
-| [TG-178](https://roberthosford.atlassian.net/browse/TG-178) | Story | 3-hub + PKI DMVPN live validation playbook |
+| TG-171 | Story | Emit IKEv2-PKI crypto in NaC when nac-iosxe schema supports it |
+| TG-172 | Story | Guard DMVPN tunnel protection when crypto body is absent in NaC |
+| TG-173 | Task | Design multi-hub DMVPN NaC hub vs spoke role model |
+| TG-174 | Task | Upstream spike: nac-iosxe NHRP, mGRE mode, and tunnel-key |
+| TG-175 | Task | Upstream spike: EIGRP routing strategy for DMVPN NaC |
+| TG-176 | Story | FVRF + IKEv2-PSK DMVPN NaC regression coverage |
+| TG-177 | Task | Wire DMVPN day-0 NaC gap audit script into CI or release checklist |
+| TG-178 | Story | 3-hub + PKI DMVPN live validation playbook |
 
 ### Original proposed breakdown (for reference)
 
