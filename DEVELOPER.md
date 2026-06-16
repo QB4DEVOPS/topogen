@@ -294,7 +294,7 @@ Pitfall:
 
 - `CHANGES.md`: what changed between released versions
 
-- `TODO.md`: optional maintainer notes (not guaranteed implemented); internal backlog is tracked in Jira (TG project on roberthosford.atlassian.net)
+- `TODO.md`: optional maintainer notes (not guaranteed implemented); internal backlog is tracked in Jira (TG project)
 
 
 

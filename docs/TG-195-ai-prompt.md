@@ -4,10 +4,10 @@
 
 You are implementing **TG-195** in the topogen repo.
 
-- **Jira:** [TG-195](https://roberthosford.atlassian.net/browse/TG-195)
+- **Jira:** TG-195
 - **Canonical remote:** `https://wwwin-github.cisco.com/rohosfor/topogen.git` (`cisco` remote)
 - **Branch:** `TG-195-static-ipv6-oob` (from `cisco/main` — includes TG-194 `--cml-server`)
-- **Parent epic:** [TG-189](https://roberthosford.atlassian.net/browse/TG-189) (IPv6 on OOB management plane)
+- **Parent epic:** TG-189 (IPv6 on OOB management plane)
 - **Prerequisites (Done on `cisco/main`):**
   - **TG-190** — dynamic OOB IPv6 (`--mgmt-ipv6-dhcp`, `--mgmt-ipv6-slaac`, legacy `--mgmt-ipv6-mode`)
   - **TG-191** — NaC mgmt sync scaffold (`nac/sync-nac-mgmt.py`, `nac_mgmt_sync.py`)

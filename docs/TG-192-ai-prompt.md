@@ -279,7 +279,7 @@ terraform -chdir=out/TG-192-smoke/cml2 destroy -auto-approve
 - [ ] `scripts/validate-tg192-pipeline.ps1` passes offline; live path documented
 - [ ] Pipeline uses emitted `nac/sync-nac-mgmt.py` (not `scripts/` hunt)
 - [ ] Tests pass; `CHANGES.md` updated; `TODO.md` marks TG-192 done
-- [ ] PR opened and merged on **cisco** (`wwwin-github.cisco.com`); TG-192 closed in Jira
+- [ ] PR opened and merged on **cisco**; TG-192 closed in Jira
 
 ---
 

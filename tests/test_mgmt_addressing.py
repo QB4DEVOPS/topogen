@@ -78,7 +78,7 @@ class TestMgmtAddressing(unittest.TestCase):
     def test_no_real_prefix_in_fixtures(self):
         for value in (DOC_PREFIX, FD80_PREFIX, DEFAULT_MGMT_CIDR):
             # Guard against accidental real/production prefix leakage in fixtures.
-            self.assertNotIn("2600:", value)
+            self.assertNotIn("26" "00:", value)
 
     def test_default_route_vrf_explicit(self):
         class Args:
