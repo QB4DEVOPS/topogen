@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.4
-# Date Modified: 2026-06-08
+# Doc Version: v1.0.5
+# Date Modified: 2026-06-14
 #
 # - Called by: pip/uv installers, build tools (hatchling), package managers (PyPI)
 # - Reads from: Project metadata, dependency specs, entry point definitions
@@ -62,6 +62,7 @@ dependencies = [
   "jinja2>=3",
   "networkx>=3",
   "pyserde[toml]>=0.22.2",
+  "pyyaml>=6",
   "virl2-client>=2.7.0",
 ]
 
