@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.2
-# Date Modified: 2026-06-16
+# Doc Version: v1.0.1
+# Date Modified: 2026-06-13
 #
 # - Called by: iosv*.jinja2 templates via {% include %}
 # - Reads from: mgmt context (ipv4_dhcp, ipv6_mode, mgmt_vrf, slot)
@@ -11,6 +11,10 @@
 {%- set ipv4_dhcp = mgmt.ipv4_dhcp | default(false) %}
 {%- set ipv6_mode = mgmt.ipv6_mode | default(none) %}
 {%- set ipv6_only = ipv6_mode and not ipv4_dhcp %}
+{%- if ipv6_mode and ipv6_mode != 'static' %}
+ipv6 unicast-routing
+!
+{%- endif %}
 {%- if mgmt.vrf %}
 {%- if ipv6_mode %}
 vrf definition {{ mgmt.vrf }}
@@ -48,7 +52,6 @@ interface GigabitEthernet0/{{ mgmt.slot }}
     {%- endif %}
     {%- if ipv6_mode %}
     ipv6 enable
-    ipv6 nd ra suppress all
     {%- if ipv6_mode == 'slaac' %}
     {% include '_static_link_local.jinja2' %}
     ipv6 address autoconfig

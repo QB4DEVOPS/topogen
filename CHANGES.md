@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.21
-Date Modified: 2026-06-15
+Doc Version: v1.3.20
+Date Modified: 2026-06-13
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,9 +20,6 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
-  - chore(repo): ignore runtime NaC mgmt sync artifacts in nested nac workspaces
-    - Added ignore patterns for generated runtime files that can contain live management addressing data: `nac/router-hosts.csv`, `nac/mgmt_sync.json`, and `**/router-hosts.csv`.
-    - Files: .gitignore, CHANGES.md
   - feat(mgmt): static IPv6 OOB from explicit `/64` anchor with FF10 embedding (TG-195)
     - `--mgmt-ipv6-static` + required `--mgmt-ipv6-cidr /64` render deterministic global `ipv6 address` on IOSv/CSR OOB (routers only). Optional `--mgmt-ipv6-static-link-local` adds loopback-derived `fe80::FF10:…` on OOB. Routers are IPv6 hosts only — no `ipv6 unicast-routing` in static mode (routing deferred). NaC `ansible_host` populated at generate time; `sync-nac-mgmt.py` skips live poll when `mgmt_ipv6_mode: static`. Examples use `fd80::/64` or `2001:db8:1:2::/64` only.
     - Files: src/topogen/mgmt_addressing.py (rev v1.0.1), src/topogen/main.py, src/topogen/render.py, src/topogen/models.py, src/topogen/nac.py, src/topogen/nac_mgmt_sync.py, src/topogen/templates/_static_link_local.jinja2 (rev v1.0.0), src/topogen/templates/_iosv_mgmt_oob.jinja2, src/topogen/templates/_csr_mgmt_oob.jinja2, tests/test_mgmt_addressing.py (rev v1.0.0), tests/test_mgmt_ipv6_vrf.py, tests/test_nac_cli_guardrails.py, tests/test_nac_writer.py, docs/TG-195-ai-prompt.md, DEVELOPER.md, README.md, TODO.md, CHANGES.md

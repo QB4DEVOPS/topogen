@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.3
-# Date Modified: 2026-06-14
+# Doc Version: v1.1.1
+# Date Modified: 2026-06-13
 #
 # Purpose: TG-190 CP1 — offline render asserts for OOB IPv6 mgmt in VRF.
 # Blast Radius: Test-only.
@@ -325,13 +325,12 @@ class TestMgmtIpv6VrfOfflineRender(unittest.TestCase):
                 "slaac",
             ]
         )
-        # Match only true stanza headers, not alias lines.
-        self.assertEqual(len(re.findall(r"(?m)^interface GigabitEthernet0/5\b", config)), 1)
+        self.assertEqual(len(re.findall(r"interface GigabitEthernet0/5\b", config)), 1)
         oob = _oob_block(config, r"GigabitEthernet0/5")
         self.assertIn("no shutdown", oob)
         self.assertNotRegex(oob, r"(?m)^\s+shutdown\s*$")
         after_oob = config.split(oob, 1)[-1]
-        self.assertNotRegex(after_oob, r"(?m)^interface GigabitEthernet0/5\b")
+        self.assertNotRegex(after_oob, r"interface GigabitEthernet0/5\b")
 
     def test_iosv_bootstrap_ipv6_slaac_uses_vrf_definition(self):
         cfg = Config(
@@ -432,7 +431,7 @@ class TestMgmtIpv6StaticOfflineRender(unittest.TestCase):
         self.assertIn("ipv6 enable", oob)
         self.assertIn("vrf forwarding Mgmt-vrf", oob)
         self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
-        self.assertIn("ipv6 unicast-routing", config)
+        self.assertNotIn("ipv6 unicast-routing", config)
 
     def test_iosv_static_global_r2(self):
         config = self._run_offline_config(self._STATIC_BASE, label="R2")
@@ -490,7 +489,7 @@ class TestMgmtIpv6StaticOfflineRender(unittest.TestCase):
         self.assertNotIn("ipv6 address fd80::FF10:254:0:1/64", oob)
         self.assertNotIn("FF10:254", oob)
         self.assertIn(
-            "alias exec topogen-test show ipv6 int GigabitEthernet0/5",
+            "alias exec topogen-test show ipv6 interface GigabitEthernet0/5",
             config,
         )
 
