@@ -432,7 +432,7 @@ class TestMgmtIpv6StaticOfflineRender(unittest.TestCase):
         self.assertIn("ipv6 enable", oob)
         self.assertIn("vrf forwarding Mgmt-vrf", oob)
         self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
-        self.assertNotIn("ipv6 unicast-routing", config)
+        self.assertIn("ipv6 unicast-routing", config)
 
     def test_iosv_static_global_r2(self):
         config = self._run_offline_config(self._STATIC_BASE, label="R2")
