@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.1
-# Date Modified: 2026-06-13
+# Doc Version: v1.5.2
+# Date Modified: 2026-06-16
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -394,8 +394,6 @@ def _build_mgmt_context(
     if getattr(args, "mgmt_ipv6_gw", None):
         ctx["ipv6_gw_vrf"] = mgmt_ipv6_default_route_vrf(args)
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
-    if ipv6_mode == "static" and router_index is None:
-        return ctx
     if ipv6_mode:
         ctx["ipv6_mode"] = ipv6_mode
         ctx["ipv6_static_link_local"] = bool(
@@ -843,7 +841,7 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
 
     ipv6_mode = getattr(args, "mgmt_ipv6_mode", None)
     ipv4_dhcp = bool(getattr(args, "mgmt_ipv4_dhcp", False))
-    if ipv6_mode and ipv6_mode != "static":
+    if ipv6_mode:
         lines.extend(["ipv6 unicast-routing", "!"])
 
     if mgmt_vrf:

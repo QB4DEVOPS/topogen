@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.3
-# Date Modified: 2026-06-13
+# Doc Version: v1.1.4
+# Date Modified: 2026-06-16
 #
 # - Called by: src/topogen/render.py (Jinja render step)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp, eigrp_stub)
@@ -19,6 +19,9 @@ ip subnet-zero
 ip domain lookup
 ip name-server {{ config.nameserver }}
 ip domain name {{ config.domainname }}
+{%- if mgmt and mgmt.enabled and mgmt.ipv6_mode %}
+ipv6 unicast-routing
+{%- endif %}
 crypto key generate rsa modulus 2048
 ip ssh version 2
 ip ssh server algorithm authentication password

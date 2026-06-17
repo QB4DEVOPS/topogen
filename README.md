@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.12
-Date Modified: 2026-06-13
+Doc Version: v1.8.13
+Date Modified: 2026-06-16
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -1017,7 +1017,7 @@ All modes (`simple`, `nx`, `flat`, `flat-pair`, `dmvpn`) support an optional out
 - `--mgmt-ipv4-dhcp`: IPv4 DHCP on OOB Gi (`ip address dhcp`); implied when `--mgmt-bridge` with no other addressing flags
 - `--mgmt-ipv6-dhcp`: IPv6 DHCPv6 on OOB Gi (`ipv6 address dhcp`); requires named `--mgmt-vrf`
 - `--mgmt-ipv6-slaac`: IPv6 SLAAC on OOB Gi (`ipv6 address autoconfig`); requires named `--mgmt-vrf`
-- `--mgmt-ipv6-static`: static global IPv6 on OOB Gi; requires `--mgmt`, named `--mgmt-vrf`, and `--mgmt-ipv6-cidr /64` (IPv6 host — no `ipv6 unicast-routing`)
+- `--mgmt-ipv6-static`: static global IPv6 on OOB Gi; requires `--mgmt`, named `--mgmt-vrf`, and `--mgmt-ipv6-cidr /64` (emits `ipv6 unicast-routing`, consistent with SLAAC/DHCPv6)
 - `--mgmt-ipv6-static-link-local`: with static global, also render loopback-derived `fe80::FF10:…` link-local on OOB
 - `--mgmt-ipv6-mode {slaac,dhcpv6}`: legacy alias for the two dynamic IPv6 flags above
 - `--mgmt-ipv6-cidr PREFIX`: **required** with `--mgmt-ipv6-static` (`/64` anchor); optional metadata hint for SLAAC/DHCPv6
@@ -1042,7 +1042,7 @@ Example (static IPv6 OOB, no live sync, documentation prefix):
 topogen -m flat 2 -T iosv --device-template iosv --mgmt --mgmt-vrf Mgmt-vrf `
   --mgmt-ipv6-static --mgmt-ipv6-cidr 2001:db8:1:2::/64 `
   --cml-server 2.10 --nac --offline-yaml out/static-v6.yaml --overwrite
-# R1 OOB: ipv6 address 2001:db8:1:2:FF10:254:0:1/64 (no ipv6 unicast-routing)
+# R1 OOB: ipv6 address 2001:db8:1:2:FF10:254:0:1/64 (with ipv6 unicast-routing)
 ```
 
 #### Verifying connectivity (IPv6 OOB)

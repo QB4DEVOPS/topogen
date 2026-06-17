@@ -4,8 +4,8 @@
 #          Used for both regular routers and PKI CA when --pki flag is enabled.
 #
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.3.2
-# Date Modified: 2026-06-13
+# Doc Version: v1.3.3
+# Date Modified: 2026-06-16
 #
 # - Called by: src/topogen/render.py (Jinja render step in offline_flat_yaml)
 # - Reads from: Jinja context (config, node, plus feature flags: mgmt, ntp)
@@ -41,6 +41,9 @@ ip subnet-zero
 ip domain lookup
 ip name-server {{ config.nameserver }}
 ip domain name {{ config.domainname }}
+{%- if mgmt and mgmt.enabled and mgmt.ipv6_mode %}
+ipv6 unicast-routing
+{%- endif %}
 crypto key generate rsa modulus 2048
 ip ssh version 2
 ip ssh server algorithm authentication password

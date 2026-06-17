@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.1
-# Date Modified: 2026-06-13
+# Doc Version: v1.1.2
+# Date Modified: 2026-06-16
 #
 # Purpose: TG-190 CP1 — offline render asserts for OOB IPv6 mgmt in VRF.
 # Blast Radius: Test-only.
@@ -431,7 +431,7 @@ class TestMgmtIpv6StaticOfflineRender(unittest.TestCase):
         self.assertIn("ipv6 enable", oob)
         self.assertIn("vrf forwarding Mgmt-vrf", oob)
         self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
-        self.assertNotIn("ipv6 unicast-routing", config)
+        self.assertIn("ipv6 unicast-routing", config)
 
     def test_iosv_static_global_r2(self):
         config = self._run_offline_config(self._STATIC_BASE, label="R2")
@@ -560,7 +560,7 @@ class TestMgmtIpv6StaticOfflineRender(unittest.TestCase):
             config = _extract_router_config(out_file, "R1")
             oob = _oob_block(config, r"GigabitEthernet0/5")
             self.assertIn("ipv6 address fd80::FF10:254:0:1/64", oob)
-            self.assertNotIn("ipv6 unicast-routing", config)
+            self.assertIn("ipv6 unicast-routing", config)
 
     def test_iosv_bootstrap_static_link_local(self):
         with tempfile.TemporaryDirectory() as tmp:

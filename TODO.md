@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.58
+Doc Version: v1.6.59
 Date Modified: 2026-06-13
 
 - Called by: Developers planning features, LLMs adding work items, project management
@@ -109,8 +109,9 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 See `CHANGES.md` and `README.md` for completed features.
 
 Recent completions:
+- [x] **Static IPv6 OOB emits `ipv6 unicast-routing`** — reversed TG-195's "IPv6 host only" decision so `--mgmt-ipv6-static` emits `ipv6 unicast-routing` (right after the DNS / `ip domain name` block), consistent with SLAAC/DHCPv6. Root cause: `!= "static"` guard in `_render_bootstrap_config()` (NaC `--bootstrap` path); full templates (`csr-ospf`, `csr-dmvpn`, `iosv-eigrp`) gained the conditional emit and the redundant block was removed from the OOB partials to avoid double emission. Validated across the 15-lab matrix (simple/nx/flat/flat-pair/dmvpn × static/slaac/dhcpv6 — 15/15 emit) and all 15 imported to CML 2.10 (192.168.1.183). See CHANGES.md Unreleased.
 - [x] **TG-194: `--cml-server` opt-in flag** — ([TG-194](https://roberthosford.atlassian.net/browse/TG-194), epic TG-189) Operator-facing CML controller version maps to lab YAML schema when `--cml-version` omitted; explicit `--cml-version` wins; provenance records both flags. Validated: 44 unit tests, 6 offline YAML cases, 6 live CML 2.10 imports, gap/negative CLI matrix. Branch `TG-194-cml-server-opt-in`.
-- [x] **TG-195: Static IPv6 OOB from prefix** — ([TG-195](https://roberthosford.atlassian.net/browse/TG-195), epic TG-189) `--mgmt-ipv6-static` + `--mgmt-ipv6-cidr /64` with FF10 embedding; optional `--mgmt-ipv6-static-link-local`; NaC inventory without live sync; no `ipv6 unicast-routing` (IPv6 host mode). Spec: `docs/TG-195-ai-prompt.md`.
+- [x] **TG-195: Static IPv6 OOB from prefix** — ([TG-195](https://roberthosford.atlassian.net/browse/TG-195), epic TG-189) `--mgmt-ipv6-static` + `--mgmt-ipv6-cidr /64` with FF10 embedding; optional `--mgmt-ipv6-static-link-local`; NaC inventory without live sync. Static mode now emits `ipv6 unicast-routing` (see Recent completions above; original TG-195 deferred it). Spec: `docs/TG-195-ai-prompt.md`.
 - [x] DMVPN flat and flat-pair offline NaC artifacts (TG-151): `--nac` now emits the sibling `nac/` tree for DMVPN flat and flat-pair offline YAML generation while preserving the original flat-pair CML YAML path/config when `--nac` is omitted. See CHANGES.md.
 - [x] CML2 Terraform lifecycle scaffold (`--terraform-cml2`, alias `--cml2`) for generated offline labs: emits `out/<lab>/cml2/` with `main.tf`, `versions.tf`, `variables.tf`, `outputs.tf`, and `.gitignore` targeting `CiscoDevNet/cml2` and the generated YAML through a relative path. See CHANGES.md TG-150 entry.
 - [x] Two-tier OOB management for all online modes: `render_node_network` (NX), `render_node_sequence` (simple), and `render_flat_network` (flat) now use SWoob0 (aggregation) + SWoob1..N (access) matching offline reference. Previously used a single switch that couldn't scale. See CHANGES.md.

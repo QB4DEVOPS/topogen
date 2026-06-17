@@ -1,6 +1,6 @@
 {# File Chain (see DEVELOPER.md):
-# Doc Version: v1.0.1
-# Date Modified: 2026-06-13
+# Doc Version: v1.0.2
+# Date Modified: 2026-06-16
 #
 # - Called by: csr*.jinja2 templates via {% include %}
 # - Reads from: mgmt context (ipv4_dhcp, ipv6_mode, mgmt_vrf, slot)
@@ -12,10 +12,6 @@
 {%- set ipv4_dhcp = mgmt.ipv4_dhcp | default(false) %}
 {%- set ipv6_mode = mgmt.ipv6_mode | default(none) %}
 {%- set ipv6_only = ipv6_mode and not ipv4_dhcp %}
-{%- if ipv6_mode and ipv6_mode != 'static' %}
-ipv6 unicast-routing
-!
-{%- endif %}
 {%- if mgmt.vrf %}
 vrf definition {{ mgmt.vrf }}
  rd 1:{{ mgmt.slot }}
