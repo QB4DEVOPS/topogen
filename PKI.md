@@ -1,12 +1,12 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.0.2
-Date Modified: 2026-03-24
+Doc Version: v1.0.3
+Date Modified: 2026-09-21
 
 - Called by: Users and developers using or troubleshooting TopoGen PKI (--pki, DMVPN IKEv2 PKI)
-- Reads from: README.md, TODO.md, CHANGES.md, examples/eem-*.txt, render.py PKI helpers
+- Reads from: README.md, docs/USER-GUIDE.md, TODO.md, CHANGES.md, examples/eem-*.txt, render.py PKI helpers
 - Writes to: None (documentation only)
-- Calls into: References README, TODO, CHANGES, DEVELOPER
+- Calls into: References README, docs/USER-GUIDE.md, TODO, CHANGES, DEVELOPER
 
 Purpose: Single reference for TopoGen PKI: flags, CA-ROOT and client behavior, EEM applets,
          boot order requirements, known issues, and troubleshooting (including auto-deploy certs).
@@ -32,7 +32,7 @@ This document describes TopoGen’s PKI (Public Key Infrastructure) support: the
 | `--pki` | Add CA-ROOT node; inject trustpoint CA-ROOT-SELF on non-CA routers (flat, flat-pair, DMVPN). |
 | `--dmvpn-security ikev2-pki` | Use IKEv2 with RSA-sig and trustpoint CA-ROOT-SELF for DMVPN (requires `--pki`). |
 
-CA IP is derived from the NBMA/addressing (e.g. last usable in NBMA CIDR). See [README](README.md) for full CLI and examples.
+CA IP is derived from the NBMA/addressing (e.g. last usable in NBMA CIDR). See [docs/USER-GUIDE.md](docs/USER-GUIDE.md) for CLI examples.
 
 ## CA-ROOT and clients
 
@@ -150,7 +150,8 @@ Or build as list of lines and join. Ensure the EEM block is appended before `ca_
 
 ## References
 
-- [README.md](README.md) — CLI, modes, examples (flat, DMVPN, PKI, archive).
+- [README.md](README.md) — install and first lab.
+- [docs/USER-GUIDE.md](docs/USER-GUIDE.md) — modes, examples (flat, DMVPN, PKI, archive).
 - [TODO.md](TODO.md) — EEM status table, Feature: Auto-deploy PKI/certs, Promote to Issues (detailed fix descriptions), Future ideas (`--pki-ca-fingerprint`, `--pki-scep`, etc.).
 - [CHANGES.md](CHANGES.md) — Release history (EEM timers, injection order, IKEv2 PKI, feat/pki-ca).
 - [DEVELOPER.md](DEVELOPER.md) — File chains, render.py, templates.

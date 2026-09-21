@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.2.0
-Date Modified: 2026-06-03
+Doc Version: v1.2.1
+Date Modified: 2026-09-21
 
 - Called by: Developers implementing TG-116, TG-117, TG-121
 - Reads from: Canonical NaC model expectations for one-router IOS-XE output
@@ -20,7 +20,7 @@ the implementation target for TG-116, TG-117, and TG-121.
 > **Superseded (TG-131 v3).** This describes the original device-level model
 > (`hostname`/`platform`/`role`/`mgmt`). The shipped `--nac` MVP targets the official
 > `netascode/nac-iosxe` schema (`iosxe.devices[].configuration.*`) and no longer emits
-> `terraform.tfvars.json`. For the current contract see `README.md` (NaC MVP scope),
+> `terraform.tfvars.json`. For the current contract see `docs/USER-GUIDE.md` (NaC MVP scope),
 > `docs/nac/mapping-matrix.md`, and the golden fixtures under
 > `tests/fixtures/nac/golden-flat-*`. The sections below are retained for historical context.
 
