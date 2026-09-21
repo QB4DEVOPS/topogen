@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.6.58
-Date Modified: 2026-06-13
+Doc Version: v1.6.59
+Date Modified: 2026-09-21
 
 - Called by: Developers planning features, LLMs adding work items, project management
 - Reads from: Developer input, user requests, issue tracker
@@ -106,9 +106,10 @@ Script bodies live in `examples/`. Check off when confirmed working on device.
 
 ## Done
 
-See `CHANGES.md` and `README.md` for completed features.
+See `CHANGES.md` and `docs/USER-GUIDE.md` for completed features.
 
 Recent completions:
+- [x] **README split: install/first-lab vs user guide** — `README.md` is install + first lab only. Full modes/examples/NaC/OOB/PKI live in `docs/USER-GUIDE.md`. `topogen --help` is the flag contract (no pasted help dump). Closes Future ideas: trim README, rework `--help` block, diagrams/scale examples in the user guide.
 - [x] **TG-194: `--cml-server` opt-in flag** — ([TG-194](https://roberthosford.atlassian.net/browse/TG-194), epic TG-189) Operator-facing CML controller version maps to lab YAML schema when `--cml-version` omitted; explicit `--cml-version` wins; provenance records both flags. Validated: 44 unit tests, 6 offline YAML cases, 6 live CML 2.10 imports, gap/negative CLI matrix. Branch `TG-194-cml-server-opt-in`.
 - [x] **TG-195: Static IPv6 OOB from prefix** — ([TG-195](https://roberthosford.atlassian.net/browse/TG-195), epic TG-189) `--mgmt-ipv6-static` + `--mgmt-ipv6-cidr /64` with FF10 embedding; optional `--mgmt-ipv6-static-link-local`; NaC inventory without live sync; no `ipv6 unicast-routing` (IPv6 host mode). Spec: `docs/TG-195-ai-prompt.md`.
 - [x] DMVPN flat and flat-pair offline NaC artifacts (TG-151): `--nac` now emits the sibling `nac/` tree for DMVPN flat and flat-pair offline YAML generation while preserving the original flat-pair CML YAML path/config when `--nac` is omitted. See CHANGES.md.
@@ -330,10 +331,10 @@ Recent completions:
 - [ ] Prepopulate Gooey GUI from existing YAML metadata (low effort).
   - Why: Add "Load from YAML" file chooser to parse `topogen:` block and auto-fill fields; unlocks quick interactive edits/tweaks in GUI without retyping params.
 
-- [ ] Update README with topology diagrams and scale examples (low effort).
+- [x] ~~Update README with topology diagrams and scale examples (low effort).~~ Done — diagrams and scale examples live in `docs/USER-GUIDE.md`.
   - Why: Add visuals for flat star vs. pair topologies and command examples (e.g., 300-node flat lab); makes the project more approachable and helps users understand scale capabilities.
 
-- [ ] Rework README `--help` output block to prevent CLI drift (low effort).
+- [x] ~~Rework README `--help` output block to prevent CLI drift (low effort).~~ Done — option (b): no pasted `--help` in Markdown; run `topogen --help`. Examples live in `docs/USER-GUIDE.md`.
   - Why: The embedded `topogen --help` block in README can silently drift from `main.py` as new flags are added (e.g., `--pki`, `--mgmt`).
   - Options: (a) Auto-generate from `topogen --help` during release, (b) Replace with "run `topogen --help` for current flags" and link to DEVELOPER.md for flag details, (c) Add a CI check that diffs README help block against actual CLI output.
   - Blast radius: README.md only (documentation, no code changes).
@@ -344,7 +345,7 @@ Recent completions:
   - When: Implement when a CI/CD pipeline or automation script needs to consume the output programmatically.
   - Blast radius: render.py (4 offline write paths), no behavior change to existing log lines.
 
-- [ ] Trim and reorganize README.md for readability (low effort).
+- [x] ~~Trim and reorganize README.md for readability (low effort).~~ Done — README is install + first lab; encyclopedia moved to `docs/USER-GUIDE.md`.
   - Why: README has grown large with inline help output, detailed examples, and mixed audiences (end-users vs contributors). Makes it harder to scan and find what you need.
   - Options: (a) Move contributor/developer content to DEVELOPER.md, (b) Collapse verbose sections behind summary headings, (c) Replace inline `--help` block with a link (pairs with the help-drift item above).
   - Blast radius: README.md only (documentation, no code changes).

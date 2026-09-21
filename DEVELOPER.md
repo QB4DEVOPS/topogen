@@ -1,12 +1,12 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.7
-Date Modified: 2026-06-13
+Doc Version: v1.9.8
+Date Modified: 2026-09-21
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
 - Writes to: None (documentation only, but guides all development)
-- Calls into: References README.md, TESTED.md, CONTRIBUTING.md, TODO.md, code files
+- Calls into: References README.md, docs/USER-GUIDE.md, TESTED.md, CONTRIBUTING.md, TODO.md, code files
 
 Purpose: Developer-oriented guide to TopoGen codebase, file chains, validation, and workflows.
          Primary reference for understanding code structure, dependencies, and development process.
@@ -28,7 +28,9 @@ This file is a developer-oriented starting point for TopoGen.
 
 - If you are new here, read:
 
-  - `README.md` (user-facing behavior and examples)
+  - `README.md` (install and first lab)
+
+  - `docs/USER-GUIDE.md` (modes, examples, NaC, OOB, PKI)
 
   - `DEVELOPER.md` (this file)
 
@@ -288,9 +290,11 @@ Pitfall:
 
 - `src/topogen/templates/*.jinja2`: emitted device configuration (what nodes boot with)
 
-- `README.md`: user-facing CLI contract and examples
+- `README.md`: install and first lab only. Do not put flag encyclopedias or pasted `--help` here.
 
-- **DMVPN node count:** In DMVPN mode (default, no `--dmvpn-hubs`), `nodes` is the number of **spokes**; R1 is the hub. So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers). See README for `--dmvpn-hubs` and flat-pair semantics.
+- `docs/USER-GUIDE.md`: user-facing examples, modes, NaC, OOB, PKI. Current flags: `topogen --help` (`src/topogen/main.py`).
+
+- **DMVPN node count:** In DMVPN mode (default, no `--dmvpn-hubs`), `nodes` is the number of **spokes**; R1 is the hub. So **total router count = nodes + 1** (e.g. `nodes=5` → R1 hub + R2–R6 spokes = 6 routers). See `docs/USER-GUIDE.md` for `--dmvpn-hubs` and flat-pair semantics.
 
 - `CHANGES.md`: what changed between released versions
 
@@ -665,7 +669,7 @@ If you extend NaC scope:
 1. Update CLI and render guardrails (`main.py`, `render.py`)
 2. Ensure the renderer collects deterministic `nac_router_nodes`
 3. Call `_write_nac_tree_if_enabled(...)` (or equivalent) in that offline path
-4. Update docs (`README.md`, `CHANGES.md`, this file)
+4. Update docs (`docs/USER-GUIDE.md` for examples/flags, `README.md` only if install/first-lab changes, `CHANGES.md`, this file)
 5. Add or adjust the tests in the table above
 
 Tests (run when touching staging / PKI boot order):
@@ -751,7 +755,7 @@ If you extend CML2 lifecycle scope:
 1. Update guardrails first (`main.py`)
 2. Keep output under `out/<lab>/cml2/`
 3. Keep connection settings as Terraform variables or environment-provided values
-4. Update docs (`README.md`, `CHANGES.md`, this file)
+4. Update docs (`docs/USER-GUIDE.md` for examples/flags, `README.md` only if install/first-lab changes, `CHANGES.md`, this file)
 5. Add or adjust the tests in the table above
 
 
@@ -814,7 +818,9 @@ Nice to have:
 
 
 
-- `README.md` (user docs)
+- `README.md` (install / first lab)
+
+- `docs/USER-GUIDE.md` (user reference)
 
 - `CHANGES.md` (release notes)
 
@@ -930,7 +936,7 @@ When adding a feature:
 
 3) implement emitted config lines in the relevant template(s)
 
-4) update README.md + CHANGES.md
+4) update `docs/USER-GUIDE.md` + CHANGES.md (`README.md` only if install/first-lab changes)
 
 5) validate with an offline YAML lab and (if applicable) an online controller run
 
@@ -963,7 +969,7 @@ Unless a task explicitly requires otherwise:
 
   - `src/topogen/templates/*.jinja2` (emitted device config)
 
-  - Docs: `README.md`, `CHANGES.md`, `DEVELOPER.md`
+  - Docs: `docs/USER-GUIDE.md`, `CHANGES.md` (`README.md` only if install/first-lab changes), `DEVELOPER.md`
 
 
 
@@ -1011,7 +1017,7 @@ Unless a task explicitly requires otherwise:
 
   - `src/topogen/templates/*.jinja2` (emit config)
 
-  - Docs: `README.md`, `CHANGES.md`
+  - Docs: `docs/USER-GUIDE.md`, `CHANGES.md` (`README.md` only if install/first-lab changes)
 
 
 
@@ -1021,7 +1027,7 @@ Unless a task explicitly requires otherwise:
 
   - `src/topogen/models.py` (only if new per-node/per-link fields are needed)
 
-  - Docs: `README.md` (if user-visible)
+  - Docs: `docs/USER-GUIDE.md` (if user-visible); `README.md` only if install/first-lab changes
 
 
 
@@ -1037,7 +1043,7 @@ Unless a task explicitly requires otherwise:
 
   - `src/topogen/render.py` (calls `virl2_client`)
 
-  - Docs: `README.md` (env vars / flags)
+  - Docs: `docs/USER-GUIDE.md` (env vars / flags); `README.md` only if the first-lab CML env snippet changes
 
 
 
@@ -1089,7 +1095,7 @@ Typical change pattern (what got edited):
 
 - Docs
 
-  - Update `README.md` and `CHANGES.md` to reflect the new flag and its semantics.
+  - Update `docs/USER-GUIDE.md` and `CHANGES.md` to reflect the new flag and its semantics. Touch `README.md` only if install or first-lab steps change.
 
 
 
@@ -1816,7 +1822,7 @@ The standard workflow for implementing a new feature or config change:
 3. **Gen** — generate an offline YAML (`--offline-yaml out\<lab>.yaml`).
 4. **Grep** — search the generated YAML to verify the change is present (`Select-String -Path out\<lab>.yaml -Pattern "<expected line>"`).
 5. **Test** — import the YAML to CML (`--import-yaml <file> --import`), boot the lab, and validate on device.
-6. **Document** — update README.md, CHANGES.md, TODO.md, and DEVELOPER.md per the Doc Versioning rules.
+6. **Document** — update `docs/USER-GUIDE.md` (examples/flags), `CHANGES.md`, `TODO.md`, and `DEVELOPER.md` per the Doc Versioning rules. Touch `README.md` only if install or first-lab steps change.
 
 **Important:** Do not skip step 1. Manual device testing catches IOS parser issues, ordering dependencies, and behavioral surprises that offline generation cannot reveal.
 
@@ -1827,8 +1833,7 @@ or records CLI behavior. Do not assume argparse parameters are automatically
 reflected in generated lab metadata.
 
 - Parser/help: update `src/topogen/main.py` so `--help` text is accurate.
-- User docs: update `README.md` examples and refresh the embedded `--help` block
-  when help text or available flags change.
+- User docs: add or update examples in `docs/USER-GUIDE.md`. Do **not** paste `topogen --help` into Markdown. Touch `README.md` only if install or first-lab steps change.
 - Developer docs/changelog: update `DEVELOPER.md` and `CHANGES.md` for every new
   CLI flag or alias, even if it only exposes an existing behavior. This includes
   short aliases such as `--cml2` for `--terraform-cml2`.
@@ -1921,10 +1926,11 @@ When finishing a feature (especially anything that changes CLI flags, templates,
 
 - Update `CHANGES.md` (add an Unreleased bullet describing the change)
   - List each modified file and its new Doc Version (rev) so reviewers can see what was touched and to what rev. Example: `Files: src/topogen/render.py (rev v1.0.0), README.md (rev v1.2.1)`.
-- Update `README.md`
+- Update `README.md` only if install or first-lab steps change
+- Update `docs/USER-GUIDE.md` for user-visible flags, modes, and examples
   - Document new flags / changed semantics
   - Add or update command examples (including Phase 2/Phase 3 where applicable)
-  - Refresh the `--help` output block if new flags were added or flag descriptions changed
+  - Do **not** paste or refresh a `--help` dump; `topogen --help` is the contract
 - Update `TODO.md` (move completed items out of `## Current work` into `## Done` or remove them; add follow-ups)
 - Generate at least one small offline YAML lab to validate the change (and keep the command in the PR description)
 - Open a PR and prefer squash-merge for a clean history

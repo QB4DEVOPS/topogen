@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.20
-Date Modified: 2026-06-13
+Doc Version: v1.3.21
+Date Modified: 2026-09-21
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - docs(readme): split install/first-lab from the user reference
+    - `README.md` is install + first lab only. Full modes, examples, NaC, OOB, and PKI notes moved to `docs/USER-GUIDE.md`. Pasted `topogen --help` dump removed so flags cannot drift; run `topogen --help` for the current contract.
+    - Files: README.md (rev v1.8.12 → v1.9.0), docs/USER-GUIDE.md (rev v1.0.0), DEVELOPER.md (rev v1.9.7 → v1.9.8), PKI.md (rev v1.0.2 → v1.0.3), TODO.md (rev v1.6.58 → v1.6.59), CHANGES.md (rev v1.3.20 → v1.3.21), docs/nac/iosxe-one-router-golden-contract.md (rev v1.2.0 → v1.2.1)
   - feat(mgmt): static IPv6 OOB from explicit `/64` anchor with FF10 embedding (TG-195)
     - `--mgmt-ipv6-static` + required `--mgmt-ipv6-cidr /64` render deterministic global `ipv6 address` on IOSv/CSR OOB (routers only). Optional `--mgmt-ipv6-static-link-local` adds loopback-derived `fe80::FF10:…` on OOB. Routers are IPv6 hosts only — no `ipv6 unicast-routing` in static mode (routing deferred). NaC `ansible_host` populated at generate time; `sync-nac-mgmt.py` skips live poll when `mgmt_ipv6_mode: static`. Examples use `fd80::/64` or `2001:db8:1:2::/64` only.
     - Files: src/topogen/mgmt_addressing.py (rev v1.0.1), src/topogen/main.py, src/topogen/render.py, src/topogen/models.py, src/topogen/nac.py, src/topogen/nac_mgmt_sync.py, src/topogen/templates/_static_link_local.jinja2 (rev v1.0.0), src/topogen/templates/_iosv_mgmt_oob.jinja2, src/topogen/templates/_csr_mgmt_oob.jinja2, tests/test_mgmt_addressing.py (rev v1.0.0), tests/test_mgmt_ipv6_vrf.py, tests/test_nac_cli_guardrails.py, tests/test_nac_writer.py, docs/TG-195-ai-prompt.md, DEVELOPER.md, README.md, TODO.md, CHANGES.md
