@@ -1,12 +1,12 @@
 # This scaffold is intentionally driven by nac.yaml through yaml_files = ["nac.yaml"].
-# Supply provider connection settings with environment variables on your runner.
+# Device hosts come from nac.yaml (NETCONF/SSH port 830). Supply credentials
+# with environment variables on your runner. IOSXE_HOST is the single-device
+# fallback and is unused when nac.yaml lists a host per device.
 #
 # Bash:
-#   export IOSXE_URL="https://<lab-device-url>"
 #   export IOSXE_USERNAME="<lab-username>"
 #   export IOSXE_PASSWORD="<lab-password>"
 #
 # PowerShell:
-#   $env:IOSXE_URL = "https://<lab-device-url>"
 #   $env:IOSXE_USERNAME = "<lab-username>"
 #   $env:IOSXE_PASSWORD = "<lab-password>"

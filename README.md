@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.8.12
-Date Modified: 2026-06-13
+Doc Version: v1.8.13
+Date Modified: 2026-10-16
 
 - Called by: Users (primary entry point), package managers (PyPI), GitHub viewers
 - Reads from: None (documentation only)
@@ -123,7 +123,7 @@ Deploy device config from the generated tree (after the lab is reachable):
 
 ```powershell
 terraform -chdir=out\<lab>\nac init
-# Set IOSXE_USERNAME, IOSXE_PASSWORD, IOSXE_URL (and lab mgmt reachability) in the shell
+# Set IOSXE_USERNAME and IOSXE_PASSWORD. Hosts come from nac.yaml (NETCONF TCP 830).
 terraform -chdir=out\<lab>\nac plan
 terraform -chdir=out\<lab>\nac apply
 ```
@@ -146,22 +146,49 @@ For `--offline-yaml out/<lab>.yaml --nac`, output layout is:
 
 Toolchain pins (in the generated Terraform):
 
-- Module: `netascode/nac-iosxe/iosxe` `0.1.0` (transitively pulls `netascode/utils` `1.1.0-beta3`)
-- Provider: `CiscoDevNet/iosxe` `0.15.0`
-- Terraform: `>= 1.8.0`
+- Module: `netascode/nac-iosxe/iosxe` `1.0.0` (requires `netascode/utils` `>= 2.0.2, < 3.0.0`; v1.0.0 renders the model with `provider::utils::render_device_configs`)
+- Provider: `CiscoDevNet/iosxe` `1.1.1` (module constraint is `>= 1.0.0`; the root `versions.tf` pins `1.1.1`)
+- Terraform: `>= 1.9.0`
 
-Credentials and TLS:
+IOS-XE floor for this pin: provider **1.0.0** dropped IOS-XE 17.12
+([changelog](https://github.com/CiscoDevNet/terraform-provider-iosxe/blob/v1.1.1/CHANGELOG.md)).
+Provider 1.1.1 documents tested releases Catalyst 8000v **17.15.3** and Catalyst 9000v **17.15.1**
+([provider docs](https://github.com/CiscoDevNet/terraform-provider-iosxe/blob/v1.1.1/docs/index.md)).
+Treat **IOS-XE 17.15** as the minimum. nac-iosxe 1.0.0's
+[tested-versions](https://netascode.cisco.com/docs/changelogs/iosxe/tested_versions/) page still
+lists 17.12.x next to provider 1.0.0; that train is outside the provider's supported set.
 
-- No secrets are written. Terraform reads device credentials from the environment
-  (`IOSXE_USERNAME` / `IOSXE_PASSWORD` / `IOSXE_URL`); Ansible uses matching env-var
-  lookups in `group_vars/all.yaml`.
-- The generated provider sets `insecure = true` for lab convenience. This disables
-  TLS verification and is **lab-only** — do not use it against production devices.
+CML reference images are published by Cisco DevNet on
+[Reference Platforms and Images](https://developer.cisco.com/docs/modeling-labs/reference-platforms-and-images/)
+(CML 2.10 docs, disk `refplat-20260409-fcs.iso`). Compared with the 17.15 floor:
+
+| CML 2.10 image | Version on that page | Usable with this NaC pin |
+| --- | --- | --- |
+| CAT 8000V | IOS-XE 17.18.02 | yes |
+| CAT 9000v Q200 / UADP | IOS-XE 17.18.02 | yes |
+| IOL, IOL (4s), IOL-L2 | IOS-XE 17.18.02 | yes |
+| CSR 1000v | IOS-XE 17.03.08a | no (older than 17.15) |
+| IOSv | IOS 15.9.3M12 | no (classic IOS, not IOS-XE) |
+
+The current Catalyst 8000V, Catalyst 9000v, and IOL images are 17.18.02, so a CML 2.10 lab that uses those images meets the floor. The CSR 1000v image on the same page is still 17.03.08a. TopoGen's `csr1000v` and `iosv` node definitions follow those stock images, so a generated lab imported onto an unmodified CML 2.10 refplat does not meet the provider minimum until the router image is CAT 8000V, IOL, or another IOS-XE release at 17.15 or later. Supplemental CAT 9800-CL on `refplat-20260611-supplemental.iso` is IOS-XE 17.18.03.
+
+Credentials and transport:
+
+- No secrets are written. The module configures the provider from each device `host` in `nac.yaml`. Set `IOSXE_USERNAME` and `IOSXE_PASSWORD`. Provider 1.0.0 removed RESTCONF, the `url` attribute, and `IOSXE_URL` / `IOSXE_PROTOCOL` ([PR #540](https://github.com/CiscoDevNet/terraform-provider-iosxe/pull/540)). Ansible still uses env-var lookups in `group_vars/all.yaml`.
+- Provider `insecure` defaults to true, which skips SSH host-key checks. That default is **lab-only**.
+- `--nac` day-0 configs enable `netconf-yang` and `netconf-yang ssh port 830`. Bootstrap (`--nac --bootstrap`) also keeps a privilege-15 local user and SSH (`ip ssh version 2`, VTY `transport input ssh`).
+
+What v1.0.0 maps from TopoGen DMVPN/EIGRP, and what it does not:
+
+- Mapped: GRE multipoint (`tunnel_mode_gre_multipoint`), `tunnel_key`, NHRP network-id, authentication, unicast maps (`dest_ipv4` / `nbma_ipv4`), NHS, and phase-3 redirect (hub) / shortcut (spoke).
+- Mapped: EIGRP named mode `routing.eigrp_processes` (`name: TOPGEN`, `autonomous_system: 100`, plus `vrf` when the day-0 template uses a VRF address-family) and the same host `network` statements as the templates, excluding the DMVPN NBMA address.
+- Still day-0 only: `ip nhrp map multicast` and `ip nhrp map multicast dynamic` (no module attributes), EIGRP split-horizon, passive-interface, and `eigrp stub`.
+- The provider documents that the first apply of `tunnel_mode_gre_multipoint` together with `tunnel_key` can fail on the device and succeed on a second apply. That needs a live IOS-XE 17.15+ lab; `terraform validate` does not exercise it.
 
 Offline vs. deployment (what TopoGen guarantees vs. what you supply):
 
 - TopoGen guarantees the offline artifacts only: a schema-valid `nac.yaml`, a
-  pinned Terraform workspace, and a parseable Ansible stub. RESTCONF/NETCONF is
+  pinned Terraform workspace, and a parseable Ansible stub. NETCONF on TCP 830 is
   enabled in router day0 configs when `--nac` is set.
 - You supply the deployment: running `terraform init/plan/apply`, running Ansible,
   device reachability, and credentials. `topogen` does not run any deployment or
@@ -175,8 +202,8 @@ This is the recommended path for live NaC validation on CSR1000v.
 
 - Requires `--nac`, `--mgmt`, and `--offline-yaml`
 - Cannot be combined with `--blank`, `--pki`, or `--getvpn`
-- CML router configs: hostname, creds, OOB Gi DHCP (`--mgmt-bridge`), SSH,
-  RESTCONF/NETCONF only — no OSPF/EIGRP or tenant interfaces in CML YAML
+- CML router configs: hostname, privilege-15 local user, OOB Gi DHCP (`--mgmt-bridge`), SSH,
+  `netconf-yang` on TCP 830 — no OSPF/EIGRP or tenant interfaces in CML YAML
 - Full protocol/interface intent remains in `nac.yaml`
 
 Example (2-node nx CSR, CML lifecycle + NaC):

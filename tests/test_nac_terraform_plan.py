@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.1.0
-# Date Modified: 2026-06-08
+# Doc Version: v1.1.1
+# Date Modified: 2026-10-16
 #
 # - Called by: Developers/CI via pytest -m terraform (TG-161)
 # - Reads from: src/topogen/main.py offline renderer, terraform CLI
@@ -41,7 +41,7 @@ FAIL_PATTERNS = (
 DUMMY_IOSXE_ENV = {
     "IOSXE_USERNAME": "lab",
     "IOSXE_PASSWORD": "lab",
-    "IOSXE_URL": "https://127.0.0.1",
+    "IOSXE_HOST": "127.0.0.1",
 }
 
 
@@ -103,7 +103,10 @@ NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
         ),
         (
             "iosxe_interface_tunnel.tunnel",
-            'tunnel_source     = "GigabitEthernet1"',
+            # Column alignment in `terraform plan` shifts when NHRP attributes
+            # are present, so match the attribute and value separately.
+            "tunnel_source",
+            '"GigabitEthernet1"',
         ),
     ),
     NacTerraformCase(
@@ -121,7 +124,8 @@ NAC_TERRAFORM_MATRIX: tuple[NacTerraformCase, ...] = (
         ),
         (
             "iosxe_interface_tunnel.tunnel",
-            'tunnel_source     = "GigabitEthernet1"',
+            "tunnel_source",
+            '"GigabitEthernet1"',
         ),
     ),
     NacTerraformCase(

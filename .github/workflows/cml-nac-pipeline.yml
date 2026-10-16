@@ -49,7 +49,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.8.0"
+          terraform_version: "1.9.8"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v2
@@ -114,7 +114,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.8.0"
+          terraform_version: "1.9.8"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v2

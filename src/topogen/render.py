@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.5.1
-# Date Modified: 2026-06-13
+# Doc Version: v1.5.2
+# Date Modified: 2026-10-16
 #
 # - Called by: src/topogen/main.py
 # - Reads from: Packaged templates, Config, env (VIRL2_*), models
@@ -762,12 +762,17 @@ def _write_nac_tree_if_enabled(
     return nac_file
 
 
-def _nac_restconf_lines() -> list[str]:
-    """RESTCONF/netconf-yang day0 commands required by the NaC MVP."""
+def _nac_netconf_lines() -> list[str]:
+    """Day-0 NETCONF transport for CiscoDevNet/iosxe >= 1.0.0.
+
+    Provider 1.0.0 (PR #540) removed RESTCONF. `netconf-yang` starts the
+    NETCONF subsystem; `netconf-yang ssh port 830` pins the SSH port the
+    provider dials by default. A privilege-15 local user and `ip ssh version 2`
+    are already emitted by the IOS-XE templates and by `_render_bootstrap_config`.
+    """
     return [
-        "ip http secure-server",
-        "restconf",
         "netconf-yang",
+        "netconf-yang ssh port 830",
     ]
 
 
@@ -821,7 +826,7 @@ def _bootstrap_mgmt_interface_label(args: Namespace) -> str:
 
 
 def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) -> str:
-    """Thin day-0 startup config for the NaC path: auth, OOB mgmt, RESTCONF."""
+    """Thin day-0 startup config for the NaC path: auth, OOB mgmt, NETCONF."""
     dev_def = str(getattr(args, "dev_template", getattr(args, "template", ""))).lower()
     csr_style = dev_def == "csr1000v"
     mgmt_vrf = getattr(args, "mgmt_vrf", None)
@@ -952,7 +957,7 @@ def _render_bootstrap_config(cfg: Config, node: TopogenNode, args: Namespace) ->
         [
             "ip ssh version 2",
             "ip ssh server algorithm authentication password",
-            *_nac_restconf_lines(),
+            *_nac_netconf_lines(),
             "!",
             "line vty 0 4",
             " login local",
@@ -972,16 +977,16 @@ def _finalize_router_day0_config(
     node: TopogenNode,
     args: Namespace,
 ) -> str:
-    """Return router day-0 config: bootstrap skin, NaC RESTCONF splice, or unchanged."""
+    """Return router day-0 config: bootstrap skin, NaC NETCONF splice, or unchanged."""
     if getattr(args, "bootstrap", False):
         return _render_bootstrap_config(cfg, node, args)
     if getattr(args, "nac", False):
-        return _inject_nac_restconf_day0(rendered)
+        return _inject_nac_netconf_day0(rendered)
     return rendered
 
 
-def _inject_nac_restconf_day0(rendered: str) -> str:
-    """Insert NaC management transport before the final IOS-XE ``end`` line."""
+def _inject_nac_netconf_day0(rendered: str) -> str:
+    """Insert NaC NETCONF transport before the final IOS-XE ``end`` line."""
     lines = rendered.splitlines()
     has_rsa_key = any(
         line.strip().startswith("crypto key generate rsa")
@@ -994,7 +999,7 @@ def _inject_nac_restconf_day0(rendered: str) -> str:
         block.extend(["crypto key generate rsa modulus 2048", "!"])
     # With --mgmt, the NaC host can be reachable only inside Mgmt-vrf. This helper
     # intentionally enables global services only; VRF reachability stays user-owned.
-    block.extend(_nac_restconf_lines())
+    block.extend(_nac_netconf_lines())
     try:
         end_idx = next(
             i for i in range(len(lines) - 1, -1, -1) if lines[i].strip() == "end"

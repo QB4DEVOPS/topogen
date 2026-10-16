@@ -1,6 +1,6 @@
 # File Chain (see DEVELOPER.md):
-# Doc Version: v1.11.0
-# Date Modified: 2026-06-13
+# Doc Version: v1.12.0
+# Date Modified: 2026-10-16
 #
 # - Called by: src/topogen/render.py (offline simple --nac flow)
 # - Reads from: TopogenNode/TopogenInterface objects, render context (mode/template/device-template)
@@ -22,6 +22,18 @@ from topogen.nac_mgmt_sync import (
 )
 
 
+# Pins for the generated workspace. nac-iosxe 1.0.0 requires Terraform >= 1.9.0
+# and CiscoDevNet/iosxe >= 1.0.0. The root versions.tf pins the provider at the
+# 1.1.1 release this generator was adapted to.
+NAC_IOSXE_MODULE_SOURCE = "netascode/nac-iosxe/iosxe"
+NAC_IOSXE_MODULE_VERSION = "1.0.0"
+NAC_IOSXE_PROVIDER_SOURCE = "CiscoDevNet/iosxe"
+NAC_IOSXE_PROVIDER_VERSION = "1.1.1"
+NAC_TERRAFORM_REQUIRED_VERSION = ">= 1.9.0"
+NAC_MODULE_PIN = f"{NAC_IOSXE_MODULE_SOURCE} {NAC_IOSXE_MODULE_VERSION}"
+NAC_PROVIDER_PIN = f"{NAC_IOSXE_PROVIDER_SOURCE} {NAC_IOSXE_PROVIDER_VERSION}"
+
+
 TERRAFORM_MAIN_TF = """# Run Terraform from this nac/ directory so yaml_files = [\"nac.yaml\"] resolves
 # to nac.yaml beside main.tf. From the lab root, use:
 # terraform -chdir=<lab>/nac <command>
@@ -30,33 +42,33 @@ TERRAFORM_MAIN_TF = """# Run Terraform from this nac/ directory so yaml_files = 
 # yaml_directories = [\".\"] here: it recurses this directory (and .terraform/)
 # and ingests the Ansible/informational YAML, which breaks the module's
 # yaml_merge (top-level sequences are not valid NaC model fragments).
+#
+# nac-iosxe 1.0.0 configures the IOS-XE provider inside the module from each
+# device host in nac.yaml. Transport is NETCONF over SSH on TCP 830. Provider
+# 1.0.0 removed RESTCONF and the URL-style provider attribute.
+# Do not add a root iosxe provider block; module resources use the provider
+# configuration inside the module.
+#
+# Set IOSXE_USERNAME and IOSXE_PASSWORD in the environment. Do not put lab
+# URLs, usernames, or passwords in Terraform files. The provider insecure
+# default is true (skip SSH host-key checks) and is acceptable only for
+# throwaway lab gear.
 
 module \"iosxe\" {
   source     = \"netascode/nac-iosxe/iosxe\"
-  version    = \"0.1.0\"
+  version    = \"1.0.0\"
   yaml_files = [\"nac.yaml\"]
-}
-
-provider \"iosxe\" {
-  # The CiscoDevNet/iosxe provider reads IOSXE_URL, IOSXE_USERNAME, and
-  # IOSXE_PASSWORD (or its documented IOSXE_* environment variables).
-  # Do not put lab URLs, usernames, or passwords in Terraform files.
-  #
-  # LAB ONLY: insecure disables TLS certificate verification; acceptable only
-  # for throwaway lab gear with self-signed certificates. Never use this for
-  # production NaC.
-  insecure = true
 }
 """
 
 
 TERRAFORM_VERSIONS_TF = """terraform {
-  required_version = \">= 1.8.0\"
+  required_version = \">= 1.9.0\"
 
   required_providers {
     iosxe = {
       source  = \"CiscoDevNet/iosxe\"
-      version = \"0.15.0\"
+      version = \"1.1.1\"
     }
   }
 }
@@ -64,15 +76,15 @@ TERRAFORM_VERSIONS_TF = """terraform {
 
 
 TERRAFORM_TFVARS_EXAMPLE = """# This scaffold is intentionally driven by nac.yaml through yaml_files = [\"nac.yaml\"].
-# Supply provider connection settings with environment variables on your runner.
+# Device hosts come from nac.yaml (NETCONF/SSH port 830). Supply credentials
+# with environment variables on your runner. IOSXE_HOST is the single-device
+# fallback and is unused when nac.yaml lists a host per device.
 #
 # Bash:
-#   export IOSXE_URL=\"https://<lab-device-url>\"
 #   export IOSXE_USERNAME=\"<lab-username>\"
 #   export IOSXE_PASSWORD=\"<lab-password>\"
 #
 # PowerShell:
-#   $env:IOSXE_URL = \"https://<lab-device-url>\"
 #   $env:IOSXE_USERNAME = \"<lab-username>\"
 #   $env:IOSXE_PASSWORD = \"<lab-password>\"
 """
@@ -161,7 +173,7 @@ TopoGen also emitted helper scripts for live lab management address sync.
 4. **Apply device configuration** with NaC Terraform:
 
    ```bash
-   export IOSXE_URL=https://<first-router> IOSXE_USERNAME=... IOSXE_PASSWORD=...
+   export IOSXE_USERNAME=... IOSXE_PASSWORD=...
    terraform init
    terraform plan
    terraform apply
@@ -188,7 +200,7 @@ python ssh-fanout.py --uptime
 |----------|---------|
 | `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` | `sync-nac-mgmt.py` (CML API + controller pyATS) |
 | `IOSXE_USERNAME`, `IOSXE_PASSWORD`, `IOSXE_ENABLE_PASSWORD` | Optional overrides for `--set-pyats-creds` |
-| `IOSXE_URL`, `IOSXE_USERNAME`, `IOSXE_PASSWORD` | `terraform apply` in this directory |
+| `IOSXE_USERNAME`, `IOSXE_PASSWORD` | `terraform apply` in this directory (NETCONF to each `host` in `nac.yaml`, TCP 830) |
 
 Do not commit credentials or `terraform.tfvars` with secrets.
 """
@@ -284,10 +296,93 @@ def _configuration_interface_collection(iface_type: str) -> str:
 
 
 _OSPF_ROUTING_TEMPLATES = frozenset({"csr-ospf", "iosv", "csr1000v"})
+_EIGRP_ROUTING_TEMPLATES = frozenset(
+    {
+        "iosv-eigrp",
+        "iosv-eigrp-stub",
+        "iosv-eigrp-nonflat",
+        "csr-eigrp",
+        "iosv-dmvpn",
+        "csr-dmvpn",
+    }
+)
+# Day-0 DMVPN templates hardcode these. nac-iosxe 1.0.0 models them as
+# tunnel attributes (iosxe_interfaces.tf ip_nhrp_* / tunnel_mode_gre_multipoint).
+DMVPN_NHRP_NETWORK_ID = 10
+DMVPN_NHRP_AUTHENTICATION = "DMVPNKEY"
+DMVPN_EIGRP_NAME = "TOPGEN"
+DMVPN_EIGRP_AS = 100
 
 
 def _is_ospf_routing_template(template: str) -> bool:
     return str(template) in _OSPF_ROUTING_TEMPLATES
+
+
+def _is_eigrp_routing_template(template: str) -> bool:
+    return str(template) in _EIGRP_ROUTING_TEMPLATES
+
+
+def _router_index(hostname: str) -> int | None:
+    text = str(hostname or "")
+    if len(text) > 1 and text[0] == "R" and text[1:].isdigit():
+        return int(text[1:])
+    return None
+
+
+def _dmvpn_hub_indexes(args) -> set[int]:
+    """Match render.py: explicit --dmvpn-hubs, else R1.
+
+    Flat-pair generation fills dmvpn_hubs_list (R1,R3,R5, ...) before the
+    NaC writer runs, so this sees the same hub set as the day-0 templates.
+    """
+    hubs = getattr(args, "dmvpn_hubs_list", None) if args is not None else None
+    if hubs:
+        return {int(hub) for hub in hubs}
+    return {1}
+
+
+def _dmvpn_phase(args) -> int:
+    try:
+        return int(getattr(args, "dmvpn_phase", 2) or 2)
+    except (TypeError, ValueError):
+        return 2
+
+
+def _dmvpn_tunnel_key(args) -> int:
+    try:
+        return int(getattr(args, "dmvpn_tunnel_key", 10) or 10)
+    except (TypeError, ValueError):
+        return 10
+
+
+def _iface_host(address) -> str | None:
+    if not address:
+        return None
+    return str(ip_interface(address).ip)
+
+
+def _eigrp_network(address) -> dict:
+    return {"ip": _iface_host(address), "wildcard": "0.0.0.0"}
+
+
+def _collect_dmvpn_hubs(nodes: list[TopogenNode], args) -> list[dict[str, str]]:
+    hub_indexes = _dmvpn_hub_indexes(args)
+    hubs: list[dict[str, str]] = []
+    for node in nodes:
+        index = _router_index(str(getattr(node, "hostname", "")))
+        if index not in hub_indexes:
+            continue
+        nbma = tunnel = None
+        for iface in getattr(node, "interfaces", None) or []:
+            description = str(_get_iface_value(iface, "description", ""))
+            address = _get_iface_value(iface, "address", None)
+            if description == DMVPN_NBMA_DESCRIPTION:
+                nbma = _iface_host(address)
+            elif description == DMVPN_TUNNEL_DESCRIPTION:
+                tunnel = _iface_host(address)
+        if nbma and tunnel:
+            hubs.append({"nbma": nbma, "tunnel": tunnel})
+    return hubs
 
 
 def _build_ospf_routing_config(node_obj: TopogenNode) -> dict:
@@ -345,11 +440,18 @@ def _order_managed_iface_entry(entry: dict) -> dict:
         "description",
         "vrf_forwarding",
         "tunnel_source",
-        "tunnel_mode",
+        "tunnel_key",
+        "tunnel_mode_gre_multipoint",
         "tunnel_destination",
         "tunnel_vrf",
         "ip_mtu",
         "tunnel_protection_ipsec_profile",
+        "ip_nhrp_network_id",
+        "ip_nhrp_authentication",
+        "ip_nhrp_maps",
+        "ip_nhrp_nhs",
+        "ip_nhrp_redirect",
+        "ip_nhrp_shortcut",
     )
     ordered: dict = {}
     for key in order:
@@ -500,6 +602,9 @@ def _apply_dmvpn_tunnel_configuration(
     device_template: str,
     args,
     overlay_vrf: str | None,
+    tunnel_ip: str | None,
+    hubs: list[dict[str, str]],
+    is_hub: bool,
 ) -> None:
     config_iface_entry["tunnel_source"] = _dmvpn_nbma_source_interface(device_template)
     ipv4 = dict(config_iface_entry.get("ipv4") or {})
@@ -513,6 +618,97 @@ def _apply_dmvpn_tunnel_configuration(
         config_iface_entry["vrf_forwarding"] = overlay_vrf
     if _dmvpn_security_uses_ipsec(getattr(args, "dmvpn_security", "none")):
         config_iface_entry["tunnel_protection_ipsec_profile"] = DMVPN_IPSEC_PROFILE
+    # nac-iosxe 1.0.0 tunnel schema (PR #340). Multicast NHRP
+    # (`ip nhrp map multicast` / `map multicast dynamic`) is not in that schema.
+    config_iface_entry["tunnel_key"] = _dmvpn_tunnel_key(args)
+    config_iface_entry["tunnel_mode_gre_multipoint"] = True
+    config_iface_entry["ip_nhrp_network_id"] = DMVPN_NHRP_NETWORK_ID
+    config_iface_entry["ip_nhrp_authentication"] = DMVPN_NHRP_AUTHENTICATION
+    phase = _dmvpn_phase(args)
+    if is_hub:
+        peers = [hub for hub in hubs if hub["tunnel"] != tunnel_ip]
+        if phase == 3:
+            config_iface_entry["ip_nhrp_redirect"] = True
+    else:
+        peers = list(hubs)
+        if phase == 3:
+            config_iface_entry["ip_nhrp_shortcut"] = True
+        if peers:
+            config_iface_entry["ip_nhrp_nhs"] = [{"ipv4": hub["tunnel"]} for hub in peers]
+    if peers:
+        config_iface_entry["ip_nhrp_maps"] = [
+            {"dest_ipv4": hub["tunnel"], "nbma_ipv4": hub["nbma"]} for hub in peers
+        ]
+
+
+def _eigrp_process(networks: list[dict], *, vrf: str | None = None) -> dict:
+    process: dict = {
+        "name": DMVPN_EIGRP_NAME,
+        "autonomous_system": DMVPN_EIGRP_AS,
+        "networks": networks,
+    }
+    if vrf:
+        process["vrf"] = vrf
+    return process
+
+
+def _build_eigrp_routing_config(
+    node_obj: TopogenNode,
+    *,
+    dmvpn_context: bool,
+    overlay_vrf: str | None,
+) -> dict | None:
+    """Project day-0 EIGRP networks onto nac-iosxe 1.0.0 named mode.
+
+    The module resource is `router eigrp <name>` / `address-family ipv4 unicast
+    [vrf <vrf>] autonomous-system <as>` (iosxe_eigrp.tf). Classic `router eigrp 100`
+    day-0 is emitted as name TOPGEN, autonomous-system 100, matching the VRF
+    templates. Split-horizon, passive-interface, and `eigrp stub` have no keys
+    in that schema and are left on the day-0 config only.
+    """
+    global_networks: list[dict] = []
+    vrf_networks: dict[str, list[dict]] = {}
+
+    def _add(address, vrf: str | None) -> None:
+        network = _eigrp_network(address)
+        if not network["ip"]:
+            return
+        if vrf:
+            vrf_networks.setdefault(vrf, []).append(network)
+        else:
+            global_networks.append(network)
+
+    loopback = getattr(node_obj, "loopback", None)
+    if loopback is not None:
+        _add(loopback, overlay_vrf if dmvpn_context else None)
+    for iface in getattr(node_obj, "interfaces", None) or []:
+        description = str(_get_iface_value(iface, "description", ""))
+        if description == "OOB Management":
+            continue
+        if dmvpn_context and description == DMVPN_NBMA_DESCRIPTION:
+            continue
+        address = _get_iface_value(iface, "address", None)
+        if not address:
+            continue
+        iface_vrf = _get_iface_value(iface, "vrf", None)
+        if iface_vrf:
+            target_vrf = str(iface_vrf)
+        elif dmvpn_context and overlay_vrf and description in {
+            DMVPN_TUNNEL_DESCRIPTION,
+            DMVPN_PAIR_DESCRIPTION,
+        }:
+            target_vrf = overlay_vrf
+        else:
+            target_vrf = None
+        _add(address, target_vrf)
+    processes: list[dict] = []
+    if global_networks:
+        processes.append(_eigrp_process(global_networks))
+    for vrf_name in sorted(vrf_networks):
+        processes.append(_eigrp_process(vrf_networks[vrf_name], vrf=vrf_name))
+    if not processes:
+        return None
+    return {"eigrp_processes": processes}
 
 
 def _canonical_name_for_index(index: int) -> str:
@@ -585,6 +781,8 @@ def build_canonical_nac_model(
     dmvpn_context = _is_dmvpn_context(mode=mode, template=template)
     dmvpn_overlay_vrf = _dmvpn_overlay_vrf(args) if dmvpn_context else None
     dmvpn_frontside_vrf = _dmvpn_frontside_vrf(args) if dmvpn_context else None
+    dmvpn_hubs = _collect_dmvpn_hubs(nodes, args) if dmvpn_context else []
+    dmvpn_hub_indexes = _dmvpn_hub_indexes(args) if dmvpn_context else set()
     for index, node_obj in enumerate(nodes, start=1):
         canonical_name = _canonical_name_for_index(index)
         system_hostname = str(getattr(node_obj, "hostname", ""))
@@ -659,11 +857,15 @@ def build_canonical_nac_model(
                 config_iface_entry["shutdown"] = False
                 config_iface_entry["cdp"] = True
                 if is_dmvpn_tunnel:
+                    router_index = _router_index(system_hostname)
                     _apply_dmvpn_tunnel_configuration(
                         config_iface_entry,
                         device_template=device_template,
                         args=args,
                         overlay_vrf=dmvpn_overlay_vrf,
+                        tunnel_ip=_iface_host(iface_address),
+                        hubs=dmvpn_hubs,
+                        is_hub=router_index in dmvpn_hub_indexes,
                     )
                 collection = _configuration_interface_collection(iface_type)
                 config_interface_groups.setdefault(collection, []).append(
@@ -709,6 +911,14 @@ def build_canonical_nac_model(
         }
         if _is_ospf_routing_template(template):
             configuration["routing"] = _build_ospf_routing_config(node_obj)
+        elif _is_eigrp_routing_template(template):
+            eigrp_config = _build_eigrp_routing_config(
+                node_obj,
+                dmvpn_context=dmvpn_context,
+                overlay_vrf=dmvpn_overlay_vrf,
+            )
+            if eigrp_config:
+                configuration["routing"] = eigrp_config
         if dmvpn_context:
             crypto_config = _build_dmvpn_crypto_configuration(args)
             if crypto_config:
@@ -836,7 +1046,7 @@ def write_terraform_main_tf(output_path: Path, overwrite: bool = False) -> Path:
 
 
 def write_terraform_versions_tf(output_path: Path, overwrite: bool = False) -> Path:
-    """Write the Terraform/provider version pins required by nac-iosxe 0.1.0."""
+    """Write the Terraform/provider version pins required by nac-iosxe 1.0.0."""
     return _write_static_text(output_path, TERRAFORM_VERSIONS_TF, overwrite=overwrite)
 
 
@@ -1105,8 +1315,8 @@ def write_nac_metadata_yaml(
         "canonical_root": "iosxe.devices[]",
         "contract": "lean iosxe.devices[].configuration.*",
         "epic_ref": "TG-131",
-        "module": "netascode/nac-iosxe/iosxe 0.1.0",
-        "provider": "CiscoDevNet/iosxe 0.15.0",
+        "module": NAC_MODULE_PIN,
+        "provider": NAC_PROVIDER_PIN,
         "generator": "topogen",
         "mode": topogen_metadata.get("mode", ""),
         "template": first_device.get("template", ""),

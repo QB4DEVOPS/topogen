@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.20
-Date Modified: 2026-06-13
+Doc Version: v1.3.22
+Date Modified: 2026-10-16
 
 - Called by: Users checking release notes, package managers, documentation generators
 - Reads from: Developer commits, PR descriptions, completed TODO items
@@ -20,6 +20,15 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - chore(ci): Terraform plan jobs skip the GUI extra
+    - The package build job and both Terraform plan jobs install with `uv sync --extra all --dev` so they do not build wxPython. The `gui` extra is unchanged. `pyproject.toml` records the existing ruff/mypy baseline so the build job can finish; that gate never ran while wxPython failed to compile.
+    - Files: .github/workflows/python-package.yml, pyproject.toml (rev v1.0.5 → v1.0.6), CHANGES.md
+  - feat(nac): pin nac-iosxe 1.0.0 and CiscoDevNet/iosxe 1.1.1
+    - Generated `nac/` workspaces use module `netascode/nac-iosxe/iosxe` `1.0.0` and provider `CiscoDevNet/iosxe` `1.1.1`, with Terraform `>= 1.9.0`. The module now owns the provider configuration (`render_device_configs`); the root no longer emits a provider block or `IOSXE_URL`. Credentials stay `IOSXE_USERNAME` / `IOSXE_PASSWORD`. Device hosts in `nac.yaml` are NETCONF targets on TCP 830.
+    - Provider 1.0.0 removed RESTCONF (PR #540). `--nac` day-0 and `--bootstrap` enable `netconf-yang` and `netconf-yang ssh port 830`. Bootstrap already had a privilege-15 local user and SSH; those stay.
+    - DMVPN intent maps onto the v1.0.0 tunnel schema: GRE multipoint, tunnel key, NHRP network-id, authentication, unicast maps, NHS, and phase-3 redirect/shortcut. EIGRP templates map to named mode `routing.eigrp_processes` (`TOPGEN` / AS 100). NHRP multicast, EIGRP split-horizon, passive-interface, and stub stay on day-0.
+    - Minimum IOS-XE is 17.15 (provider 1.0.0 dropped 17.12; 1.1.1 tested on Catalyst 8000v 17.15.3 and Catalyst 9000v 17.15.1). CML 2.10 refplat `refplat-20260409-fcs.iso` ships CAT 8000V and IOL at 17.18.02, which meets that floor; CSR 1000v on the same page is 17.03.08a and does not. CI NaC Terraform jobs use Terraform 1.9.8.
+    - Files: src/topogen/nac.py (rev v1.11.0 → v1.12.0), src/topogen/render.py (rev v1.5.1 → v1.5.2), tests/test_nac_writer.py, tests/test_nac_day0_restconf.py, tests/test_nac_render_e2e.py, tests/test_nac_terraform_plan.py, tests/fixtures/nac/golden-flat-*/ , .github/workflows/python-package.yml, .github/workflows/cml-nac-pipeline.yml, README.md (rev v1.8.12 → v1.8.13), DEVELOPER.md (rev v1.9.7 → v1.9.8), CHANGES.md (rev v1.3.20 → v1.3.21)
   - feat(mgmt): static IPv6 OOB from explicit `/64` anchor with FF10 embedding (TG-195)
     - `--mgmt-ipv6-static` + required `--mgmt-ipv6-cidr /64` render deterministic global `ipv6 address` on IOSv/CSR OOB (routers only). Optional `--mgmt-ipv6-static-link-local` adds loopback-derived `fe80::FF10:…` on OOB. Routers are IPv6 hosts only — no `ipv6 unicast-routing` in static mode (routing deferred). NaC `ansible_host` populated at generate time; `sync-nac-mgmt.py` skips live poll when `mgmt_ipv6_mode: static`. Examples use `fd80::/64` or `2001:db8:1:2::/64` only.
     - Files: src/topogen/mgmt_addressing.py (rev v1.0.1), src/topogen/main.py, src/topogen/render.py, src/topogen/models.py, src/topogen/nac.py, src/topogen/nac_mgmt_sync.py, src/topogen/templates/_static_link_local.jinja2 (rev v1.0.0), src/topogen/templates/_iosv_mgmt_oob.jinja2, src/topogen/templates/_csr_mgmt_oob.jinja2, tests/test_mgmt_addressing.py (rev v1.0.0), tests/test_mgmt_ipv6_vrf.py, tests/test_nac_cli_guardrails.py, tests/test_nac_writer.py, docs/TG-195-ai-prompt.md, DEVELOPER.md, README.md, TODO.md, CHANGES.md

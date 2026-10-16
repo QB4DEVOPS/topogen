@@ -7,7 +7,7 @@
 # - Writes to: Temporary test directories only
 # - Calls into: topogen.main.main
 #
-# Purpose: Verify TG-134 NaC-only IOS-XE day0 RESTCONF/netconf-yang injection.
+# Purpose: Verify NaC day0 enables NETCONF-over-SSH (provider >= 1.0.0).
 # Blast Radius: Test-only; no runtime behavior changes.
 
 import sys
@@ -49,12 +49,14 @@ class TestNacDay0Restconf(unittest.TestCase):
             yaml_file = Path(tmp) / "out" / "two-router-simple" / "two-router-simple.yaml"
             content = yaml_file.read_text(encoding="utf-8")
             self.assertIn(
-                "\n      ip http secure-server\n"
-                "      restconf\n"
-                "      netconf-yang\n"
+                "\n      netconf-yang\n"
+                "      netconf-yang ssh port 830\n"
                 "      end\n",
                 content,
             )
+            self.assertIn("privilege 15", content)
+            self.assertNotIn("restconf", content)
+            self.assertNotIn("ip http secure-server", content)
 
     def test_non_nac_output_has_no_transport_injection(self):
         with tempfile.TemporaryDirectory() as tmp:
