@@ -214,7 +214,10 @@ class TestNacRenderEndToEnd(unittest.TestCase):
             self._assert_provenance_flags(cml_yaml, "--nac", "--bootstrap", "--mgmt-bridge")
 
             cml_text = cml_yaml.read_text(encoding="utf-8")
-            self.assertIn("restconf", cml_text)
+            self.assertIn("netconf-yang", cml_text)
+            self.assertIn("netconf-yang ssh port 830", cml_text)
+            self.assertIn("privilege 15", cml_text)
+            self.assertNotIn("restconf", cml_text)
             self.assertIn("ip address dhcp", cml_text)
             self.assertIn("no cdp enable", cml_text)
             self.assertIn("ip ssh server algorithm authentication password", cml_text)

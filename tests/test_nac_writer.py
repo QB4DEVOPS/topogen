@@ -241,8 +241,8 @@ class TestNacWriter(unittest.TestCase):
             self.assertEqual(meta["canonical_root"], "iosxe.devices[]")
             self.assertEqual(meta["contract"], "lean iosxe.devices[].configuration.*")
             self.assertEqual(meta["epic_ref"], "TG-131")
-            self.assertEqual(meta["module"], "netascode/nac-iosxe/iosxe 0.1.0")
-            self.assertEqual(meta["provider"], "CiscoDevNet/iosxe 0.15.0")
+            self.assertEqual(meta["module"], "netascode/nac-iosxe/iosxe 1.0.0")
+            self.assertEqual(meta["provider"], "CiscoDevNet/iosxe 1.1.1")
             self.assertEqual(meta["generator"], "topogen")
             self.assertEqual(meta["mode"], "simple")
             self.assertEqual(meta["template"], "iosv")
@@ -365,15 +365,18 @@ class TestNacWriter(unittest.TestCase):
             self.assertFalse((lab_root / "nac.yaml").exists())
 
             cml_text = cml_yaml.read_text(encoding="utf-8")
-            self.assertIn("restconf", cml_text)
             self.assertIn("netconf-yang", cml_text)
+            self.assertIn("netconf-yang ssh port 830", cml_text)
+            self.assertIn("privilege 15", cml_text)
+            self.assertNotIn("restconf", cml_text)
 
             main_tf = (nac_root / "main.tf").read_text(encoding="utf-8")
             tfvars_example = (nac_root / "terraform.tfvars.example").read_text(encoding="utf-8")
-            self.assertIn("IOSXE_URL", main_tf)
+            self.assertNotIn("IOSXE_URL", main_tf)
             self.assertIn("IOSXE_USERNAME", main_tf)
             self.assertIn("IOSXE_PASSWORD", main_tf)
-            self.assertIn('IOSXE_URL="https://<lab-device-url>"', tfvars_example)
+            self.assertIn('IOSXE_USERNAME="<lab-username>"', tfvars_example)
+            self.assertNotIn("IOSXE_URL", tfvars_example)
             self.assertNotIn("password =", tfvars_example)
             self.assertNotIn("cisco", main_tf.lower().replace("ciscodevnet", ""))
 
@@ -415,6 +418,29 @@ class TestNacWriter(unittest.TestCase):
                 [("0/0", "pair link")],
             )
             self.assertNotIn("tunnels", devices[1]["configuration"]["interfaces"])
+            # Flat-pair defaults hubs to R1 and R3. nac-iosxe 1.0.0 maps unicast
+            # NHRP between hubs; multicast NHRP is not in the module schema.
+            self.assertEqual(hub_tunnel["tunnel_key"], 10)
+            self.assertIs(hub_tunnel["tunnel_mode_gre_multipoint"], True)
+            self.assertEqual(hub_tunnel["ip_nhrp_network_id"], 10)
+            self.assertEqual(hub_tunnel["ip_nhrp_authentication"], "DMVPNKEY")
+            self.assertEqual(
+                hub_tunnel["ip_nhrp_maps"],
+                [{"dest_ipv4": "172.20.0.3", "nbma_ipv4": "10.10.0.3"}],
+            )
+            self.assertNotIn("ip_nhrp_nhs", hub_tunnel)
+            spoke_tunnel = devices[2]["configuration"]["interfaces"]["tunnels"][0]
+            self.assertEqual(
+                spoke_tunnel["ip_nhrp_maps"],
+                [{"dest_ipv4": "172.20.0.1", "nbma_ipv4": "10.10.0.1"}],
+            )
+            self.assertNotIn("ip_nhrp_nhs", spoke_tunnel)
+            hub_eigrp = devices[0]["configuration"]["routing"]["eigrp_processes"][0]
+            self.assertEqual(hub_eigrp["name"], "TOPGEN")
+            self.assertEqual(hub_eigrp["autonomous_system"], 100)
+            advertised = {item["ip"] for item in hub_eigrp["networks"]}
+            self.assertIn("172.20.0.1", advertised)
+            self.assertNotIn("10.10.0.1", advertised)
 
     def test_dmvpn_flat_nac_with_mgmt_uses_oob_hosts_and_tunnel_interfaces(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -609,28 +635,27 @@ class TestNacWriter(unittest.TestCase):
 
             main_tf = (nac_root / "main.tf").read_text(encoding="utf-8")
             self.assertIn('source     = "netascode/nac-iosxe/iosxe"', main_tf)
-            self.assertIn('version    = "0.1.0"', main_tf)
+            self.assertIn('version    = "1.0.0"', main_tf)
             self.assertIn('yaml_files = ["nac.yaml"]', main_tf)
             self.assertIn("terraform -chdir=<lab>/nac", main_tf)
             self.assertIn("Run Terraform from this nac/ directory", main_tf)
-            self.assertIn("IOSXE_URL", main_tf)
+            self.assertNotIn("IOSXE_URL", main_tf)
+            self.assertNotIn('provider "iosxe"', main_tf)
             self.assertIn("IOSXE_USERNAME", main_tf)
             self.assertIn("IOSXE_PASSWORD", main_tf)
-            self.assertIn("LAB ONLY", main_tf)
-            self.assertIn("insecure disables TLS certificate verification", main_tf)
+            self.assertIn("NETCONF over SSH", main_tf)
             self.assertIn("throwaway lab gear", main_tf)
-            self.assertIn("insecure = true", main_tf)
 
             versions_tf = (nac_root / "versions.tf").read_text(encoding="utf-8")
-            self.assertIn('required_version = ">= 1.8.0"', versions_tf)
+            self.assertIn('required_version = ">= 1.9.0"', versions_tf)
             self.assertIn('source  = "CiscoDevNet/iosxe"', versions_tf)
-            self.assertIn('version = "0.15.0"', versions_tf)
+            self.assertIn('version = "1.1.1"', versions_tf)
             self.assertNotIn("0.18.0", versions_tf)
 
             tfvars_example = (nac_root / "terraform.tfvars.example").read_text(encoding="utf-8")
             self.assertIn('yaml_files = ["nac.yaml"]', tfvars_example)
-            self.assertIn('IOSXE_URL="https://<lab-device-url>"', tfvars_example)
             self.assertIn('IOSXE_USERNAME="<lab-username>"', tfvars_example)
+            self.assertNotIn("IOSXE_URL", tfvars_example)
             self.assertIn('IOSXE_PASSWORD="<lab-password>"', tfvars_example)
             self.assertNotIn("url =", tfvars_example)
             self.assertNotIn("username =", tfvars_example)
@@ -1494,8 +1519,8 @@ class TestNacWriter(unittest.TestCase):
             metadata = yaml.safe_load(metadata_yaml.read_text(encoding="utf-8"))
             self.assertIs(metadata["terraform_input"], False)
             self.assertEqual(metadata["epic_ref"], "TG-131")
-            self.assertEqual(metadata["module"], "netascode/nac-iosxe/iosxe 0.1.0")
-            self.assertEqual(metadata["provider"], "CiscoDevNet/iosxe 0.15.0")
+            self.assertEqual(metadata["module"], "netascode/nac-iosxe/iosxe 1.0.0")
+            self.assertEqual(metadata["provider"], "CiscoDevNet/iosxe 1.1.1")
             self.assertEqual(metadata["device_count"], 2)
             self.assertIn("host_vars/iosv-01.yaml", metadata["generated_artifacts"])
             self.assertIn("host_vars/iosv-02.yaml", metadata["generated_artifacts"])

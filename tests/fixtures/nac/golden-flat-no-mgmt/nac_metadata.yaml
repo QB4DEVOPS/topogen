@@ -6,8 +6,8 @@ schema_version: 3.0.0
 canonical_root: iosxe.devices[]
 contract: lean iosxe.devices[].configuration.*
 epic_ref: TG-131
-module: netascode/nac-iosxe/iosxe 0.1.0
-provider: CiscoDevNet/iosxe 0.15.0
+module: netascode/nac-iosxe/iosxe 1.0.0
+provider: CiscoDevNet/iosxe 1.1.1
 generator: topogen
 mode: flat
 template: iosv
@@ -26,4 +26,6 @@ generated_artifacts:
 - host_vars/iosv-02.yaml
 - verify_reachability.yaml
 - devices.yaml
+- sync-nac-mgmt.py
+- NAC-WORKFLOW.md
 - nac_metadata.yaml

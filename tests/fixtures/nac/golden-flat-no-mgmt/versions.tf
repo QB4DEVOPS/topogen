@@ -1,10 +1,10 @@
 terraform {
-  required_version = ">= 1.8.0"
+  required_version = ">= 1.9.0"
 
   required_providers {
     iosxe = {
       source  = "CiscoDevNet/iosxe"
-      version = "0.15.0"
+      version = "1.1.1"
     }
   }
 }

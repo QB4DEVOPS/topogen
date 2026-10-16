@@ -1,7 +1,7 @@
 <!--
 File Chain (see DEVELOPER.md - this file!):
-Doc Version: v1.9.7
-Date Modified: 2026-06-13
+Doc Version: v1.9.8
+Date Modified: 2026-10-16
 
 - Called by: Developers (new contributors, AI assistants), maintainers
 - Reads from: Codebase analysis, architecture decisions, team conventions
@@ -369,7 +369,7 @@ Tests (run when touching NaC):
 | `tests/test_nac_cli_guardrails.py` | CLI parsing, offline/import rejection, IOS-XE template checks, `nodes=1` with `--nac`, `--bootstrap` guardrails, composed flags (mgmt/VRF/CSR) |
 | `tests/test_nac_output_paths.py` | `out/<lab>/` layout, no nested `nac/` on rerun |
 | `tests/test_nac_writer.py` | `nac.py` scaffold content, `yaml_files = ["nac.yaml"]`, DMVPN naming |
-| `tests/test_nac_day0_restconf.py` | RESTCONF/NETCONF lines in day0 when `--nac` |
+| `tests/test_nac_day0_restconf.py` | NETCONF-on-830 lines in day0 when `--nac` |
 | `tests/test_nac_render_e2e.py` | End-to-end offline runs: flat, flat-pair, DMVPN flat/flat-pair, nx `--bootstrap` thin day-0; non-NaC paths skip `nac/` |
 | `tests/test_nac_golden_smoke.py` | Regenerates committed golden fixtures under `tests/fixtures/nac/golden-flat-*` |
 | `tests/test_nac_terraform_plan.py` | TG-161/TG-162: opt-in `terraform init` + `terraform plan` contract against pinned `netascode/nac-iosxe` (9-case matrix; DMVPN cases assert tunnel/crypto resources) |
@@ -381,7 +381,7 @@ Only `terraform plan` catches schema mismatches (e.g. TG-159 DMVPN tunnel `id` v
 
 **When to run:** after changing `nac.py`, NaC projection in `render.py`, or pinned module/provider pins.
 
-**Requirements:** Terraform `>= 1.8.0` on `PATH`, network for `terraform init` (registry downloads).
+**Requirements:** Terraform `>= 1.9.0` on `PATH`, network for `terraform init` (registry downloads).
 
 **Opt-in locally** (default `pytest` skips these tests):
 
@@ -392,7 +392,7 @@ $env:TOPOGEN_TERRAFORM_PLAN = "1"
 $env:TF_PLUGIN_CACHE_DIR = "C:\t\topogen-tf-plugin-cache"
 $env:IOSXE_USERNAME = "lab"
 $env:IOSXE_PASSWORD = "lab"
-$env:IOSXE_URL = "https://127.0.0.1"
+$env:IOSXE_HOST = "127.0.0.1"
 uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
 ```
 
@@ -400,7 +400,7 @@ uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
 # Linux/macOS
 export TOPOGEN_TERRAFORM_PLAN=1
 export TF_PLUGIN_CACHE_DIR="${TMPDIR:-/tmp}/topogen-tf-plugin-cache"
-export IOSXE_USERNAME=lab IOSXE_PASSWORD=lab IOSXE_URL=https://127.0.0.1
+export IOSXE_USERNAME=lab IOSXE_PASSWORD=lab IOSXE_HOST=127.0.0.1
 uv run pytest tests/test_nac_terraform_plan.py -m terraform -v
 ```
 
@@ -418,17 +418,17 @@ should boot only a **thin reachability skin** (not full Jinja day-0, not empty
 
 | Path | CLI | CML router `configuration` | Full intent |
 |------|-----|---------------------------|-------------|
-| Normal NaC | `--nac` | Full Jinja render + RESTCONF splice | `nac.yaml` |
+| Normal NaC | `--nac` | Full Jinja render + NETCONF splice | `nac.yaml` |
 | NaC proof / live apply | `--nac --bootstrap` | Thin day-0 only | `nac.yaml` (OSPF, interfaces, CDP, etc.) |
 | Empty topology | `--blank` | `configuration: ""` | N/A (incompatible with `--nac`) |
 
 Thin day-0 includes: hostname, credentials, RSA, `Mgmt-vrf` + OOB Gi DHCP (with
 `--mgmt-bridge`), `ip ssh version 2`, `ip ssh server algorithm authentication
-password`, RESTCONF/NETCONF, SSH vty. It does **not** include OSPF/EIGRP, tenant
+password`, NETCONF on TCP 830, SSH vty. It does **not** include OSPF/EIGRP, tenant
 interfaces, CDP, or PKI — those stay in `nac.yaml` for `terraform apply`.
 
 Implementation: `src/topogen/render.py` — `_render_bootstrap_config()`,
-`_finalize_router_day0_config()` (replaces per-path `_inject_nac_restconf_day0`
+`_finalize_router_day0_config()` (replaces per-path `_inject_nac_netconf_day0`
 calls). Provenance: `--bootstrap` is appended via `_append_common_offline_args_bits()`
 into lab `description`, hidden `notes`, and annotation `text_content`.
 
@@ -613,7 +613,7 @@ Webhook: `repository_dispatch` type `cml-lab-teardown` (see `scripts/jira-cml-we
 |----------|---------|
 | `TF_VAR_address`, `TF_VAR_username`, `TF_VAR_password` (or `TF_VAR_token`), `TF_VAR_skip_verify` | `cml2/` Terraform provider |
 | `VIRL2_URL`, `VIRL2_USER`, `VIRL2_PASS` | `sync-nac-mgmt.py`, `provision-cml-user` |
-| `IOSXE_USERNAME`, `IOSXE_PASSWORD`, `IOSXE_URL` | NaC Terraform / device NETCONF |
+| `IOSXE_USERNAME`, `IOSXE_PASSWORD` | NaC Terraform / NETCONF (hosts from `nac.yaml`, TCP 830) |
 | `CUSTOMER_CML_PASSWORD` | Optional fixed password for `provision-cml-user` (else CSPRNG) |
 | `GITHUB_TOKEN`, `JIRA_*` | Webhook dispatch / Jira comments |
 
@@ -634,7 +634,7 @@ or `Error:` lines; DMVPN cases satisfy their `plan_must_match` snippets. No `ter
 
 ### NaC DMVPN coverage matrix (TG-162)
 
-Pinned module: `netascode/nac-iosxe/iosxe` 0.1.0. Day-0 reference: `csr-dmvpn.jinja2` / `iosv-dmvpn.jinja2`.
+Pinned module: `netascode/nac-iosxe/iosxe` 1.0.0 (provider `CiscoDevNet/iosxe` 1.1.1). Day-0 reference: `csr-dmvpn.jinja2` / `iosv-dmvpn.jinja2`.
 
 | Feature | Day-0 CML config | NaC / Terraform (`nac.yaml`) | Notes |
 |---------|------------------|------------------------------|-------|
@@ -646,14 +646,16 @@ Pinned module: `netascode/nac-iosxe/iosxe` 0.1.0. Day-0 reference: `csr-dmvpn.ji
 | Overlay VRF (pair) | tunnel/loopback/pair `vrf forwarding` | `vrf_forwarding` on tunnel, loopback, pair ethernets | Modeled when `--vrf --pair-vrf` |
 | IKEv2-PSK IPsec stack | `crypto ikev2` + `crypto ipsec` | `configuration.crypto.*` | Modeled when `--dmvpn-security ikev2-psk` |
 | Tunnel IPsec protection | `tunnel protection ipsec profile` | `tunnel_protection_ipsec_profile` | Modeled with IKEv2-PSK/PKI/RSA flag (crypto body only for PSK today) |
-| GRE mGRE mode | `tunnel mode gre multipoint` | — | **Out of scope** — not in nac-iosxe 0.1.0 tunnel schema |
-| Tunnel key | `tunnel key` | — | **Out of scope** |
-| NHRP (network-id, auth, map, NHS, redirect, shortcut) | `ip nhrp *` | — | **Out of scope** — no NHRP resources in nac-iosxe 0.1.0 |
-| EIGRP over tunnel | `router eigrp` | — | **Out of scope** — module has OSPF processes only, not EIGRP |
+| GRE mGRE mode | `tunnel mode gre multipoint` | `tunnel_mode_gre_multipoint: true` | Modeled (nac-iosxe 1.0.0) |
+| Tunnel key | `tunnel key` | `tunnel_key` | Modeled (default 10) |
+| NHRP network-id, auth, unicast map, NHS | `ip nhrp network-id/authentication/map/nhs` | `ip_nhrp_network_id`, `ip_nhrp_authentication`, `ip_nhrp_maps`, `ip_nhrp_nhs` | Modeled. Hub maps other hubs and does not set NHS; spokes map every hub and set NHS |
+| NHRP multicast | `ip nhrp map multicast` / `map multicast dynamic` | — | Day-0 only — no attributes on `iosxe_interface_tunnel` in provider 1.1.1 / nac-iosxe 1.0.0 |
+| EIGRP named mode | `router eigrp TOPGEN` / classic `router eigrp 100` | `routing.eigrp_processes` name `TOPGEN`, autonomous-system `100` | Modeled for EIGRP and `*-dmvpn` templates. NBMA is not a network statement |
+| EIGRP split-horizon, passive-interface, stub | day-0 `af-interface` / `eigrp stub` | — | Day-0 only — `iosxe_eigrp` has networks, router-id, shutdown, auto-summary |
 | IKEv2-PKI / IKEv2-RSA + PKI trustpoints | day-0 PKI + IKEv2 rsa-sig | partial | Tunnel protection flag emitted; full PKI trustpoint modeling deferred (day-0 + `--pki` owns CA enrollment) |
-| Phase 3 NHRP redirect/shortcut | hub/spoke NHRP extras | — | **Out of scope** (NHRP) |
+| Phase 3 NHRP redirect/shortcut | hub redirect, spoke shortcut | `ip_nhrp_redirect` / `ip_nhrp_shortcut` | Modeled when `--dmvpn-phase 3` |
 
-Terraform still owns a **subset** of DMVPN: interface/crypto scaffolding that nac-iosxe exposes. NHRP, mGRE mode, tunnel key, and EIGRP remain day-0-only until a future nac-iosxe release adds those resources.
+Provider docs note that the first apply of GRE multipoint together with `tunnel_key` can fail and succeed on a second apply. That is a device-side ordering limit, not something `terraform validate` covers.
 
 **Gap audit (2026-06-08):** Full 8-profile matrix, hub/spoke notes, terraform plan record, and Jira epic breakdown — `docs/nac/DMVPN-day0-nac-gap-audit.md`. Automation: `scripts/audit-dmvpn-day0-nac-gap.py`. Key **Emit** finding: IKEv2-PKI emits `tunnel_protection_ipsec_profile` without `configuration.crypto` (PSK path complete).
 
