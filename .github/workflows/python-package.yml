@@ -79,8 +79,10 @@ jobs:
       #     ./version.sh
       #     cat src/eve2cml/_version.py
 
+      # The GUI extra builds wxpython from source and needs gtk+-3.0.
+      # numpy/scipy stay installed. topogen[gui] is unchanged.
       - name: Install the project
-        run: uv sync --all-extras --dev
+        run: uv sync --extra all --dev
 
       - name: Check code
         run: |
@@ -128,8 +130,11 @@ jobs:
           restore-keys: |
             nac-tf-plugins-${{ runner.os }}-
 
+      # Plan jobs do not import the GUI. --all-extras installs topogen[gui]
+      # (gooey -> wxpython), which builds from source and needs gtk+-3.0.
+      # numpy/scipy stay installed for nx layout.
       - name: Install the project
-        run: uv sync --all-extras --dev
+        run: uv sync --extra all --dev
 
       - name: Run NaC terraform plan matrix (TG-161)
         env:
@@ -169,8 +174,9 @@ jobs:
           restore-keys: |
             cml2-tf-plugins-${{ runner.os }}-
 
+      # Same as the NaC plan job: skip the gui extra so wxpython is not built.
       - name: Install the project
-        run: uv sync --all-extras --dev
+        run: uv sync --extra all --dev
 
       - name: Run CML2 terraform plan matrix (40 cases)
         env:

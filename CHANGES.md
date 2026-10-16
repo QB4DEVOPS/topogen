@@ -1,6 +1,6 @@
 <!--
 File Chain (see DEVELOPER.md):
-Doc Version: v1.3.21
+Doc Version: v1.3.22
 Date Modified: 2026-10-16
 
 - Called by: Users checking release notes, package managers, documentation generators
@@ -20,6 +20,9 @@ Blast Radius: None (documentation only, but critical for communicating changes t
 This file lists changes. Format for Unreleased entries (files changed + rev): see [DEVELOPER.md Feature closeout checklist](DEVELOPER.md#feature-closeout-checklist).
 
 - Unreleased
+  - chore(ci): Terraform plan jobs skip the GUI extra
+    - The package build job and both Terraform plan jobs install with `uv sync --extra all --dev` so they do not build wxPython. The `gui` extra is unchanged. `pyproject.toml` records the existing ruff/mypy baseline so the build job can finish; that gate never ran while wxPython failed to compile.
+    - Files: .github/workflows/python-package.yml, pyproject.toml (rev v1.0.5 → v1.0.6), CHANGES.md
   - feat(nac): pin nac-iosxe 1.0.0 and CiscoDevNet/iosxe 1.1.1
     - Generated `nac/` workspaces use module `netascode/nac-iosxe/iosxe` `1.0.0` and provider `CiscoDevNet/iosxe` `1.1.1`, with Terraform `>= 1.9.0`. The module now owns the provider configuration (`render_device_configs`); the root no longer emits a provider block or `IOSXE_URL`. Credentials stay `IOSXE_USERNAME` / `IOSXE_PASSWORD`. Device hosts in `nac.yaml` are NETCONF targets on TCP 830.
     - Provider 1.0.0 removed RESTCONF (PR #540). `--nac` day-0 and `--bootstrap` enable `netconf-yang` and `netconf-yang ssh port 830`. Bootstrap already had a privilege-15 local user and SSH; those stay.
